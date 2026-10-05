@@ -55,7 +55,11 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
   const who = order.order_type === 'comedor'
     ? `Mesa ${esc(order.table_name)}${order.guests ? ` · ${order.guests} pers.` : ''}`
     : ORDER_TYPE_LABEL[order.order_type];
-  const customer = [order.customer_name, order.customer_phone, order.customer_address].filter(Boolean).map(esc).join('<br>');
+  const customer = [order.customer_name, order.customer_phone, order.customer_address, order.delivery_reference]
+    .filter(Boolean).map(esc).join('<br>');
+  const web = order.source === 'web'
+    ? `<div class="center"><b>PEDIDO EN LÍNEA</b>${order.payment_preference ? `<br>Paga con ${order.payment_preference}${num(order.pay_with) ? ` (${formatMXN(order.pay_with)})` : ''}` : ''}</div>`
+    : '';
   const taxLabel = `IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' (incluido)' : ''}`;
   const payments = (order.payments || []).map((p) => row(
     esc(p.method_name) + (p.reference ? ` <span class="muted">${esc(p.reference)}</span>` : ''),
@@ -67,12 +71,15 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
       ${row(`<b>Folio ${order.folio}</b>`, formatDateTime(order.paid_at || order.created_at))}
       ${row(who, order.created_by_name ? esc(order.created_by_name) : '')}
     </table>
+    ${web}
     ${customer ? `<div class="muted">${customer}</div>` : ''}
+    ${order.notes ? `<div class="muted">Notas: ${esc(order.notes)}</div>` : ''}
     <hr><table>${items}</table><hr>
     <table>
       ${row('Subtotal', formatMXN(order.subtotal))}
       ${num(order.discount_amount) ? row(`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`, `-${formatMXN(order.discount_amount)}`) : ''}
       ${row(taxLabel, formatMXN(order.tax_amount))}
+      ${num(order.delivery_fee) ? row('Envío', formatMXN(order.delivery_fee)) : ''}
       ${row('TOTAL', formatMXN(order.total), 'total')}
     </table>
     ${payments ? `<hr><table>${payments}
