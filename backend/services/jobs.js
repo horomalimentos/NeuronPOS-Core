@@ -6,12 +6,15 @@
 //   - Conciliacion con Clip (cada 5 min): ligas pendientes, por si un
 //     webhook no llego.
 //   - Pedidos sin pagar (cada minuto): cancela los que pasaron su tiempo.
+//   - Empleado del mes (cada hora): desde el dia 1 cierra el mes anterior de
+//     los restaurantes con cierre automatico (idempotente).
 //
 // Con un solo proceso (pm2, instances: 1) no se encima nada; el ciclo de
 // cobro ademas toma un advisory lock de Postgres.
 import { env } from '../config/env.js';
 import { reconcilePendingCheckouts } from './clip/reconcile.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
+import { runRecognitionCycle } from './rh/recognition.js';
 import { runBillingCycle } from './subscriptions.js';
 
 function every(name, ms, fn) {
@@ -38,8 +41,9 @@ export function startJobs() {
   const timers = [
     every('pagos-vencidos', 60 * 1000, () => expireUnpaidOrders()),
     every('conciliar-clip', 5 * 60 * 1000, () => reconcilePendingCheckouts()),
+    every('empleado-del-mes', 60 * 60 * 1000, () => runRecognitionCycle()),
   ];
   if (env.billingAuto) timers.push(every('cobro', 60 * 60 * 1000, () => runBillingCycle()));
-  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
+  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
   return timers;
 }
