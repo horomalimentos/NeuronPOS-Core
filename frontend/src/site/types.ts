@@ -167,6 +167,18 @@ export interface CustomerOrder {
   ready_at: string | null;
   dispatched_at: string | null;
   paid_at: string | null;
+  /** Reparto a domicilio (fase 5); la ubicacion solo llega en camino. */
+  delivery?: CustomerDelivery | null;
+}
+
+export interface CustomerDelivery {
+  status: 'solicitado' | 'asignado' | 'recogido' | 'en_camino' | 'entregado' | 'fallido' | 'cancelado';
+  status_label: string;
+  driver_name: string | null;
+  fail_reason: string | null;
+  on_way_at: string | null;
+  delivered_at: string | null;
+  location: { latitude: number; longitude: number; updated_at: string } | null;
 }
 
 export interface Quote {
