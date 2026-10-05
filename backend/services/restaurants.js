@@ -38,9 +38,9 @@ export async function monthlyTotalsByRestaurant(db, restaurantIds) {
 
 export async function getDeliverySettings(db, restaurantId) {
   const { rows } = await db.query(
-    `SELECT mode, horom_fee_type, horom_fee_value, updated_at
+    `SELECT mode, horom_enabled, horom_fee_type, horom_fee_value, updated_at
        FROM delivery_settings WHERE restaurant_id = $1`,
     [restaurantId],
   );
-  return rows[0] || { mode: 'propio', horom_fee_type: 'fixed', horom_fee_value: '0.00', updated_at: null };
+  return rows[0] || { mode: 'propio', horom_enabled: false, horom_fee_type: 'fixed', horom_fee_value: '0.00', updated_at: null };
 }

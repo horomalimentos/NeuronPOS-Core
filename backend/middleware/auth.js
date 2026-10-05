@@ -4,9 +4,11 @@
 //   typ = 'customer' -> cliente del portal de un restaurante. Ademas lleva
 //                       audience 'customer': se verifica con esa audiencia y
 //                       los otros tokens (sin audiencia) no pasan, ni al reves.
+//   typ = 'fleet'    -> repartidor de la flota de la plataforma (fase 5), con
+//                       audience 'fleet': solo sirve en /api/fleet.
 // Adaptado del middleware de NeuronPOS, sin sesiones en BD por ahora.
 import jwt from 'jsonwebtoken';
-import pool, { withTenant } from '../config/database.js';
+import pool, { withFleetDriver, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, forbidden } from '../utils/http.js';
 import { findRestaurantById } from './tenant.js';
@@ -33,6 +35,12 @@ export function signCustomerToken(customer) {
     env.jwtSecret,
     { expiresIn: env.customerJwtExpiresIn, audience: CUSTOMER_AUDIENCE },
   );
+}
+
+export const FLEET_AUDIENCE = 'fleet';
+
+export function signFleetToken(driver) {
+  return jwt.sign({ sub: driver.id, typ: 'fleet' }, env.jwtSecret, { expiresIn: env.jwtExpiresIn, audience: FLEET_AUDIENCE });
 }
 
 function readToken(req, verifyOptions = {}) {
@@ -144,6 +152,24 @@ export async function authenticateCustomer(req, res, next) {
 export async function optionalCustomer(req, res, next) {
   try {
     req.customer = req.headers.authorization ? await loadCustomer(req) : null;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Repartidor de la flota de la plataforma (token typ fleet, audiencia 'fleet'). */
+export async function authenticateFleet(req, res, next) {
+  try {
+    const payload = readToken(req, { audience: FLEET_AUDIENCE });
+    if (payload.typ !== 'fleet' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
+    const driver = await withFleetDriver(payload.sub, async (db) => (await db.query(
+      'SELECT id, name, email, phone, vehicle, plate, active, on_duty FROM fleet_drivers WHERE id = $1',
+      [payload.sub],
+    )).rows[0]);
+    if (!driver) throw unauthorized('Repartidor no encontrado', 'INVALID_TOKEN');
+    if (!driver.active) throw forbidden('Tu cuenta de repartidor esta desactivada', 'ACCOUNT_DEACTIVATED');
+    req.fleetDriver = driver;
     next();
   } catch (err) {
     next(err);

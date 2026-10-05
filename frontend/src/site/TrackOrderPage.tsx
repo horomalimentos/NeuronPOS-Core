@@ -1,11 +1,12 @@
 import { Bike, Check, ChefHat, ClipboardCheck, CreditCard, Loader2, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import LiveMap from '../delivery/LiveMap';
 import { errorMessage, portalApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { Notice } from './OrderPage';
 import { STATUS_STYLE, formatDateTimeShort, formatTimeShort, isFinal } from './portalLib';
-import type { CustomerOrder, CustomerStatus, PaymentStart } from './types';
+import type { CustomerDelivery, CustomerOrder, CustomerStatus, PaymentStart } from './types';
 
 const POLL_MS = 8000;
 
@@ -135,6 +136,8 @@ export default function TrackOrderPage() {
 
       {error && <div className="mt-4"><Notice kind="error">{error}</Notice></div>}
 
+      {order.delivery && !failed && <DeliveryCard d={order.delivery} />}
+
       <div className="card-light mt-4 p-5">
         <h2 className="font-bold">{order.branch.name || 'Sucursal'}</h2>
         {order.branch.address && <p className="text-sm text-gray-500">{order.branch.address}</p>}
@@ -176,6 +179,30 @@ export default function TrackOrderPage() {
         )}
         <Link to="/pedir" className="btn-brand">Hacer otro pedido</Link>
       </div>
+    </div>
+  );
+}
+
+/** Estado del repartidor y, mientras va en camino, su ubicacion aproximada. */
+function DeliveryCard({ d }: { d: CustomerDelivery }) {
+  const tone = d.status === 'fallido' ? 'bg-red-50 text-red-800' : d.status === 'entregado' ? 'bg-emerald-50 text-emerald-800' : 'bg-orange-50 text-orange-900';
+  const text = d.status === 'solicitado' ? 'Buscando un repartidor para tu pedido.'
+    : d.status === 'asignado' ? `${d.driver_name || 'Tu repartidor'} va por tu pedido al restaurante.`
+      : d.status === 'recogido' ? `${d.driver_name || 'Tu repartidor'} ya recogió tu pedido.`
+        : d.status === 'en_camino' ? `${d.driver_name || 'Tu repartidor'} va en camino${d.on_way_at ? ` desde las ${formatTimeShort(d.on_way_at)}` : ''}.`
+          : d.status === 'entregado' ? `Entregado${d.delivered_at ? ` a las ${formatTimeShort(d.delivered_at)}` : ''}.`
+            : `No se pudo entregar${d.fail_reason ? `: ${d.fail_reason}` : ''}. El restaurante se comunicará contigo.`;
+  return (
+    <div className="card-light mt-4 p-5">
+      <p className={`flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium ${tone}`}>
+        <Bike className="h-5 w-5 shrink-0" /> {text.replace(/\.\.$/, '.')}
+      </p>
+      {d.status === 'en_camino' && d.location && (
+        <div className="mt-4">
+          <LiveMap className="h-64" points={[{ id: 'driver', latitude: d.location.latitude, longitude: d.location.longitude, label: d.driver_name || 'Repartidor' }]} />
+          <p className="mt-2 text-xs text-gray-500">Ubicación aproximada, actualizada a las {formatTimeShort(d.location.updated_at)}.</p>
+        </div>
+      )}
     </div>
   );
 }

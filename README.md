@@ -9,16 +9,18 @@ Este repo es independiente del NeuronPOS de Horom Sushi: base de datos propia,
 proceso pm2 propio y dominio propio. Usa el mismo stack (React + Vite +
 TypeScript + Tailwind, Express ESM + `pg`, Postgres).
 
-> **Estado: Fase 4 (recursos humanos, nómina y empleado del mes).** Sobre la
-> fase 1a (esquema multi-restaurante, resolución del restaurante,
-> autenticación, módulos, Panel NeuronPOS, sucursales y usuarios), la 1b (POS),
-> la 2 (sitio público y pedidos en línea) y la 3 (cobro con Clip), cada
-> restaurante puede llevar ahora empleados, checador con NIP, asistencia,
-> prenómina con recibos firmados y el empleado del mes. Ver
+> **Estado: Fase 5 (domicilios).** Sobre la fase 1a (esquema
+> multi-restaurante, resolución del restaurante, autenticación, módulos, Panel
+> NeuronPOS, sucursales y usuarios), la 1b (POS), la 2 (sitio público y
+> pedidos en línea), la 3 (cobro con Clip) y la 4 (recursos humanos, nómina y
+> empleado del mes), cada restaurante puede entregar sus pedidos a domicilio
+> con sus propios repartidores o con la flota de NeuronPOS, con seguimiento
+> en vivo para el cliente. Ver
 > [Punto de venta](#punto-de-venta-módulo-pos),
 > [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2),
-> [Cobro con Clip](#cobro-con-clip-fase-3) y
-> [Recursos humanos](#recursos-humanos-nómina-y-empleado-del-mes-fase-4).
+> [Cobro con Clip](#cobro-con-clip-fase-3),
+> [Recursos humanos](#recursos-humanos-nómina-y-empleado-del-mes-fase-4) y
+> [Domicilios](#domicilios-fase-5).
 
 ## Estructura
 
@@ -30,9 +32,13 @@ backend/            API Express (ESM) + pg
   routes/           platform.js (Panel), auth, me, branches (y horarios), users, public,
                     website (Sitio web), online (config. de pedidos), portal (clientes)
   routes/pos/       POS: menu, tables, orders (y cocina), online (pedidos web), cash, settings
+  routes/delivery/  Domicilios del restaurante: settings, dispatch (caja), driver (app), cuts
+  routes/fleet.js   App de la flota (audiencia fleet); platformFleet.js: la flota en el Panel
   services/         billing.js (cobro mensual), access.js (reglas 402), restaurants.js,
                     posMath.js (totales, pagos y corte de caja en centavos), hours.js
                     (abierto/cerrado), online.js, onlinePayments.js, siteContent.js
+  services/delivery/ flow.js (estados), math.js (comisión, cortes y liquidaciones en
+                    centavos), tenant.js (reparto propio), fleet.js (flota, ofertas, factura)
   scripts/          migrate.js, create-owner.js
   tests/            node:test (unitarias + integración con Postgres)
 db/migrations/      SQL numerado (001_, 002_, ...), se aplica con npm run migrate
@@ -41,6 +47,8 @@ frontend/           React 18 + Vite + TS + Tailwind
   src/restaurant/   Administración del restaurante
   src/pos/          Punto de venta: venta, cobro, caja, cocina, menú, mesas, ticket
   src/site/         Sitio público, menú en línea, checkout, seguimiento y cuenta del cliente
+  src/delivery/     Reparto en caja, cortes de repartidores, ajustes de domicilios, mapa (Leaflet)
+  src/driver/       App del repartidor (/repartidor), propio o de la flota
 ```
 
 ## Requisitos
@@ -134,8 +142,8 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 Una sola base de datos compartida. Toda tabla que pertenece a un restaurante
 tiene `restaurant_id` (`restaurant_modules`, `delivery_settings`, `branches`,
 `users`, `user_branches`, `subscription_invoices`, las 17 tablas del POS de
-`004_pos.sql`, las 8 de la fase 2 en `005_sitio_portal.sql` y las de la fase 3 en
-`006_cobro_clip.sql`). La protección
+`004_pos.sql`, las 8 de la fase 2 en `005_sitio_portal.sql`, las de la fase 3 en
+`006_cobro_clip.sql`, las 19 de la fase 4 y las de domicilios de `008_domicilios.sql`). La protección
 tiene tres capas:
 
 1. **Resolución del restaurante** (`middleware/tenant.js`), en este orden:
@@ -613,6 +621,118 @@ Pantallas: `/admin/rh` (Empleados, Asistencia, Nómina, Configuración),
 tareas, historial y reglas), `/admin/empleado-del-mes/empleados` (cuando
 solo se tiene `empleado_mes`) y `/admin/muro`.
 
+## Domicilios (fase 5)
+
+Todo detrás de `requireModule('domicilios')` (sin el módulo: 402). Dos modos
+por restaurante en `delivery_settings.mode`:
+
+- **`propio`**: los repartidores son usuarios del restaurante con rol
+  `repartidor`. La caja asigna cada pedido a domicilio y el repartidor lo
+  lleva desde su app.
+- **`horom`**: la flota de NeuronPOS entrega. Solo se puede elegir si el
+  Panel habilitó la flota para ese restaurante (`horom_enabled`); la
+  comisión (fija por entrega o porcentaje del subtotal) también la fija el
+  Panel. Un trigger (`delivery_settings_guard`) impide que el restaurante
+  cambie `horom_enabled` o la comisión aunque escriba directo en la tabla, y
+  un `CHECK` impide `mode = 'horom'` sin `horom_enabled`. Al deshabilitarla,
+  el Panel regresa el restaurante a `propio`.
+
+**Estados del reparto** (`services/delivery/flow.js`): `asignado →
+recogido → en_camino → entregado`, o `fallido` (con motivo obligatorio)
+desde `recogido`/`en_camino`; `asignado` se puede cancelar o cambiar de
+repartidor. En la flota hay un estado previo `solicitado` (buscando
+repartidor). Cualquier otro salto responde `409 INVALID_TRANSITION`. La
+orden del POS se sincroniza: `en_camino` la marca como despachada (el
+cliente la ve "En camino"), `entregado` registra el cobro y un intento
+fallido o cancelado le quita el despacho para reintentar con otro repartidor
+o cancelarla. No se puede cancelar una orden con un reparto en curso
+(`409 DELIVERY_IN_PROGRESS`).
+
+**Cobro en la puerta** (en centavos):
+- Propio: al marcar `entregado`, lo que falta por pagar se registra como un
+  pago `efectivo` de la orden con `driver_user_id` (con propina y cambio). Ese
+  efectivo no entra a ningún turno de caja hasta el **corte del
+  repartidor**: la caja captura lo que entrega, se compara con lo esperado
+  (pagos + propinas) y los pagos pasan al turno de caja abierto que se elija,
+  así cuadran en el corte de caja. Si la caja cobra la orden antes (el
+  cliente pagó en el mostrador), el reparto se marca entregado sin cobro.
+- Flota: el repartidor cobra exactamente `cash_to_collect`; el pago
+  `efectivo` queda ligado a la solicitud (`delivery_request_id`) y nunca
+  entra a una caja del restaurante: ese dinero se lo entrega la plataforma en
+  una liquidación.
+
+**Ubicación**: la app del repartidor la manda cada ~20 s mientras está en
+turno (`navigator.geolocation`). La caja ve a sus repartidores en un mapa
+(Leaflet + OpenStreetMap, por sondeo); el Panel ve a toda la flota. El
+cliente, en `/pedido/:token`, ve el estado del reparto y, solo mientras va
+`en_camino`, la ubicación **redondeada a 3 decimales** (~100 m) si tiene
+menos de 10 minutos; nunca el teléfono del repartidor.
+
+**Flota** (tablas de plataforma): `fleet_drivers` (login propio con
+audiencia JWT `fleet`, en `/repartidor` pestaña Flota), `fleet_settings`
+(pago general por entrega, oferta automática y su duración),
+`delivery_requests` (copia de lo mínimo para entregar: nombre del
+restaurante, sucursal, cliente, dirección, total y efectivo a cobrar; el
+repartidor nunca lee tablas del restaurante), `delivery_request_offers`,
+`fleet_driver_locations`, `fleet_driver_cuts` y `fleet_settlements`.
+RLS con un tercer contexto `app.fleet_driver_id` (`withFleetDriver`): un
+repartidor de la flota solo ve las solicitudes que tiene asignadas (y las
+ofertas que le hicieron); un restaurante solo ve sus solicitudes, y la
+ubicación de un repartidor de la flota solo mientras lleva una solicitud
+suya. Al pedir repartidor, si `auto_offer` está activo, la solicitud se
+ofrece a los repartidores en turno y libres; el primero que acepta se la
+lleva. El Panel también asigna, quita, ofrece y cambia estados a mano.
+
+**Comisión y factura**: la comisión se calcula al entregar (las fallidas o
+canceladas no cobran) y se cobra **una sola vez**: o se descuenta en una
+liquidación o va a la mensualidad. Cada liquidación paga al restaurante el
+efectivo que cobró la flota menos las comisiones pendientes que quepan
+(nunca un neto negativo); las que no quepan se agregan a la siguiente
+factura como la línea `Domicilios Horom (N entregas)` (`code:
+domicilios_horom`). Generar la factura otra vez no duplica la línea ni las
+entregas (`commission_invoice_id`). Cada repartidor de la flota entrega su
+efectivo en un corte por repartidor, y el reporte por periodo da entregas,
+fallidas, efectivo, comisiones y lo que se le paga (pago por entrega del
+repartidor o el general).
+
+**Tablas del restaurante** (con RLS y llaves compuestas): `order_deliveries`,
+`driver_locations`, `driver_cash_cuts`; `order_payments` agrega
+`driver_user_id`, `driver_cut_id` y `delivery_request_id`;
+`delivery_settings` agrega `horom_enabled`.
+
+| Método | Ruta | Quién |
+| --- | --- | --- |
+| GET/PUT | `/api/delivery/settings` (PUT `{mode}`; `horom` solo si el Panel la habilitó) | leer: personal; editar: admin |
+| GET | `/api/delivery/horom/ledger` (pendiente y liquidaciones de la flota) | admin, gerente |
+| GET | `/api/delivery/board?branch_id=` · `/map?branch_id=` | admin, gerente, cajero |
+| POST | `/api/delivery/orders/:id/assign` `{driver_user_id}` | ídem (modo propio) |
+| POST | `/api/delivery/deliveries/:id/status` `{status, reason?, received?, tip?}` | ídem |
+| POST | `/api/delivery/orders/:id/request` `{notes?}` · `/requests/:id/cancel` | ídem (modo horom) |
+| GET/POST | `/api/delivery/driver-cuts` (`?branch_id=`; POST `{branch_id, driver_user_id, cash_session_id, counted_cash}`) | ídem |
+| GET | `/api/delivery/driver/deliveries` | repartidor |
+| POST | `/api/delivery/driver/deliveries/:id/status` · `/driver/duty` · `/driver/location` | repartidor |
+| POST | `/api/fleet/auth/login` | repartidor de la flota |
+| GET/POST | `/api/fleet/me` · `/duty` · `/location` · `/requests` · `/requests/:id/status` | ídem (token `fleet`) |
+| GET/POST | `/api/fleet/offers` · `/offers/:id/accept\|decline` | ídem |
+| PUT | `/api/platform/restaurants/:id/delivery` `{horom_enabled, mode, horom_fee_type, horom_fee_value}` | Panel |
+| GET/PUT | `/api/platform/fleet/settings` | Panel |
+| GET/POST/PATCH | `/api/platform/fleet/drivers[/:id]` | Panel |
+| GET/POST | `/api/platform/fleet/drivers/:id/cash` · `/drivers/:id/cuts` | Panel |
+| GET | `/api/platform/fleet/requests?status=` · `/fleet/map` | Panel |
+| POST | `/api/platform/fleet/requests/:id/assign\|unassign\|offer\|status`; PATCH `/requests/:id` `{commission_amount}` | Panel |
+| GET/POST | `/api/platform/fleet/ledger[/:restaurantId]` · `/fleet/settlements` | Panel |
+| GET | `/api/platform/fleet/report?from=&to=` | Panel |
+
+Pantallas: `/admin/reparto` (por asignar, en reparto y entregados, mapa y
+repartidores; en modo flota, "Pedir repartidor"), `/admin/reparto/cortes`,
+`/admin/domicilios` (modo, comisión acordada y liquidaciones de la flota),
+`/repartidor` (app móvil: turno, ubicación, Maps/Waze/llamar, cobro en la
+puerta, no entregado con motivo; pestañas del restaurante y de la flota),
+`/panel/flota` (tablero con mapa, repartidores y su efectivo,
+liquidaciones, pagos a repartidores y ajustes), el interruptor de la flota
+en el detalle del restaurante del Panel y el estado del reparto con mapa en
+`/pedido/:token`.
+
 ## Pruebas
 
 ```bash
@@ -670,8 +790,21 @@ Qué cubren:
   corrección manual con motivo y bitácora; aprobar/reabrir/cerrar y pago
   desde caja; firma del empleado; ranking determinista, cierre idempotente
   (manual y por el job) y premio como bono de nómina.
+- Fase 5 (`delivery.test.js`, `deliveryMath.test.js`): 402 sin
+  `domicilios`; un repartidor de A no ve pedidos de B, uno de la flota solo
+  ve lo asignado y un restaurante no ve solicitudes ni ubicaciones de la
+  flota ajenas (API y RLS); transiciones válidas e inválidas; cobro en la
+  puerta y corte del repartidor en centavos que cuadra con el corte de caja;
+  seguimiento con ubicación aproximada solo en camino; la flota solo si el
+  Panel la habilitó (y el restaurante no puede habilitarla ni cambiar la
+  comisión ni por SQL); ofertas; comisión fija y porcentual; liquidaciones
+  sin neto negativo y la línea de factura idempotente.
 
-Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
+Frontend: `npm run lint` y `npm run build` (incluye `tsc`). La fase 5 se
+probó además de punta a punta en Chromium (Playwright) con geolocalización
+simulada: asignar, app del repartidor, mapa de la caja y del cliente, cobro
+en la puerta, corte, y en la flota asignar desde el Panel, entregar,
+liquidar, corte del repartidor y reporte.
 
 ## Producción (resumen)
 
@@ -691,8 +824,11 @@ Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 - POS, pendiente: estaciones de cocina e impresión por estación, socket.io
   en lugar de sondeo, mover artículos entre mesas / unir y dividir cuentas por
   artículo, reportes de ventas, inventario y recetas, promociones.
-- Domicilios: repartidores, estados de entrega, comisión por pedido y zonas
-  o costo de envío por distancia.
+- Domicilios, pendiente: zonas de la flota y costo de envío por distancia,
+  volver a ofrecer solas las solicitudes cuya oferta venció (hoy se ofrecen
+  al pedirlas y desde el Panel), marcar pagado al repartidor en el reporte,
+  socket.io en lugar de sondeo, rutas con varios pedidos y foto/firma de
+  entrega.
 - Portal, pendiente: programar pedidos para más
   tarde, subir imágenes (hoy son URLs), notificaciones por WhatsApp/correo y
   push en lugar de sondeo, recuperar contraseña, lealtad/puntos.

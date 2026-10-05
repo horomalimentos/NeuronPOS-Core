@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
+import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
@@ -254,6 +255,28 @@ export async function nextFolio(db, restaurantId, branchId) {
 }
 
 const isTableConflict = (err) => err?.code === '23505' && err.constraint === 'orders_one_active_per_table';
+
+/**
+ * Fase 5: cobrar en caja un domicilio. Si el repartidor propio ya lo llevaba
+ * (recogido o en camino) queda entregado; si lo lleva la flota, se ajusta lo
+ * que el repartidor debe cobrar en la puerta.
+ */
+async function afterRegisterPayment(db, restaurantId, orderId, paid) {
+  if (paid) {
+    await db.query(
+      `UPDATE order_deliveries SET status = 'entregado', delivered_at = now(), updated_at = now()
+        WHERE restaurant_id = $1 AND order_id = $2 AND status IN ('recogido', 'en_camino')`,
+      [restaurantId, orderId],
+    );
+  }
+  await db.query(
+    `UPDATE delivery_requests r SET cash_to_collect = greatest(o.total - o.paid_amount, 0), updated_at = now()
+       FROM orders o
+      WHERE o.id = r.order_id AND o.restaurant_id = r.restaurant_id
+        AND r.restaurant_id = $1 AND r.order_id = $2 AND r.status IN ('solicitado', 'asignado', 'recogido', 'en_camino')`,
+    [restaurantId, orderId],
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Rutas
@@ -545,6 +568,10 @@ router.post('/orders/:id/cancel', requireRole(...ROLES.orders), ah(async (req, r
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
     if (toCents(o.paid_amount) > 0) throw badRequest('La orden ya tiene pagos registrados', 'ORDER_HAS_PAYMENTS');
+    // Fase 5: un pedido con reparto en curso se cancela primero en el reparto.
+    if (await activeDeliveryOf(db, req.tenant.id, o.id)) {
+      throw conflict('El pedido tiene un reparto en curso: cancela o termina el reparto primero', 'DELIVERY_IN_PROGRESS');
+    }
     if (!ROLES.cashier.includes(req.user.role) && o.sent_at) {
       throw forbidden('La orden ya se envio a cocina: pide a un cajero o gerente que la cancele', 'ROLE_REQUIRED');
     }
@@ -637,6 +664,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
         [o.id, req.tenant.id],
       );
     }
+    if (o.order_type === 'domicilio') await afterRegisterPayment(db, req.tenant.id, o.id, paid);
     return {
       order: await loadOrder(db, req.tenant.id, o.id),
       change: norm.change,

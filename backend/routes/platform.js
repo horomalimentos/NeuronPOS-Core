@@ -9,6 +9,7 @@ import { calculateMonthlyTotal } from '../services/billing.js';
 import { getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant } from '../services/restaurants.js';
 import { addDays, getPlatformSettings, listInvoices, today } from '../services/subscriptions.js';
 import platformBillingRouter from './platformBilling.js';
+import platformFleetRouter from './platformFleet.js';
 import {
   COLOR_RE, DOMAIN_RE, EMAIL_RE, SLUG_RE, ah, badRequest, bool, buildSet, dateOrNull,
   money, notFound, oneOf, requireUuid, str,
@@ -320,27 +321,44 @@ router.put('/restaurants/:id/modules/:code', ah(async (req, res) => {
   res.json(detail);
 }));
 
+// Domicilios: el Panel es la autoridad del servicio de repartidores (flota).
+// horom_enabled habilita que el restaurante use la flota; mode lo puede fijar
+// el Panel o el propio restaurante (solo si esta habilitado). Deshabilitar
+// la flota regresa al restaurante a repartidores propios.
 router.put('/restaurants/:id/delivery', ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
-  const mode = oneOf(body.mode, ['propio', 'horom'], 'mode');
+  let mode = oneOf(body.mode, ['propio', 'horom'], 'mode');
+  let enabled = bool(body.horom_enabled, 'horom_enabled');
   const feeType = oneOf(body.horom_fee_type, ['fixed', 'percent'], 'horom_fee_type');
   const feeValue = money(body.horom_fee_value, { field: 'horom_fee_value' });
   if (feeType === 'percent' && feeValue !== undefined && feeValue > 100) {
     throw badRequest('La comision porcentual no puede pasar de 100', 'INVALID_FIELD');
   }
+  // Elegir el modo flota desde el Panel la habilita; deshabilitarla regresa a propio.
+  if (mode === 'horom' && enabled === undefined) enabled = true;
+  if (enabled === false) {
+    if (mode === 'horom') throw badRequest('Para usar la flota debe estar habilitada', 'INVALID_FIELD');
+    mode = 'propio';
+  }
   const detail = await withPlatform(async (db) => {
     const exists = await db.query('SELECT 1 FROM restaurants WHERE id = $1', [req.params.id]);
     if (!exists.rowCount) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
+    const current = (await db.query('SELECT * FROM delivery_settings WHERE restaurant_id = $1', [req.params.id])).rows[0];
+    const percentValue = feeValue ?? Number(current?.horom_fee_value ?? 0);
+    if ((feeType ?? current?.horom_fee_type) === 'percent' && percentValue > 100) {
+      throw badRequest('La comision porcentual no puede pasar de 100', 'INVALID_FIELD');
+    }
     await db.query(
-      `INSERT INTO delivery_settings (restaurant_id, mode, horom_fee_type, horom_fee_value)
-       VALUES ($1, coalesce($2, 'propio'), coalesce($3, 'fixed'), coalesce($4, 0))
+      `INSERT INTO delivery_settings (restaurant_id, mode, horom_enabled, horom_fee_type, horom_fee_value)
+       VALUES ($1, coalesce($2, 'propio'), coalesce($3, false), coalesce($4, 'fixed'), coalesce($5, 0))
        ON CONFLICT (restaurant_id) DO UPDATE SET
          mode = coalesce($2, delivery_settings.mode),
-         horom_fee_type = coalesce($3, delivery_settings.horom_fee_type),
-         horom_fee_value = coalesce($4, delivery_settings.horom_fee_value),
+         horom_enabled = coalesce($3, delivery_settings.horom_enabled),
+         horom_fee_type = coalesce($4, delivery_settings.horom_fee_type),
+         horom_fee_value = coalesce($5, delivery_settings.horom_fee_value),
          updated_at = now()`,
-      [req.params.id, mode ?? null, feeType ?? null, feeValue ?? null],
+      [req.params.id, mode ?? null, enabled ?? null, feeType ?? null, feeValue ?? null],
     );
     return getRestaurantDetail(db, req.params.id);
   });
@@ -349,6 +367,8 @@ router.put('/restaurants/:id/delivery', ah(async (req, res) => {
 
 // Cobro de suscripciones: facturas, ligas de Clip y configuracion (fase 3).
 router.use(platformBillingRouter);
+// Flota de repartidores de la plataforma (fase 5).
+router.use(platformFleetRouter);
 
 router.get('/restaurants/:id/charge', ah(async (req, res) => {
   requireUuid(req.params.id);

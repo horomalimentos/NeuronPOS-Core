@@ -8,7 +8,9 @@ import { env } from './config/env.js';
 import { resolveTenant } from './middleware/tenant.js';
 import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
+import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
+import fleetRouter from './routes/fleet.js';
 import meRouter from './routes/me.js';
 import onlineRouter from './routes/online.js';
 import platformRouter from './routes/platform.js';
@@ -53,6 +55,8 @@ export function createApp() {
   app.use('/api/platform', platformRouter);
   // Webhooks de Clip (fase 3): el restaurante va en la ruta, no en el Host.
   app.use('/api/webhooks', webhooksRouter);
+  // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
+  app.use('/api/fleet', fleetRouter);
 
   // Todo lo demas es de un restaurante.
   app.use('/api', resolveTenant);
@@ -72,6 +76,8 @@ export function createApp() {
   app.use('/api/employees', employeesRouter);
   app.use('/api/rh', rhRouter);
   app.use('/api/recognition', recognitionRouter);
+  // Fase 5: domicilios (reparto en caja, app del repartidor propio, cortes).
+  app.use('/api/delivery', deliveryRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

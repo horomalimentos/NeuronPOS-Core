@@ -1,4 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import DeliverySettingsPage from './delivery/DeliverySettingsPage';
+import DispatchPage from './delivery/DispatchPage';
+import DriverCutsPage from './delivery/DriverCutsPage';
+import DriverApp from './driver/DriverApp';
+import FleetPage from './platform/FleetPage';
 import InvoicesPage from './platform/InvoicesPage';
 import ModulesCatalogPage from './platform/ModulesCatalogPage';
 import PlatformLayout from './platform/PlatformLayout';
@@ -57,6 +62,9 @@ export default function App() {
           <Route path="/cuenta/pedidos" element={<OrdersPage />} />
         </Route>
 
+        {/* App del repartidor (propio del restaurante o de la flota) */}
+        <Route path="/repartidor" element={<DriverApp />} />
+
         {/* Panel NeuronPOS (dueno de la plataforma) */}
         <Route path="/panel/login" element={<PlatformLogin />} />
         <Route path="/panel" element={<PlatformLayout />}>
@@ -64,6 +72,7 @@ export default function App() {
           <Route path="restaurantes/:id" element={<RestaurantDetailPage />} />
           <Route path="modulos" element={<ModulesCatalogPage />} />
           <Route path="cobros" element={<InvoicesPage />} />
+          <Route path="flota" element={<FleetPage />} />
           <Route path="ajustes" element={<PlatformSettingsPage />} />
         </Route>
 
@@ -96,6 +105,12 @@ export default function App() {
             </Route>
             <Route path="checador" element={<KioskPage />} />
             <Route path="mi-nomina" element={<MyPayrollPage />} />
+          </Route>
+          {/* Domicilios (modulo domicilios) */}
+          <Route element={<ModuleGate code="domicilios" name="Domicilios" />}>
+            <Route path="reparto" element={<DispatchPage />} />
+            <Route path="reparto/cortes" element={<DriverCutsPage />} />
+            <Route path="domicilios" element={<DeliverySettingsPage />} />
           </Route>
           {/* Empleado del mes (modulo empleado_mes) */}
           <Route element={<ModuleGate code="empleado_mes" name="Empleado del mes" />}>

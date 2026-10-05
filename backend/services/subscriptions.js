@@ -6,7 +6,9 @@
 //   anterior del siguiente mes. Se cobra por adelantado y la fecha limite es
 //   el inicio del periodo. Sin prorrateo.
 // - Lineas: cada modulo vigente con su precio (especial o de catalogo) y su
-//   descuento, calculado en centavos (billing.js).
+//   descuento, calculado en centavos (billing.js). Fase 5: mas una linea
+//   "Domicilios Horom (N entregas)" con las comisiones de la flota que aun no
+//   se cobran (cada entrega se factura una sola vez: queda ligada a la factura).
 // - Al terminar una prueba el restaurante pasa a 'active' y se genera su
 //   primera factura.
 // - Cobranza: vencida al pasar la fecha limite; suspendida (falta_pago) al
@@ -23,7 +25,9 @@ import {
 } from './billing.js';
 import { createClipClient, hasCheckoutCredentials, platformClipCredentials } from './clip/client.js';
 import { reconcileLocalCheckout } from './clip/reconcile.js';
+import { horomInvoiceLine, pendingInvoiceCharges } from './delivery/fleet.js';
 import { notify } from './notifier.js';
+import { toCents } from './posMath.js';
 import { listRestaurantModules } from './restaurants.js';
 import { platformWebhookUrl, restaurantSiteUrl } from './urls.js';
 
@@ -150,6 +154,14 @@ export async function generateInvoice(db, restaurant, { now = new Date() } = {})
 
   const modules = await listRestaurantModules(db, restaurant.id);
   const bill = buildInvoiceLines(modules, now);
+  // Fase 5: comisiones de la flota (domicilios Horom) aun sin cobrar.
+  const charges = await pendingInvoiceCharges(db, restaurant.id, now);
+  if (charges.count) {
+    const line = horomInvoiceLine(charges);
+    bill.lines.push(line);
+    bill.subtotal_mxn = (toCents(bill.subtotal_mxn) + toCents(line.amount_mxn)) / 100;
+    bill.total_mxn = (toCents(bill.total_mxn) + toCents(line.amount_mxn)) / 100;
+  }
   const free = bill.total_mxn === 0;
   const inserted = (await db.query(
     `INSERT INTO subscription_invoices (restaurant_id, period, period_end, due_date, subtotal_mxn, discount_mxn,
@@ -173,6 +185,12 @@ export async function generateInvoice(db, restaurant, { now = new Date() } = {})
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [restaurant.id, inserted.id, l.module_code, l.name, l.catalog_price_mxn, l.custom_price_mxn,
         l.unit_price_mxn, l.discount_pct, l.discount_mxn, l.amount_mxn, i],
+    );
+  }
+  if (charges.count) {
+    await db.query(
+      'UPDATE delivery_requests SET commission_invoice_id = $2, updated_at = now() WHERE id = ANY($1::uuid[])',
+      [charges.ids, inserted.id],
     );
   }
   return { id: inserted.id, created: true, amount_mxn: bill.total_mxn };
