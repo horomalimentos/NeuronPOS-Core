@@ -17,6 +17,7 @@ import { customerAuthLimiter, orderLimiter, publicLimiter } from '../middleware/
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
 import { checkModuleAccess } from '../services/access.js';
+import { customerDeliveryView } from '../services/delivery/tenant.js';
 import {
   acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches, publicBranch,
 } from '../services/online.js';
@@ -447,7 +448,14 @@ async function customerViews(db, rid, orders) {
   if (!orders.length) return [];
   const branches = new Map((await loadBranches(db, rid, { onlyActive: false })).map((b) => [b.id, b]));
   const items = await loadItems(db, rid, orders.map((o) => o.id));
-  return orders.map((o) => customerOrderView({ ...o, items: items.filter((i) => i.order_id === o.id) }, branches.get(o.branch_id)));
+  const views = [];
+  for (const o of orders) {
+    const view = customerOrderView({ ...o, items: items.filter((i) => i.order_id === o.id) }, branches.get(o.branch_id));
+    // Fase 5: estado del reparto y, en camino, ubicacion aproximada del repartidor.
+    view.delivery = await customerDeliveryView(db, rid, o);
+    views.push(view);
+  }
+  return views;
 }
 
 router.get('/orders', authenticateCustomer, ah(async (req, res) => {
