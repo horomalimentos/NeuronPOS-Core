@@ -5,6 +5,7 @@ import { authenticateUser } from '../../middleware/auth.js';
 import { requireModule } from '../../middleware/requireModule.js';
 import cashRouter from './cash.js';
 import menuRouter from './menu.js';
+import onlineRouter from './online.js';
 import ordersRouter from './orders.js';
 import settingsRouter from './settings.js';
 import tablesRouter from './tables.js';
@@ -20,6 +21,7 @@ router.use(menuRouter);
 router.use(tablesRouter);
 router.use(settingsRouter);
 router.use(ordersRouter);
+router.use(onlineRouter);
 router.use(cashRouter);
 
 export default router;
