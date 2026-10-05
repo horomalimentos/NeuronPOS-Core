@@ -21,6 +21,13 @@ export async function setupDb() {
     JWT_SECRET: 'secreto-de-pruebas',
     PLATFORM_DOMAIN,
     ALLOW_SLUG_HEADER: 'true',
+    // Fase 3: cuenta de Clip de la plataforma (simulada) y llave de cifrado.
+    CLIP_API_KEY: 'plataforma-api-key',
+    CLIP_SECRET_KEY: 'plataforma-secret-key',
+    CLIP_WEBHOOK_SECRET: 'plataforma-webhook-secret',
+    PAYMENT_SECRETS_KEY: Buffer.alloc(32, 7).toString('base64'),
+    PUBLIC_API_URL: 'https://api.neuronpos.test',
+    JOBS_ENABLED: 'false',
   });
   const db = await import('../config/database.js');
   const { runMigrations } = await import('../scripts/migrate.js');

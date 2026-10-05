@@ -59,12 +59,13 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal((await api(B, 'GET', '/api/pos/menu')).status, 200);
     });
 
-    test('cada restaurante nuevo trae efectivo, tarjeta y transferencia', async () => {
+    test('cada restaurante nuevo trae efectivo, tarjeta, transferencia y Clip en linea', async () => {
       const res = await api(A, 'GET', '/api/pos/payment-methods');
       assert.equal(res.status, 200);
       methodsA = res.body.payment_methods;
       assert.deepEqual(methodsA.map((m) => [m.name, m.kind]), [
         ['Efectivo', 'efectivo'], ['Tarjeta', 'tarjeta'], ['Transferencia', 'transferencia'],
+        ['Clip en línea', 'en_linea'],
       ]);
       const s = await api(A, 'GET', '/api/pos/settings');
       assert.equal(Number(s.body.settings.tax_rate_pct), 16);
