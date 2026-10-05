@@ -53,7 +53,11 @@ export async function setupDb() {
       return new Promise((resolve, reject) => {
         const payload = body === undefined ? undefined : JSON.stringify(body);
         const h = { ...headers };
-        if (payload) h['content-type'] = 'application/json';
+        if (payload) {
+          h['content-type'] = 'application/json';
+          // Node no usa chunked en DELETE: sin content-length el cuerpo se pierde.
+          h['content-length'] = Buffer.byteLength(payload);
+        }
         if (token) h.authorization = `Bearer ${token}`;
         if (slug) h['x-restaurant-slug'] = slug;
         if (host) h.host = host;
