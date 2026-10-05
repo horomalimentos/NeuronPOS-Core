@@ -1,4 +1,5 @@
-import { CheckCircle2, Lock } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Lock } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { PageHeader, StatusBadge } from '../components/ui';
 import { formatDate } from '../lib/format';
 import { moduleIcon } from '../lib/modules';
@@ -32,7 +33,11 @@ export default function DashboardPage() {
               </div>
               <h3 className="mt-4 font-semibold text-white">{m.name}</h3>
               <p className="mt-1 text-sm text-gray-400">{m.description}</p>
-              <p className="mt-3 text-xs text-gray-600">Disponible próximamente en esta plataforma.</p>
+              {m.code === 'pos' ? (
+                <Link to="/admin/pos" className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-contrast">
+                  Abrir punto de venta <ArrowRight className="h-3 w-3" />
+                </Link>
+              ) : <p className="mt-3 text-xs text-gray-600">Disponible próximamente en esta plataforma.</p>}
             </div>
           );
         })}

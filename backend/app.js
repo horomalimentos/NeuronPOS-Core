@@ -10,7 +10,7 @@ import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
 import meRouter from './routes/me.js';
 import platformRouter from './routes/platform.js';
-import posRouter from './routes/pos.js';
+import posRouter from './routes/pos/index.js';
 import publicRouter from './routes/public.js';
 import usersRouter from './routes/users.js';
 import { errorHandler, notFound } from './utils/http.js';
