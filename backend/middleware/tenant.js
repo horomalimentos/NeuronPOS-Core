@@ -62,8 +62,9 @@ export async function resolveTenant(req, res, next) {
   try {
     req.tenant = null;
     req.tenantSource = null;
-    const host = req.headers['x-forwarded-host'] || req.headers.host;
-    const parsed = parseHost(host);
+    // Solo Host: nginx lo reenvia con proxy_set_header Host $host. No se usa
+    // X-Forwarded-Host porque el cliente lo puede inventar.
+    const parsed = parseHost(req.headers.host);
 
     if (parsed?.slug) {
       req.tenant = await findRestaurantBySlug(parsed.slug);
