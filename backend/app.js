@@ -8,12 +8,15 @@ import { env } from './config/env.js';
 import { resolveTenant } from './middleware/tenant.js';
 import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
+import employeesRouter from './routes/employees.js';
 import meRouter from './routes/me.js';
 import onlineRouter from './routes/online.js';
 import platformRouter from './routes/platform.js';
 import portalRouter from './routes/portal.js';
 import posRouter from './routes/pos/index.js';
 import publicRouter from './routes/public.js';
+import recognitionRouter from './routes/recognition.js';
+import rhRouter from './routes/rh/index.js';
 import subscriptionRouter from './routes/subscription.js';
 import usersRouter from './routes/users.js';
 import webhooksRouter from './routes/webhooks.js';
@@ -65,6 +68,10 @@ export function createApp() {
   app.use('/api/portal', portalRouter);
   // Fase 3: suscripcion del restaurante (funciona aun suspendido, para pagar).
   app.use('/api/subscription', subscriptionRouter);
+  // Fase 4: empleados (rh o empleado_mes), recursos humanos y nomina, empleado del mes.
+  app.use('/api/employees', employeesRouter);
+  app.use('/api/rh', rhRouter);
+  app.use('/api/recognition', recognitionRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

@@ -47,3 +47,26 @@ export function requireOperational(req, res, next) {
   }
   next();
 }
+
+/**
+ * Deja pasar si el restaurante tiene contratado al menos uno de los modulos
+ * (p. ej. la lista de empleados la usan 'rh' y 'empleado_mes'). Si no tiene
+ * ninguno responde el 402 del primero.
+ */
+export function requireAnyModule(...moduleCodes) {
+  return async (req, res, next) => {
+    try {
+      let firstDenied = null;
+      for (const code of moduleCodes) {
+        const row = req.tenant ? await loadModuleRow(req.tenant.id, code) : null;
+        const denied = checkModuleAccess(req.tenant, code, row);
+        if (!denied) return next();
+        firstDenied = firstDenied || denied;
+      }
+      const { status, ...body } = firstDenied;
+      return res.status(status).json(body);
+    } catch (err) {
+      next(err);
+    }
+  };
+}
