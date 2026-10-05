@@ -9,17 +9,16 @@ Este repo es independiente del NeuronPOS de Horom Sushi: base de datos propia,
 proceso pm2 propio y dominio propio. Usa el mismo stack (React + Vite +
 TypeScript + Tailwind, Express ESM + `pg`, Postgres).
 
-> **Estado: Fase 3 (cobro con Clip).** Sobre la fase 1a
-> (esquema multi-restaurante, resolución del restaurante, autenticación,
-> módulos, Panel NeuronPOS, sucursales y usuarios), la 1b (POS: menú con
-> modificadores, mesas, órdenes, cobro, caja, cocina y ticket) y la 2 (sitio
-> público, horarios y portal de clientes con pedidos en línea), la plataforma
-> cobra ahora la mensualidad de cada restaurante con su cuenta de Clip
-> (facturas, cobranza, suspensión y reactivación automáticas) y cada
-> restaurante puede cobrar sus pedidos en línea con **su propia** cuenta de
-> Clip. Ver [Punto de venta](#punto-de-venta-módulo-pos),
-> [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2) y
-> [Cobro con Clip](#cobro-con-clip-fase-3).
+> **Estado: Fase 4 (recursos humanos, nómina y empleado del mes).** Sobre la
+> fase 1a (esquema multi-restaurante, resolución del restaurante,
+> autenticación, módulos, Panel NeuronPOS, sucursales y usuarios), la 1b (POS),
+> la 2 (sitio público y pedidos en línea) y la 3 (cobro con Clip), cada
+> restaurante puede llevar ahora empleados, checador con NIP, asistencia,
+> prenómina con recibos firmados y el empleado del mes. Ver
+> [Punto de venta](#punto-de-venta-módulo-pos),
+> [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2),
+> [Cobro con Clip](#cobro-con-clip-fase-3) y
+> [Recursos humanos](#recursos-humanos-nómina-y-empleado-del-mes-fase-4).
 
 ## Estructura
 
@@ -499,6 +498,121 @@ Clip solo tiene ambiente de producción: probar con montos pequeños.
 | POST | `/api/portal/track/:token/pay` · `/verify-payment` | cliente | Liga para terminar de pagar / conciliar |
 | POST | `/api/pos/online-orders/:id/deliver` | admin, gerente, cajero | Entregar un pedido ya pagado en línea |
 
+## Recursos humanos, nómina y empleado del mes (fase 4)
+
+Dos módulos independientes: `rh` (empleados, checador, asistencia y
+prenómina) y `empleado_mes` (ranking mensual y muro). Las rutas `/api/rh/*`
+pasan por `requireModule('rh')`, `/api/recognition/*` por
+`requireModule('empleado_mes')` y `/api/employees` acepta cualquiera de los
+dos (`requireAnyModule`). Sin el módulo: 402. Todo el dinero se calcula en
+centavos (`services/rh/payrollMath.js`). No hay integración con ningún reloj
+checador en particular: queda una interfaz de importación con adaptadores
+(`services/rh/clockImport.js`, hoy solo el formato `generico`).
+
+**Tablas** (`007_rh_nomina.sql`, las 19 con RLS y llaves compuestas
+`(restaurant_id, …)`): `hr_areas`, `employees`, `employee_schedules`,
+`hr_clock_settings`, `time_entries`, `time_entry_audit`,
+`attendance_justifications`, `payroll_settings`, `hr_holidays`,
+`payroll_adjustments`, `payroll_periods`, `payroll_items`,
+`payroll_item_lines`, `payroll_receipt_signatures`, `recognition_settings`,
+`recognition_evaluations`, `recognition_tasks`, `recognition_months`,
+`recognition_results`. Al crear un restaurante se siembran las reglas de
+nómina y de reconocimiento (`seed_hr_defaults`).
+
+**Empleados y checador**
+- Empleado opcionalmente ligado a un usuario (para “Mi nómina”); puesto,
+  área, sucursal, salario diario o tarifa por hora, frecuencia de pago
+  (semanal, quincenal o mensual), ingreso/baja, NSS, RFC, CURP y datos
+  bancarios. Con historial no se borra: se da de baja.
+- Horario semanal por día (los días sin horario son descanso; turnos que
+  cruzan la medianoche permitidos).
+- Checador por sucursal (`/admin/checador`, pensado para una tableta): el
+  empleado toca su nombre y teclea su NIP de 4 a 6 dígitos (guardado con
+  bcrypt). 5 NIP erróneos bloquean 15 min (423). Entrada o salida se decide
+  sola; dos checadas en menos de 60 s se rechazan (409). Restricción opcional
+  por sucursal: radio en metros desde un punto (geolocalización del
+  navegador) y/o lista de IP o CIDR (403 fuera de rango).
+- Correcciones manuales (crear, editar, anular) solo admin/gerente, con
+  motivo obligatorio y bitácora antes/después (`time_entry_audit`). No se
+  puede tocar un día que ya está en una nómina aprobada (409
+  `PERIOD_LOCKED`).
+
+**Asistencia y prenómina**
+- Retardo después de la tolerancia (10 min por defecto); falta si un día
+  laboral no tiene checada; justificaciones por día con o sin goce de sueldo.
+- Periodo semanal (día de inicio configurable), quincenal (1–15 y 16–fin) o
+  mensual. Generar es idempotente: si el periodo ya existe se regresa el
+  mismo (200 en vez de 201) y recalcular reemplaza sus líneas.
+- Percepciones: sueldo por días pagados (o por horas), horas extra en
+  bloques (dobles hasta 9 h por semana, luego triples), festivo trabajado
+  (factor 2 por defecto), descanso trabajado, prima dominical (25 %), bonos de
+  puntualidad y de asistencia, bonos manuales. Deducciones: retardos (monto
+  fijo y/o proporcional a los minutos), faltas, descuentos y préstamos (el
+  préstamo se descuenta por periodo hasta saldar el total). El neto nunca es
+  negativo; lo que no alcanzó se reporta.
+- Festivos oficiales de México calculados por año (1 ene, primer lunes de
+  feb, tercer lunes de mar, 1 may, 16 sep, tercer lunes de nov, 25 dic y 1 oct
+  cada 6 años), más festivos propios del restaurante.
+- Flujo: borrador → aprobada (admin; los recibos quedan fijos y el empleado
+  los ve) → cerrada (admin; requiere todo pagado). Reabrir solo si nadie ha
+  firmado ni cobrado. Pago por recibo o “pagar pendientes”; con el módulo
+  `pos` se puede pagar **desde caja**, que registra una salida de efectivo en
+  el turno abierto.
+- Salidas: CSV (Excel, con BOM y fila de totales) y recibos imprimibles desde
+  el navegador. El empleado firma su recibo con una casilla de conformidad;
+  se guarda la hora, el neto firmado, la IP y el navegador.
+
+**Empleado del mes**
+- Puntaje de 0 a 100 = promedio ponderado de asistencia y puntualidad (de
+  `rh`), ventas (de `pos`, solo para usuarios mesero o cajero), evaluación
+  del gerente (0–100 por mes) y tareas completadas. Pesos por defecto 30/20/
+  20/20/10; un componente que no aplica a un empleado (sin módulo, sin
+  usuario o sin días laborales) se quita y los demás pesos se reparten.
+- Ranking por sucursal con desempates fijos (asistencia, puntualidad,
+  nombre, id): el mismo dato da siempre el mismo ganador. Mínimo de días
+  trabajados configurable para ganar.
+- Cierre del mes: manual (admin) o automático por el job horario
+  `empleado-del-mes` (cierra el mes anterior una sola vez). Guarda el ranking,
+  el ganador por sucursal y el premio; si “premio a nómina” está activo y hay
+  `rh`, el monto entra como bono en la siguiente nómina.
+- Muro (`/admin/muro`, cualquier rol): ganador del último mes y cómo va el
+  ranking del mes en curso; se actualiza cada minuto.
+
+| Método | Ruta | Roles |
+|---|---|---|
+| GET/POST/PATCH/DELETE | `/api/employees[/:id]` | admin, gerente (borrar: admin) |
+| PUT | `/api/employees/:id/schedule` · `/:id/pin` | admin, gerente |
+| GET | `/api/rh/kiosk/:branchId` | cualquier usuario de la sucursal |
+| POST | `/api/rh/kiosk/clock` (`{branch_id, employee_id, pin, latitude?, longitude?}`) | cualquier usuario de la sucursal |
+| GET/POST/PATCH | `/api/rh/time-entries[/:id]` · POST `/:id/void` · GET `/:id/audit` | admin, gerente |
+| POST | `/api/rh/time-entries/import` (`{adapter, branch_id, events}`) | admin |
+| GET | `/api/rh/attendance?from=&to=&branch_id=&employee_id=` | admin, gerente |
+| GET/POST/DELETE | `/api/rh/justifications[/:id]` | admin, gerente |
+| GET/POST/PATCH/DELETE | `/api/rh/areas[/:id]` | admin, gerente |
+| GET/PUT | `/api/rh/settings` | leer: admin, gerente; editar: admin |
+| GET/POST/DELETE | `/api/rh/holidays[/:date]` | ídem |
+| GET/PUT | `/api/rh/clock-settings[/:branchId]` | admin, gerente |
+| GET/POST/PATCH/DELETE | `/api/rh/adjustments[/:id]` | admin, gerente |
+| GET/POST | `/api/rh/payroll/periods` | admin, gerente |
+| GET | `/api/rh/payroll/periods/:id` · `/export.csv` · `/api/rh/payroll/items/:id` | admin, gerente |
+| POST | `/api/rh/payroll/periods/:id/calculate` | admin, gerente |
+| POST | `/api/rh/payroll/periods/:id/approve` · `/reopen` · `/close` | admin |
+| POST | `/api/rh/payroll/items/:id/pay` · `/periods/:id/pay-all` | admin, gerente |
+| GET | `/api/rh/me` · `/me/attendance` · `/me/receipts[/:id]` | el empleado ligado al usuario |
+| POST | `/api/rh/me/receipts/:id/sign` (`{accept: true}`) | ídem |
+| GET/PUT | `/api/recognition/settings` | leer: admin, gerente; editar: admin |
+| GET | `/api/recognition/ranking?year=&month=&branch_id=` · `/history` | admin, gerente |
+| POST | `/api/recognition/months/:year/:month/close` | admin |
+| GET/PUT | `/api/recognition/evaluations` | admin, gerente |
+| GET/POST | `/api/recognition/tasks` · POST `/tasks/:id/complete\|cancel` | admin, gerente |
+| GET | `/api/recognition/wall` | todos |
+
+Pantallas: `/admin/rh` (Empleados, Asistencia, Nómina, Configuración),
+`/admin/rh/nomina/:id` (prenómina y recibos), `/admin/checador`,
+`/admin/mi-nomina`, `/admin/empleado-del-mes` (ranking, evaluaciones,
+tareas, historial y reglas), `/admin/empleado-del-mes/empleados` (cuando
+solo se tiene `empleado_mes`) y `/admin/muro`.
+
 ## Pruebas
 
 ```bash
@@ -544,6 +658,18 @@ Qué cubren:
   plataforma no marca pedidos de otro; credenciales cifradas que nunca salen
   por la API; pedido pagado en línea de punta a punta; cancelación por falta
   de pago y pago tardío; pago al recibir sin cambios.
+- Fase 4 (`rh.test.js`, `recognition.test.js`, `payrollMath.test.js`,
+  `recognitionMath.test.js`): empleados, checadas, justificaciones,
+  ajustes, periodos, recibos, firmas, evaluaciones, tareas y resultados no se
+  cruzan entre restaurantes (API y RLS en las 19 tablas); 402 sin `rh` o sin
+  `empleado_mes`; cálculo de nómina con centavos explícitos (sueldo diario y
+  por hora, retardos proporcionales, faltas, horas extra dobles/triples,
+  festivos, prima dominical, bonos, préstamos con tope); generar un periodo
+  dos veces regresa el mismo y recalcular no duplica; NIP inválido, bloqueo
+  tras 5 intentos, sucursal ajena, geocerca, IP y checada duplicada;
+  corrección manual con motivo y bitácora; aprobar/reabrir/cerrar y pago
+  desde caja; firma del empleado; ranking determinista, cierre idempotente
+  (manual y por el job) y premio como bono de nómina.
 
 Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 
@@ -573,3 +699,7 @@ Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 - Cobro, pendiente: prorrateo al cambiar módulos o día de cobro, facturas
   de periodos pasados, cancelar facturas, reembolsos por API, envío real de
   correos/WhatsApp (hoy el notificador solo escribe en el log), CFDI.
+- RH, pendiente: adaptadores de relojes checadores concretos (hay interfaz
+  de importación genérica), horarios por fecha (hoy solo semanal), reportes
+  de incidencias, puntajes por estación/cocina en el empleado del mes, CFDI
+  de nómina, IMSS/ISR y notificaciones en tiempo real.
