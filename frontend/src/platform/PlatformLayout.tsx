@@ -1,4 +1,4 @@
-import { BrainCircuit, Building2, LogOut, Package, Receipt, Settings } from 'lucide-react';
+import { BrainCircuit, Building2, LogOut, Package, Receipt, Settings, Truck } from 'lucide-react';
 import { useEffect } from 'react';
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { resetBranding } from '../lib/branding';
@@ -8,6 +8,7 @@ const NAV = [
   { to: '/panel', label: 'Restaurantes', icon: Building2, end: true },
   { to: '/panel/modulos', label: 'Módulos y precios', icon: Package, end: false },
   { to: '/panel/cobros', label: 'Cobros', icon: Receipt, end: false },
+  { to: '/panel/flota', label: 'Flota', icon: Truck, end: false },
   { to: '/panel/ajustes', label: 'Ajustes', icon: Settings, end: false },
 ];
 

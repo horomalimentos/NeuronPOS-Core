@@ -58,6 +58,7 @@ export interface RestaurantModule {
 
 export interface DeliverySettings {
   mode: 'propio' | 'horom';
+  horom_enabled: boolean;
   horom_fee_type: 'fixed' | 'percent';
   horom_fee_value: string;
 }

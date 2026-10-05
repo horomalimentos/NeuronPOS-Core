@@ -279,6 +279,7 @@ function GeneralCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (bo
 
 function DeliveryCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (body: Record<string, unknown>) => Promise<boolean> }) {
   const [mode, setMode] = useState(detail.delivery.mode);
+  const [horom, setHorom] = useState(detail.delivery.horom_enabled);
   const [feeType, setFeeType] = useState(detail.delivery.horom_fee_type);
   const [feeValue, setFeeValue] = useState(String(Number(detail.delivery.horom_fee_value)));
   const [saving, setSaving] = useState(false);
@@ -288,30 +289,42 @@ function DeliveryCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (b
     <section className="card p-5">
       <h2 className="font-semibold text-white">Domicilios</h2>
       {!enabled && <p className="mt-1 text-xs text-amber-300">El módulo de domicilios no está habilitado.</p>}
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {(['propio', 'horom'] as const).map((m) => (
-          <button key={m} type="button" onClick={() => setMode(m)}
-            className={`rounded-xl border px-3 py-2 text-sm transition ${mode === m ? 'border-brand bg-brand/15 text-white' : 'border-gray-700 text-gray-400 hover:text-white'}`}>
-            {m === 'propio' ? 'Repartidores propios' : 'Repartidores Horom'}
-          </button>
-        ))}
-      </div>
-      {mode === 'horom' && (
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <Field label="Comisión">
-            <select className="input" value={feeType} onChange={(e) => setFeeType(e.target.value as 'fixed' | 'percent')}>
-              <option value="fixed">Fija por pedido ($)</option>
-              <option value="percent">Porcentaje (%)</option>
-            </select>
-          </Field>
-          <Field label={feeType === 'percent' ? 'Porcentaje' : 'Monto MXN'}>
-            <input className="input" type="number" min="0" max={feeType === 'percent' ? 100 : undefined} step="0.01" value={feeValue} onChange={(e) => setFeeValue(e.target.value)} />
-          </Field>
+      <div className="mt-4">
+        <div className="flex items-center gap-3 text-sm text-gray-200">
+          <Toggle checked={horom} label="Flota de NeuronPOS habilitada" onChange={(v) => {
+            setHorom(v);
+            if (!v) setMode('propio');
+          }} />
+          Flota de NeuronPOS habilitada
         </div>
+        <p className="mt-1 text-xs text-gray-500">Solo con la flota habilitada el restaurante puede elegir que la flota entregue sus pedidos.</p>
+      </div>
+      {horom && (
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {(['propio', 'horom'] as const).map((m) => (
+              <button key={m} type="button" onClick={() => setMode(m)}
+                className={`rounded-xl border px-3 py-2 text-sm transition ${mode === m ? 'border-brand bg-brand/15 text-white' : 'border-gray-700 text-gray-400 hover:text-white'}`}>
+                {m === 'propio' ? 'Repartidores propios' : 'Flota NeuronPOS'}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <Field label="Comisión">
+              <select className="input" value={feeType} onChange={(e) => setFeeType(e.target.value as 'fixed' | 'percent')}>
+                <option value="fixed">Fija por entrega ($)</option>
+                <option value="percent">Porcentaje del subtotal (%)</option>
+              </select>
+            </Field>
+            <Field label={feeType === 'percent' ? 'Porcentaje' : 'Monto MXN'}>
+              <input className="input" type="number" min="0" max={feeType === 'percent' ? 100 : undefined} step="0.01" value={feeValue} onChange={(e) => setFeeValue(e.target.value)} />
+            </Field>
+          </div>
+        </>
       )}
       <Button className="mt-4 w-full" variant="secondary" loading={saving} onClick={async () => {
         setSaving(true);
-        await onSave({ mode, horom_fee_type: feeType, horom_fee_value: Number(feeValue || 0) });
+        await onSave({ horom_enabled: horom, mode, horom_fee_type: feeType, horom_fee_value: Number(feeValue || 0) });
         setSaving(false);
       }}>Guardar domicilios</Button>
     </section>
