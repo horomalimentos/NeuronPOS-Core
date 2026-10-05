@@ -268,7 +268,7 @@ router.delete('/me/addresses/:id', authenticateCustomer, ah(async (req, res) => 
 // ---------------------------------------------------------------------------
 
 /** Lee y valida lo que manda el cliente (sin tocar la BD). */
-function readOrderInput(body = {}, customer) {
+function readOrderInput(body = {}, customer, { quote = false } = {}) {
   const orderType = oneOf(body.order_type, ['para_llevar', 'domicilio'], 'order_type');
   if (!orderType) throw badRequest('Elige si recoges en sucursal o a domicilio', 'MISSING_FIELD');
   const c = body.customer || {};
@@ -285,13 +285,14 @@ function readOrderInput(body = {}, customer) {
     save_address: body.save_address === true,
     payment: body.payment || {},
   };
-  if (!input.name) throw badRequest('Escribe tu nombre', 'CUSTOMER_REQUIRED');
-  if (!input.phone) throw badRequest('Escribe tu telefono para avisarte de tu pedido', 'CUSTOMER_REQUIRED');
+  // La cotizacion no necesita datos de contacto ni direccion (el envio es por sucursal).
+  if (!input.name && !quote) throw badRequest('Escribe tu nombre', 'CUSTOMER_REQUIRED');
+  if (!input.phone && !quote) throw badRequest('Escribe tu telefono para avisarte de tu pedido', 'CUSTOMER_REQUIRED');
   if (orderType === 'domicilio' && !input.address_id) {
     const a = body.address || {};
     input.address = str(a.address, { field: 'address', max: 400 }) || null;
     input.reference = str(a.reference, { field: 'reference', max: 200 }) || null;
-    if (!input.address) throw badRequest('Escribe la direccion de entrega', 'ADDRESS_REQUIRED');
+    if (!input.address && !quote) throw badRequest('Escribe la direccion de entrega', 'ADDRESS_REQUIRED');
   }
   if (input.address_id && !customer) throw badRequest('Inicia sesion para usar tus direcciones guardadas', 'ADDRESS_NOT_FOUND');
   return input;
@@ -369,7 +370,7 @@ async function readMods(req, input) {
 
 // Cotizacion: los totales que calcula el servidor (el carrito solo muestra estimados).
 router.post('/quote', optionalCustomer, ah(async (req, res) => {
-  const input = readOrderInput(req.body, req.customer);
+  const input = readOrderInput(req.body, req.customer, { quote: true });
   const mods = await readMods(req, input);
   const p = await withTenant(req.tenant.id, (db) => prepareOrder(db, req, input, mods));
   res.json({
