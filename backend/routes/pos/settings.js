@@ -84,13 +84,21 @@ router.post('/payment-methods', requireRole(...ROLES.manage), ah(async (req, res
 
 router.patch('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
   requireUuid(req.params.id);
-  const set = buildSet(methodFields(req.body || {}, false), 3);
+  const fields = methodFields(req.body || {}, false);
+  const set = buildSet(fields, 3);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
-  const method = await withTenant(req.tenant.id, async (db) => (await db.query(
-    `UPDATE payment_methods SET ${set.sql}, updated_at = now()
-      WHERE id = $1 AND restaurant_id = $2 RETURNING ${METHOD_COLS}`,
-    [req.params.id, req.tenant.id, ...set.values],
-  )).rows[0]);
+  const method = await withTenant(req.tenant.id, async (db) => {
+    const cur = (await db.query('SELECT kind FROM payment_methods WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id])).rows[0];
+    // "Clip en linea" lo usa el pago en linea: se puede renombrar, no cambiar de tipo.
+    if (cur?.kind === 'en_linea' && fields.kind !== undefined) {
+      throw badRequest('El metodo de pago en linea no puede cambiar de tipo', 'ONLINE_METHOD_LOCKED');
+    }
+    return (await db.query(
+      `UPDATE payment_methods SET ${set.sql}, updated_at = now()
+        WHERE id = $1 AND restaurant_id = $2 RETURNING ${METHOD_COLS}`,
+      [req.params.id, req.tenant.id, ...set.values],
+    )).rows[0];
+  });
   if (!method) throw notFound('Metodo de pago no encontrado', 'PAYMENT_METHOD_NOT_FOUND');
   res.json({ payment_method: method });
 }));

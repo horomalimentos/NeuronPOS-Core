@@ -31,7 +31,11 @@ export const METHOD_KIND_LABEL: Record<MethodKind, string> = {
   tarjeta: 'Tarjeta',
   transferencia: 'Transferencia',
   otro: 'Otro',
+  en_linea: 'En línea (Clip)',
 };
+
+/** Tipos que se pueden elegir al crear o editar un método (el de Clip lo pone el sistema). */
+export const EDITABLE_METHOD_KINDS: MethodKind[] = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
 
 const can = (roles: Role[]) => (role: Role) => roles.includes(role);
 export const posCan = {

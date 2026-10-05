@@ -1,4 +1,4 @@
-import { ArrowLeft, Banknote, CreditCard, Loader2, MapPin, ShoppingBag, Store, Truck } from 'lucide-react';
+import { ArrowLeft, Banknote, CreditCard, Globe, Loader2, MapPin, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { errorMessage, portalApi } from '../lib/api';
@@ -8,14 +8,17 @@ import { hasModule, useSiteCtx } from './context';
 import { openLabel } from './hours';
 import { CartLines, Notice } from './OrderPage';
 import { pickBranch } from './portalLib';
-import type { Address, CustomerOrder, PortalConfig, Quote } from './types';
+import type { Address, CustomerOrder, PaymentStart, PortalConfig, Quote } from './types';
 
 type OrderType = 'para_llevar' | 'domicilio';
 
 /**
  * Checkout: sucursal, recoger o domicilio, datos de contacto (cuenta o
- * invitado), direccion, pago al recibir y notas. Los totales los calcula el
- * servidor (/portal/quote); el pedido se crea con POST /portal/orders.
+ * invitado), direccion, forma de pago (al recibir, o en linea con Clip si
+ * el restaurante lo tiene) y notas. Los totales los calcula el servidor
+ * (/portal/quote); el pedido se crea con POST /portal/orders. Con Clip el
+ * servidor regresa la liga de pago y el cliente se va a Clip; al volver ve
+ * /pago/resultado.
  */
 export default function CheckoutPage() {
   const { site, customer } = useSiteCtx();
@@ -31,6 +34,7 @@ export default function CheckoutPage() {
   const [reference, setReference] = useState('');
   const [saveAddress, setSaveAddress] = useState(true);
   const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
+  const [provider, setProvider] = useState<'contra_entrega' | 'clip'>('contra_entrega');
   const [payWith, setPayWith] = useState('');
   const [notes, setNotes] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -60,6 +64,8 @@ export default function CheckoutPage() {
   }, [customer]);
 
   const branch = config?.branches.find((b) => b.id === cart.branch_id) || null;
+  const clipOption = config?.payment_options.find((o) => o.code === 'clip') || null;
+  const payOnline = provider === 'clip' && Boolean(clipOption);
   const deliveryOk = Boolean(config?.settings.allow_delivery && branch?.delivery_available);
   const type: OrderType = orderType === 'domicilio' && !deliveryOk ? 'para_llevar' : orderType;
   const items = useMemo(() => cart.lines.map((l) => ({
@@ -104,7 +110,7 @@ export default function CheckoutPage() {
     setSending(true);
     try {
       const usingSaved = type === 'domicilio' && customer && addressId !== 'new';
-      const res = await portalApi<{ order: CustomerOrder }>('/portal/orders', {
+      const res = await portalApi<{ order: CustomerOrder; payment: PaymentStart }>('/portal/orders', {
         method: 'POST',
         body: {
           branch_id: cart.branch_id,
@@ -115,11 +121,17 @@ export default function CheckoutPage() {
           address: type === 'domicilio' && !usingSaved ? { address: address.trim(), reference: reference.trim() || null } : undefined,
           save_address: Boolean(customer && saveAddress && type === 'domicilio' && !usingSaved),
           notes: notes.trim() || null,
-          payment: { method, pay_with: method === 'efectivo' && payWith ? Number(payWith) : null },
+          payment: payOnline
+            ? { provider: 'clip' }
+            : { provider: 'contra_entrega', method, pay_with: method === 'efectivo' && payWith ? Number(payWith) : null },
         },
       });
       cartStore.clear();
       recentOrders.add({ token: res.order.token, folio: res.order.folio, created_at: res.order.created_at });
+      if (res.payment?.action === 'redirect' && res.payment.url) {
+        window.location.assign(res.payment.url);
+        return;
+      }
       navigate(`/pedido/${res.order.token}`, { replace: true });
     } catch (err) {
       setError(errorMessage(err));
@@ -217,13 +229,34 @@ export default function CheckoutPage() {
           )}
 
           <section className="card-light p-5">
-            <h2 className="mb-1 font-bold">Pago al {type === 'domicilio' ? 'recibir' : 'recoger'}</h2>
-            <p className="mb-3 text-sm text-gray-500">Pagas cuando recibes tu pedido.</p>
-            <div className="flex gap-3">
-              <button type="button" className={choice(method === 'efectivo')} onClick={() => setMethod('efectivo')}><Banknote className="h-5 w-5" /> Efectivo</button>
-              <button type="button" className={choice(method === 'tarjeta')} onClick={() => setMethod('tarjeta')}><CreditCard className="h-5 w-5" /> Tarjeta</button>
-            </div>
-            {method === 'efectivo' && (
+            {clipOption && (
+              <>
+                <h2 className="mb-3 font-bold">¿Cómo quieres pagar?</h2>
+                <div className="mb-4 flex flex-col gap-3 sm:flex-row">
+                  <button type="button" className={choice(!payOnline)} onClick={() => setProvider('contra_entrega')}>
+                    <Wallet className="h-5 w-5" /> Al {type === 'domicilio' ? 'recibir' : 'recoger'}
+                  </button>
+                  <button type="button" className={choice(payOnline)} onClick={() => setProvider('clip')}>
+                    <Globe className="h-5 w-5" /> {clipOption.name}
+                  </button>
+                </div>
+              </>
+            )}
+            {payOnline ? (
+              <p className="text-sm text-gray-600">
+                Te llevaremos a la página segura de Clip para pagar con tarjeta de crédito o débito. Tu pedido se envía al restaurante en cuanto se confirme el pago.
+              </p>
+            ) : (
+              <>
+                {!clipOption && <h2 className="mb-1 font-bold">Pago al {type === 'domicilio' ? 'recibir' : 'recoger'}</h2>}
+                <p className="mb-3 text-sm text-gray-500">Pagas cuando recibes tu pedido.</p>
+                <div className="flex gap-3">
+                  <button type="button" className={choice(method === 'efectivo')} onClick={() => setMethod('efectivo')}><Banknote className="h-5 w-5" /> Efectivo</button>
+                  <button type="button" className={choice(method === 'tarjeta')} onClick={() => setMethod('tarjeta')}><CreditCard className="h-5 w-5" /> Tarjeta</button>
+                </div>
+              </>
+            )}
+            {!payOnline && method === 'efectivo' && (
               <label className="mt-3 block"><span className="label-light">¿Con cuánto pagas? (opcional, para llevar cambio)</span>
                 <input className="input-light" type="number" min={0} step="0.01" inputMode="decimal" value={payWith} onChange={(e) => setPayWith(e.target.value)} />
               </label>
@@ -251,7 +284,7 @@ export default function CheckoutPage() {
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
               <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available}>
-                {sending && <Loader2 className="h-4 w-4 animate-spin" />} Hacer pedido {quote && `· ${formatMXN(quote.total)}`}
+                {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
               </button>
             </div>
           </div>

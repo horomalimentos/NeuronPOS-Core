@@ -39,7 +39,7 @@ const ORDER_SELECT = `
          o.cancelled_at, o.cancel_reason, o.created_at, o.updated_at,
          o.source, o.online_status, o.customer_id, o.delivery_fee, o.delivery_reference,
          o.payment_provider, o.payment_preference, o.pay_with, o.accepted_at, o.estimated_ready_at,
-         o.dispatched_at, o.public_token
+         o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN users u ON u.id = o.created_by AND u.restaurant_id = o.restaurant_id`;
@@ -602,6 +602,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
       if (!m || !m.active) throw badRequest('Metodo de pago no valido', 'PAYMENT_METHOD_NOT_FOUND');
+      if (m.kind === 'en_linea') throw badRequest('Los pagos en linea solo los registra Clip', 'ONLINE_METHOD_NOT_ALLOWED');
       return { ...p, kind: m.kind };
     });
     const remaining = (toCents(o.total) - toCents(o.paid_amount)) / 100;

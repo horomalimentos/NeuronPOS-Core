@@ -75,7 +75,8 @@ export interface DiningTable {
 
 export type OrderType = 'comedor' | 'para_llevar' | 'domicilio';
 export type OrderStatus = 'abierta' | 'enviada' | 'lista' | 'pagada' | 'cancelada';
-export type MethodKind = 'efectivo' | 'tarjeta' | 'transferencia' | 'otro';
+// en_linea = "Clip en línea": lo registra el pago en línea del portal, nunca la caja.
+export type MethodKind = 'efectivo' | 'tarjeta' | 'transferencia' | 'otro' | 'en_linea';
 
 export interface OrderItemModifier {
   modifier_id: string | null;
@@ -156,6 +157,9 @@ export interface Order {
   accepted_at?: string | null;
   estimated_ready_at?: string | null;
   dispatched_at?: string | null;
+  // Pago en linea con Clip: pendiente (no llega aqui), pagado o cancelado.
+  payment_provider?: string | null;
+  online_payment_status?: 'pendiente' | 'pagado' | 'cancelado' | null;
 }
 
 export type OnlineStatus = 'pendiente' | 'aceptada' | 'rechazada';

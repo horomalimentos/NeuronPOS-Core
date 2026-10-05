@@ -9,14 +9,17 @@ Este repo es independiente del NeuronPOS de Horom Sushi: base de datos propia,
 proceso pm2 propio y dominio propio. Usa el mismo stack (React + Vite +
 TypeScript + Tailwind, Express ESM + `pg`, Postgres).
 
-> **Estado: Fase 2 (sitio web y pedidos en línea).** Sobre la fase 1a
+> **Estado: Fase 3 (cobro con Clip).** Sobre la fase 1a
 > (esquema multi-restaurante, resolución del restaurante, autenticación,
-> módulos, Panel NeuronPOS, sucursales y usuarios) y la 1b (POS: menú con
-> modificadores, mesas, órdenes, cobro, caja, cocina y ticket), cada
-> restaurante tiene ahora su sitio público, horarios por sucursal y un portal
-> de clientes con pedidos en línea que llegan al POS. Ver
-> [Punto de venta](#punto-de-venta-módulo-pos) y
-> [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2).
+> módulos, Panel NeuronPOS, sucursales y usuarios), la 1b (POS: menú con
+> modificadores, mesas, órdenes, cobro, caja, cocina y ticket) y la 2 (sitio
+> público, horarios y portal de clientes con pedidos en línea), la plataforma
+> cobra ahora la mensualidad de cada restaurante con su cuenta de Clip
+> (facturas, cobranza, suspensión y reactivación automáticas) y cada
+> restaurante puede cobrar sus pedidos en línea con **su propia** cuenta de
+> Clip. Ver [Punto de venta](#punto-de-venta-módulo-pos),
+> [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2) y
+> [Cobro con Clip](#cobro-con-clip-fase-3).
 
 ## Estructura
 
@@ -117,13 +120,23 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `ALLOW_SLUG_HEADER` | Acepta el header `X-Restaurant-Slug` | `true` fuera de producción |
 | `TRIAL_DAYS` | Días de prueba al crear un restaurante en `trial` | `14` |
 | `CORS_ORIGINS` | Orígenes permitidos separados por coma | en dev, cualquiera |
+| `PUBLIC_API_URL` | URL pública del backend; con ella se arman las URLs de webhook que se dan de alta en Clip | `http://localhost:8100` |
+| `RESTAURANT_URL_TEMPLATE` | URL del sitio de un restaurante (a donde regresa Clip); `{slug}` y `{domain}` se reemplazan, un dominio propio usa `https://<dominio>` | `https://{slug}.{domain}` |
+| `CLIP_API_KEY`, `CLIP_SECRET_KEY` | Credenciales de la cuenta de Clip **de la plataforma** (cobro de mensualidades) | — |
+| `CLIP_WEBHOOK_SECRET` | Si se define, los webhooks de la plataforma sin firma `x-clip-signature` válida se rechazan | — |
+| `CLIP_API_URL` | API de Clip | `https://api.payclip.com` |
+| `PAYMENT_SECRETS_KEY` | Llave de 32 bytes (base64 o hex) para cifrar las credenciales de Clip de cada restaurante. **No se cambia** una vez en uso | — |
+| `BILLING_TIMEZONE` | Zona horaria de día de cobro, vencimiento y gracia | `America/Mexico_City` |
+| `BILLING_AUTO` | `true` = generar facturas, marcar vencidas y suspender solas (cada hora) | `true` |
+| `JOBS_ENABLED` | Jobs en segundo plano (cobro, conciliación con Clip, pedidos sin pagar) | `true` (`false` en pruebas) |
 
 ## Aislamiento entre restaurantes
 
 Una sola base de datos compartida. Toda tabla que pertenece a un restaurante
 tiene `restaurant_id` (`restaurant_modules`, `delivery_settings`, `branches`,
 `users`, `user_branches`, `subscription_invoices`, las 17 tablas del POS de
-`004_pos.sql` y las 8 de la fase 2 en `005_sitio_portal.sql`). La protección
+`004_pos.sql`, las 8 de la fase 2 en `005_sitio_portal.sql` y las de la fase 3 en
+`006_cobro_clip.sql`). La protección
 tiene tres capas:
 
 1. **Resolución del restaurante** (`middleware/tenant.js`), en este orden:
@@ -195,8 +208,8 @@ restaurantes suspendidos.
 - el restaurante está en prueba y la prueba ya venció (`TRIAL_EXPIRED`),
 - el módulo no está contratado o ya venció (`MODULE_NOT_ENABLED`).
 
-`subscription_invoices` queda listo para la facturación, sin proveedor de
-pagos todavía.
+El cobro de esa mensualidad (facturas, Clip, suspensión por falta de pago)
+está en [Cobro con Clip](#cobro-con-clip-fase-3).
 
 ## API
 
@@ -383,6 +396,109 @@ Reglas:
 Todo `/api/portal/*` pasa por `requireModule('portal')` (402) y
 `/api/public/landing` por `requireModule('landing')`.
 
+## Cobro con Clip (fase 3)
+
+Migración `006_cobro_clip.sql`. Hay **dos cuentas de Clip distintas**:
+
+| | Cuenta | Para qué | Credenciales |
+|---|---|---|---|
+| A | La de la plataforma (Alex) | Cobrar la mensualidad a cada restaurante | Variables `CLIP_*` del servidor |
+| B | La de cada restaurante | Cobrar sus pedidos en línea | Las captura el admin del restaurante; se guardan cifradas |
+
+Integración con Clip (`services/clip/`): `POST /v2/checkout` crea una liga de
+pago (Basic `base64(API_KEY:SECRET_KEY)`) y `GET /v2/checkout/{id}` es la
+fuente de verdad. Como en el NeuronPOS original, **el cuerpo del webhook no
+se cree**: solo dispara la consulta a Clip con las credenciales de esa
+cuenta, y se valida que el monto y la moneda coincidan. Además, si hay
+webhook secret configurado, la firma HMAC-SHA256 (`x-clip-signature`, sobre
+el cuerpo crudo) es obligatoria. Todas las ligas viven en `clip_checkouts`
+(propósito `suscripcion` o `pedido`); aplicar un pago es idempotente
+(`applied_at`), y un reconciliador cada 5 minutos revisa las ligas
+pendientes por si un webhook no llegó. Cada webhook queda en
+`clip_webhook_events` (con RLS).
+
+### A. Mensualidad de los restaurantes
+
+- **Factura mensual** (`subscription_invoices` + `subscription_invoice_items`):
+  una línea por módulo vigente con precio de catálogo o especial y descuento,
+  en centavos. Periodo de `billing_day` (1 a 31, por restaurante; si no hay,
+  el día en que se activó; en meses cortos se recorre al último día) al día
+  anterior del siguiente cobro; la fecha límite es el inicio del periodo.
+  Una factura por restaurante y periodo (idempotente, también si el job
+  corre dos veces). Mensualidad 0 = factura en ceros marcada pagada
+  (`sin_cargo`).
+- **Prueba**: al vencer `trial_ends_at`, el restaurante pasa a `active` y se
+  genera su primera factura ese mismo día.
+- **Cobranza** (`platform_settings.grace_days`, default 5): pasada la fecha
+  límite la factura queda `overdue` y el restaurante ve un aviso; pasados
+  los días de gracia se suspende solo (`suspended_reason = 'falta_pago'`).
+  Al pagar (Clip o manual) se reactiva solo, pero **solo** si la suspensión
+  fue por falta de pago: una suspensión manual del Panel no se levanta sola.
+  Si Alex reactiva a mano a un moroso, tiene la gracia de nuevo
+  (`dunning_grace_until`) antes de volver a suspenderse.
+- **Restaurante suspendido**: la API sigue respondiendo 402 en los módulos y
+  el admin solo puede entrar a **Mi suscripción** (`/admin/suscripcion`) para
+  pagar.
+- **Avisos**: `services/notifier.js` es la interfaz de notificaciones
+  (factura nueva, vencida, suspendido, pagado). Hoy solo escribe en el log;
+  ahí se conectará correo/WhatsApp.
+
+### B. Pagos de pedidos en línea
+
+- El admin del restaurante captura en **Pedidos en línea → Pago en línea
+  con Clip** su API key, secret key y (opcional) webhook secret. Se cifran
+  con AES-256-GCM (`PAYMENT_SECRETS_KEY`, ligadas al restaurante y al
+  campo) y **nunca** se regresan por la API: solo "configurada / no".
+- Con Clip configurado y activado, el checkout ofrece **Pagar en línea con
+  Clip**. El pedido queda `online_payment_status = 'pendiente'`: no llega al
+  POS hasta que Clip confirma. Al confirmarse se registra el pago con el
+  método **Clip en línea** (tipo `en_linea`, sin turno de caja y fuera del
+  corte) y sigue el flujo normal (o entra directo a cocina con aceptación
+  automática). En el POS se entrega con **Entregar** sin cobrar.
+- Si no se paga en `payment_timeout_minutes` (default 30) el pedido se
+  cancela solo; si Clip confirmó justo antes, se cobra en lugar de
+  cancelarse. Un pago que llega después de cancelado queda marcado
+  (`late_payment`) para reembolsarlo a mano.
+- Al volver de Clip el cliente llega a `/pago/resultado`, que le pide al
+  servidor conciliar (no se cree en la URL). **Pago al recibir** sigue igual.
+
+### Qué configura Alex
+
+1. En el servidor: `CLIP_API_KEY`, `CLIP_SECRET_KEY` (de
+   <https://dashboard.payclip.com>, Desarrolladores), `CLIP_WEBHOOK_SECRET`
+   (recomendado), `PAYMENT_SECRETS_KEY` (generar una vez y respaldar),
+   `PUBLIC_API_URL`, `RESTAURANT_URL_TEMPLATE`; opcionales
+   `BILLING_TIMEZONE`, `BILLING_AUTO`, `JOBS_ENABLED`.
+2. En **su** dashboard de Clip, webhook de la plataforma:
+   `<PUBLIC_API_URL>/api/webhooks/clip/plataforma`.
+3. A cada restaurante que cobre en línea: en **su** dashboard de Clip, webhook
+   `<PUBLIC_API_URL>/api/webhooks/clip/r/<slug-del-restaurante>` (también
+   acepta el id). La pantalla de pago en línea del restaurante y **Panel →
+   Ajustes** muestran las URLs exactas.
+4. En **Panel → Ajustes**: días de gracia. En el detalle de cada restaurante:
+   día de cobro.
+
+Clip solo tiene ambiente de producción: probar con montos pequeños.
+
+### API de la fase 3
+
+| Método | Ruta | Quién | Descripción |
+|---|---|---|---|
+| POST | `/api/webhooks/clip/plataforma` | Clip | Webhook de la cuenta de la plataforma |
+| POST | `/api/webhooks/clip/r/:slug-o-id` | Clip | Webhook de la cuenta de un restaurante |
+| GET | `/api/platform/invoices?status=&restaurant_id=` | Panel | Facturas y totales (por cobrar, vencido, cobrado del mes) |
+| GET | `/api/platform/invoices/:id` | Panel | Detalle con líneas y ligas |
+| POST | `/api/platform/restaurants/:id/invoices` | Panel | Generar cobro ahora (idempotente por periodo) |
+| POST | `/api/platform/invoices/:id/mark-paid` | Panel | Pago manual con nota obligatoria; reactiva si aplica |
+| POST | `/api/platform/invoices/:id/resend` | Panel | Reenviar liga (nueva si la anterior venció) |
+| POST | `/api/platform/billing/run` | Panel | Correr el ciclo de cobro ya |
+| GET/PUT | `/api/platform/settings` | Panel | Días de gracia; Clip solo como configurado / no |
+| GET | `/api/subscription` | admin, gerente | Mi suscripción: módulos, total, facturas, avisos (también suspendido) |
+| POST | `/api/subscription/invoices/:id/pay` · `/verify` | admin, gerente | Liga de Clip / conciliar al regresar |
+| GET/PUT | `/api/online/payments` | lectura admin y gerente; escritura admin | Credenciales de Clip del restaurante (nunca se regresan) y minutos para pagar |
+| POST | `/api/portal/track/:token/pay` · `/verify-payment` | cliente | Liga para terminar de pagar / conciliar |
+| POST | `/api/pos/online-orders/:id/deliver` | admin, gerente, cajero | Entregar un pedido ya pagado en línea |
+
 ## Pruebas
 
 ```bash
@@ -418,6 +534,16 @@ Qué cubren:
   mínimo; flujo pedido web → aceptar → cocina → lista → reparto → cobro en
   caja; rechazo con motivo; aceptación automática; horarios nocturnos, 24 h,
   días cerrados y zona horaria.
+- Fase 3 (`cobro.test.js`, `clip.test.js`, `billing.test.js`), con Clip
+  simulado (`clipMock.js`; las pruebas nunca llaman a la API real):
+  factura con precio especial y descuento e idempotente; periodos y día de
+  cobro; vencida → suspendida tras la gracia → pagar la reactiva; pago
+  manual con nota; suspensión manual no se levanta sola; fin de prueba;
+  reenviar liga; reconciliador sin webhook; firma de webhook inválida
+  rechazada; monto distinto no paga; un webhook de un restaurante o de la
+  plataforma no marca pedidos de otro; credenciales cifradas que nunca salen
+  por la API; pedido pagado en línea de punta a punta; cancelación por falta
+  de pago y pago tardío; pago al recibir sin cambios.
 
 Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 
@@ -441,7 +567,9 @@ Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
   artículo, reportes de ventas, inventario y recetas, promociones.
 - Domicilios: repartidores, estados de entrega, comisión por pedido y zonas
   o costo de envío por distancia.
-- Portal, pendiente: pago en línea (pasarela), programar pedidos para más
+- Portal, pendiente: programar pedidos para más
   tarde, subir imágenes (hoy son URLs), notificaciones por WhatsApp/correo y
   push en lugar de sondeo, recuperar contraseña, lealtad/puntos.
-- Facturación automática con proveedor de pagos.
+- Cobro, pendiente: prorrateo al cambiar módulos o día de cobro, facturas
+  de periodos pasados, cancelar facturas, reembolsos por API, envío real de
+  correos/WhatsApp (hoy el notificador solo escribe en el log), CFDI.

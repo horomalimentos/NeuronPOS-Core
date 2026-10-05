@@ -1,12 +1,13 @@
 import {
-  Building2, ChefHat, Globe, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, ShoppingBag, Store, UtensilsCrossed, Users, Wallet,
+  Building2, ChefHat, CreditCard, Globe, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, ShoppingBag, Store,
+  UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
-import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { applyBranding } from '../lib/branding';
-import { ROLE_LABEL } from '../lib/format';
+import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { posCan } from '../pos/lib';
 import type { Me } from '../lib/types';
@@ -40,10 +41,15 @@ export default function AdminLayout() {
   };
 
   const role = me.user.role;
-  const has = (code: string) => Boolean(me.modules.find((m) => m.code === code)?.enabled);
+  // Suspendido o prueba vencida: solo "Mi suscripcion" (para pagar).
+  const blocked = Boolean(me.restaurant.access_error);
+  const SUBSCRIPTION = '/admin/suscripcion';
+  const onSubscription = location.pathname.replace(/\/$/, '') === SUBSCRIPTION;
+  if (blocked && canManage(role) && !onSubscription) return <Navigate to={SUBSCRIPTION} replace />;
+  const has = (code: string) => !blocked && Boolean(me.modules.find((m) => m.code === code)?.enabled);
   const hasPos = has('pos');
   const nav = [
-    { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: true },
+    { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: !blocked },
     { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
@@ -52,8 +58,9 @@ export default function AdminLayout() {
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
-    { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: canManage(role) },
-    { to: '/admin/usuarios', label: 'Usuarios', icon: Users, end: false, show: canManage(role) },
+    { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: !blocked && canManage(role) },
+    { to: '/admin/usuarios', label: 'Usuarios', icon: Users, end: false, show: !blocked && canManage(role) },
+    { to: SUBSCRIPTION, label: 'Mi suscripción', icon: CreditCard, end: false, show: canManage(role) },
   ].filter((n) => n.show);
   // La pantalla de venta y la de cocina usan todo el ancho (tabletas).
   const wide = ['/admin/pos', '/admin/cocina'].includes(location.pathname.replace(/\/$/, ''));
@@ -89,9 +96,34 @@ export default function AdminLayout() {
         </div>
       </header>
       <main className={wide ? 'px-3 py-4 sm:px-4' : 'mx-auto max-w-6xl px-4 py-8'}>
-        {me.restaurant.access_error && <div className="mb-6"><Alert kind="warning">{me.restaurant.access_error.error}</Alert></div>}
-        <Outlet context={ctx} />
+        {blocked && !onSubscription && (
+          <div className="mb-6">
+            <Alert kind="warning">
+              {me.restaurant.access_error?.error}
+              {!canManage(role) && ' Pide a un administrador que entre a "Mi suscripción" para pagar.'}
+            </Alert>
+          </div>
+        )}
+        {!blocked && <BillingBanner me={me} show={canManage(role) && !onSubscription} />}
+        {blocked && !canManage(role) ? null : <Outlet context={ctx} />}
       </main>
+    </div>
+  );
+}
+
+/** Aviso de pago pendiente o vencido (admin y gerente). */
+function BillingBanner({ me, show }: { me: Me; show: boolean }) {
+  const inv = me.billing?.next_invoice;
+  if (!show || !inv) return null;
+  const overdue = me.billing?.overdue;
+  return (
+    <div className="mb-6">
+      <Alert kind={overdue ? 'error' : 'warning'}>
+        {overdue
+          ? <>Tu pago de {formatMXN(inv.amount_mxn)} está vencido{inv.suspends_on && <>; el servicio se suspende el {formatDay(inv.suspends_on)}</>}.</>
+          : <>Tienes un pago pendiente de {formatMXN(inv.amount_mxn)} con fecha límite {formatDay(inv.due_date)}.</>}
+        {' '}<Link to="/admin/suscripcion" className="font-semibold underline">Pagar ahora</Link>
+      </Alert>
     </div>
   );
 }

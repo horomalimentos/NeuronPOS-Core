@@ -2,7 +2,7 @@
 // (no suspendido / prueba vigente) y tiene el modulo contratado.
 // Responde 402 con mensaje en espanol en caso contrario.
 import { withTenant } from '../config/database.js';
-import { checkModuleAccess } from '../services/access.js';
+import { checkModuleAccess, checkRestaurantAccess } from '../services/access.js';
 
 export async function loadModuleRow(restaurantId, moduleCode) {
   return withTenant(restaurantId, async (db) => {
@@ -32,4 +32,18 @@ export function requireModule(moduleCode) {
       next(err);
     }
   };
+}
+
+/**
+ * Rutas de administracion que no dependen de un modulo (sucursales,
+ * usuarios): un restaurante suspendido o con la prueba vencida solo puede
+ * entrar a "Mi suscripcion" para pagar. Responde 402 igual que requireModule.
+ */
+export function requireOperational(req, res, next) {
+  const denied = checkRestaurantAccess(req.tenant);
+  if (denied) {
+    const { status, ...body } = denied;
+    return res.status(status).json(body);
+  }
+  next();
 }

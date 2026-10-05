@@ -1,27 +1,22 @@
 // Formas de pago de los pedidos en linea.
 //
-// Hoy solo existe "contra_entrega": el cliente paga al recoger o al recibir
-// (efectivo o tarjeta) y el cajero lo cobra en el POS con el flujo normal de
-// pagos (routes/pos/orders.js), dentro de un turno de caja.
+// - "contra_entrega": el cliente paga al recoger o al recibir (efectivo o
+//   tarjeta) y el cajero lo cobra en el POS con el flujo normal de pagos
+//   (routes/pos/orders.js), dentro de un turno de caja.
+// - "clip" (fase 3): pago en linea con la cuenta de Clip del restaurante. El
+//   pedido queda esperando el pago (no llega al POS) y el cliente va a la liga
+//   de Clip; el webhook o el reconciliador registran el pago
+//   (services/restaurantPayments.js). Solo se ofrece si el restaurante
+//   configuro sus credenciales y encendio "pago en linea".
 //
-// Para conectar una pasarela despues (Mercado Pago, Stripe, Conekta...) se
-// registra otro proveedor con la misma forma:
-//
+// Cada proveedor tiene la misma forma:
 //   {
-//     code: 'mercadopago',
-//     name: 'Pago en línea',
-//     // Valida lo que manda el cliente; regresa los campos para la orden.
+//     code, name, online (true = se paga antes de preparar),
 //     validate(input, { total }) -> { payment_preference, pay_with },
-//     // Despues de crear la orden (dentro de la transaccion). Una pasarela
-//     // crearia aqui el cobro y regresaria { action: 'redirect', url }; la
-//     // orden quedaria pendiente hasta que su webhook confirme el pago.
-//     async start({ db, restaurantId, order }) -> { action: 'none' | 'redirect', url? },
+//     async start({ db, tenant, order, creds }) -> { action: 'none' | 'redirect', url? },
 //   }
-//
-// y se habilita en ONLINE_PROVIDERS. El webhook registraria el pago en
-// order_payments (con un metodo de pago "en linea" y sin turno de caja, lo
-// que requerira ajustar ese esquema cuando llegue).
 import { HttpError } from '../utils/http.js';
+import { createOrderCheckout } from './restaurantPayments.js';
 
 const invalid = (msg) => new HttpError(400, msg, 'INVALID_PAYMENT');
 
@@ -44,20 +39,36 @@ const payOnDelivery = {
     }
     return { payment_preference: method, pay_with: payWith };
   },
+  online: false,
   async start() {
     return { action: 'none' };
   },
 };
 
-export const ONLINE_PROVIDERS = { [payOnDelivery.code]: payOnDelivery };
+const clipOnline = {
+  code: 'clip',
+  name: 'Pagar en línea con Clip',
+  online: true,
+  methods: [{ code: 'tarjeta', name: 'Tarjeta de crédito o débito' }],
+  validate() {
+    return { payment_preference: null, pay_with: null };
+  },
+  async start({ db, tenant, order, creds }) {
+    return createOrderCheckout(db, tenant, order, creds);
+  },
+};
+
+export const ONLINE_PROVIDERS = { [payOnDelivery.code]: payOnDelivery, [clipOnline.code]: clipOnline };
 export const DEFAULT_PROVIDER = payOnDelivery.code;
 
-export function getPaymentProvider(code = DEFAULT_PROVIDER) {
+/** clipAvailable: el restaurante tiene Clip configurado y "pago en linea" encendido. */
+export function getPaymentProvider(code = DEFAULT_PROVIDER, { clipAvailable = false } = {}) {
   const p = ONLINE_PROVIDERS[code];
-  if (!p) throw invalid('Forma de pago no disponible');
+  if (!p || (p.code === 'clip' && !clipAvailable)) throw invalid('Forma de pago no disponible');
   return p;
 }
 
 /** Lo que el portal muestra en el checkout. */
-export const publicPaymentOptions = () => Object.values(ONLINE_PROVIDERS)
-  .map((p) => ({ code: p.code, name: p.name, methods: p.methods }));
+export const publicPaymentOptions = ({ clipAvailable = false } = {}) => Object.values(ONLINE_PROVIDERS)
+  .filter((p) => p.code !== 'clip' || clipAvailable)
+  .map((p) => ({ code: p.code, name: p.name, online: p.online, methods: p.methods }));

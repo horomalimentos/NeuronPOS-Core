@@ -9,6 +9,14 @@ export function checkRestaurantAccess(restaurant, now = new Date()) {
   if (!restaurant) {
     return { status: 404, code: 'RESTAURANT_NOT_FOUND', error: 'Restaurante no encontrado' };
   }
+  if (restaurant.status === 'suspended' && restaurant.suspended_reason === 'falta_pago') {
+    return {
+      status: PAYMENT_REQUIRED,
+      code: 'RESTAURANT_SUSPENDED',
+      reason: 'falta_pago',
+      error: 'Tu servicio está suspendido por falta de pago. Entra a "Mi suscripción" para pagar y se reactiva al instante.',
+    };
+  }
   if (restaurant.status === 'suspended') {
     return {
       status: PAYMENT_REQUIRED,

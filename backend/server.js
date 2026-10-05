@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { checkDbRole } from './config/database.js';
 import { env } from './config/env.js';
+import { startJobs } from './services/jobs.js';
 
 async function main() {
   try {
@@ -21,6 +22,7 @@ async function main() {
   app.listen(env.port, () => {
     console.log(`NeuronPOS Core backend escuchando en http://localhost:${env.port}`);
   });
+  startJobs();
 }
 
 main();

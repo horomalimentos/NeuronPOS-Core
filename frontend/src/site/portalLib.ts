@@ -8,6 +8,7 @@ export function pickBranch(config: PortalConfig, current: string | null) {
 }
 
 export const STATUS_STYLE: Record<CustomerStatus, string> = {
+  esperando_pago: 'bg-violet-100 text-violet-800',
   recibido: 'bg-sky-100 text-sky-800',
   preparando: 'bg-amber-100 text-amber-800',
   listo: 'bg-emerald-100 text-emerald-800',

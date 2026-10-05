@@ -4,7 +4,7 @@ import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { useAdmin } from '../restaurant/context';
-import { METHOD_KIND_LABEL, num, posCan } from './lib';
+import { EDITABLE_METHOD_KINDS, METHOD_KIND_LABEL, num, posCan } from './lib';
 import type { MethodKind, PaymentMethod, PosSettings } from './types';
 
 /** Configuracion del POS: impuesto, descuentos, ticket y metodos de pago. */
@@ -114,6 +114,8 @@ export default function PosSettingsPage() {
 
 function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({ name: method?.name || '', kind: method?.kind || ('otro' as MethodKind), active: method?.active ?? true });
+  // "Clip en línea" lo usa el pago en línea del portal: solo se renombra.
+  const online = method?.kind === 'en_linea';
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent) {
@@ -121,7 +123,8 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
     setSaving(true);
     setError('');
     try {
-      await api(method ? `/pos/payment-methods/${method.id}` : '/pos/payment-methods', { method: method ? 'PATCH' : 'POST', body: form });
+      const body = online ? { name: form.name, active: form.active } : form;
+      await api(method ? `/pos/payment-methods/${method.id}` : '/pos/payment-methods', { method: method ? 'PATCH' : 'POST', body });
       onSaved();
     } catch (err) {
       setError(errorMessage(err));
@@ -134,9 +137,13 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
         {error && <Alert>{error}</Alert>}
         <Field label="Nombre"><input className="input" required maxLength={60} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Ej. Vales" /></Field>
         <Field label="Tipo">
-          <select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as MethodKind })}>
-            {(Object.keys(METHOD_KIND_LABEL) as MethodKind[]).map((k) => <option key={k} value={k}>{METHOD_KIND_LABEL[k]}</option>)}
-          </select>
+          {online ? (
+            <p className="text-sm text-gray-400">{METHOD_KIND_LABEL.en_linea}: lo registra el pago en línea del portal y no entra al corte de caja.</p>
+          ) : (
+            <select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as MethodKind })}>
+              {EDITABLE_METHOD_KINDS.map((k) => <option key={k} value={k}>{METHOD_KIND_LABEL[k]}</option>)}
+            </select>
+          )}
         </Field>
         <div className="flex items-center gap-3 text-sm text-gray-300">
           <Toggle label="Activo" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} /> Activo

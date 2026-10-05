@@ -1,9 +1,10 @@
-import { ArrowLeft, ExternalLink, Pause, Play, Trash2 } from 'lucide-react';
+import { ArrowLeft, ExternalLink, Pause, Play, Receipt, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, StatusBadge, Toggle } from '../components/ui';
 import { errorMessage, platformApi } from '../lib/api';
-import { formatDate, formatMXN, toDateInput } from '../lib/format';
+import { formatDate, formatDay, formatMXN, toDateInput } from '../lib/format';
+import InvoicesTable from './InvoicesTable';
 import { moduleIcon } from '../lib/modules';
 import type { RestaurantDetail, RestaurantModule } from '../lib/types';
 
@@ -58,6 +59,7 @@ export default function RestaurantDetailPage() {
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <ModulesCard modules={detail.modules} onSave={(code, body) => mutate(`/modules/${code}`, 'PUT', body)} />
+          <InvoicesCard detail={detail} onChanged={(msg) => { setError(''); setNotice(msg); load(); }} onError={setError} />
           <GeneralCard key={r.updated_at} detail={detail} onSave={(body) => mutate('', 'PATCH', body, 'Datos guardados')} />
         </div>
         <div className="space-y-6">
@@ -83,19 +85,49 @@ function ChargeCard({ detail }: { detail: RestaurantDetail }) {
           </li>
         ))}
       </ul>
-      {detail.restaurant.status === 'suspended' && <p className="mt-3 text-xs text-amber-300">Suspendido: no se cobra mientras siga así.</p>}
-      <h3 className="mt-5 text-xs font-medium uppercase tracking-wider text-gray-500">Facturas</h3>
-      {detail.invoices.length === 0 ? (
-        <p className="mt-1 text-xs text-gray-600">Aún no hay facturas (cobro automático pendiente de integrar).</p>
-      ) : (
-        <ul className="mt-2 space-y-1 text-sm">
-          {detail.invoices.map((inv) => (
-            <li key={inv.id} className="flex justify-between text-gray-400">
-              <span>{inv.period.slice(0, 7)}</span><span>{formatMXN(inv.amount_mxn)} · {inv.status}</span>
-            </li>
-          ))}
-        </ul>
+      {detail.restaurant.status === 'suspended' && (
+        <p className="mt-3 text-xs text-amber-300">
+          {detail.restaurant.suspended_reason === 'falta_pago'
+            ? 'Suspendido por falta de pago: se reactiva solo al pagar.'
+            : 'Suspendido manualmente: no se generan cobros mientras siga así.'}
+        </p>
       )}
+      <p className="mt-3 text-xs text-gray-500">
+        Día de cobro: {detail.restaurant.billing_day || (detail.restaurant.activated_at ? `${new Date(detail.restaurant.activated_at).getDate()} (alta)` : 'al activarse')}
+        {detail.restaurant.dunning_grace_until && ` · sin suspensión automática hasta ${formatDay(detail.restaurant.dunning_grace_until)}`}
+      </p>
+    </section>
+  );
+}
+
+function InvoicesCard({ detail, onChanged, onError }: {
+  detail: RestaurantDetail; onChanged: (msg: string) => void; onError: (msg: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function generate() {
+    setBusy(true);
+    try {
+      const r = await platformApi<{ created: boolean; link_error: string | null }>(
+        `/platform/restaurants/${detail.restaurant.id}/invoices`, { method: 'POST' },
+      );
+      const msg = r.created ? 'Cobro generado' : 'El cobro de este periodo ya existía';
+      onChanged(r.link_error ? `${msg}, pero no se pudo crear la liga de Clip: ${r.link_error}` : msg);
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <section className="card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-5 py-4">
+        <div>
+          <h2 className="font-semibold text-white">Facturas</h2>
+          <p className="text-xs text-gray-500">Se generan solas cada día de cobro con su liga de pago de Clip.</p>
+        </div>
+        <Button variant="secondary" loading={busy} onClick={generate}><Receipt className="h-4 w-4" /> Generar cobro ahora</Button>
+      </div>
+      <InvoicesTable invoices={detail.invoices} onChanged={onChanged} />
     </section>
   );
 }
@@ -177,6 +209,7 @@ function GeneralCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (bo
     primary_color: r.primary_color, secondary_color: r.secondary_color, status: r.status,
     trial_ends_at: toDateInput(r.trial_ends_at), contact_name: r.contact_name || '',
     contact_email: r.contact_email || '', contact_phone: r.contact_phone || '', notes: r.notes || '',
+    billing_day: r.billing_day ? String(r.billing_day) : '',
   });
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -191,6 +224,7 @@ function GeneralCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (bo
       custom_domain: form.custom_domain || null,
       logo_url: form.logo_url || null,
       trial_ends_at: form.trial_ends_at ? `${form.trial_ends_at}T23:59:59` : null,
+      billing_day: form.billing_day ? Number(form.billing_day) : null,
     });
     setSaving(false);
   }
@@ -229,6 +263,9 @@ function GeneralCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (bo
         <Field label="Teléfono"><input className="input" value={form.contact_phone} onChange={set('contact_phone')} /></Field>
         <Field label="Correo de contacto"><input className="input" type="email" value={form.contact_email} onChange={set('contact_email')} /></Field>
         <Field label="Notas internas"><input className="input" value={form.notes} onChange={set('notes')} /></Field>
+        <Field label="Día de cobro" hint="1 a 31. Vacío = el día en que se activó. En meses cortos se cobra el último día.">
+          <input className="input" type="number" min={1} max={31} value={form.billing_day} onChange={set('billing_day')} />
+        </Field>
         <div className="flex items-center justify-between sm:col-span-2">
           <a href={`/?restaurante=${r.slug}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white">
             Ver sitio <ExternalLink className="h-3.5 w-3.5" />

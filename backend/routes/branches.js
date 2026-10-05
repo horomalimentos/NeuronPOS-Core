@@ -3,12 +3,13 @@
 import { Router } from 'express';
 import { withTenant } from '../config/database.js';
 import { authenticateUser, requireRole } from '../middleware/auth.js';
+import { requireOperational } from '../middleware/requireModule.js';
 import { normalizeWeek } from '../services/hours.js';
 import { loadBranches } from '../services/online.js';
 import { ah, badRequest, bool, buildSet, notFound, requireUuid, str } from '../utils/http.js';
 
 const router = Router();
-router.use(authenticateUser);
+router.use(authenticateUser, requireOperational);
 
 const COLUMNS = 'id, name, address, phone, timezone, active, created_at, updated_at';
 

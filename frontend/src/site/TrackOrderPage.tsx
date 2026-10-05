@@ -1,11 +1,11 @@
-import { Bike, Check, ChefHat, ClipboardCheck, Loader2, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
+import { Bike, Check, ChefHat, ClipboardCheck, CreditCard, Loader2, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { errorMessage, portalApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { Notice } from './OrderPage';
 import { STATUS_STYLE, formatDateTimeShort, formatTimeShort, isFinal } from './portalLib';
-import type { CustomerOrder, CustomerStatus } from './types';
+import type { CustomerOrder, CustomerStatus, PaymentStart } from './types';
 
 const POLL_MS = 8000;
 
@@ -18,6 +18,7 @@ export default function TrackOrderPage() {
   const [order, setOrder] = useState<CustomerOrder | null>(null);
   const [error, setError] = useState('');
   const [cancelling, setCancelling] = useState(false);
+  const [paying, setPaying] = useState(false);
   const finished = useRef(false);
 
   const load = useCallback(() => {
@@ -46,6 +47,22 @@ export default function TrackOrderPage() {
     }
   }
 
+  // Pedido con pago en linea pendiente: abre (o crea) la liga de Clip.
+  async function payNow() {
+    setPaying(true);
+    try {
+      const r = await portalApi<{ payment: PaymentStart }>(`/portal/track/${encodeURIComponent(token)}/pay`, { method: 'POST', noRedirect: true });
+      if (r.payment.action === 'redirect' && r.payment.url) {
+        window.location.assign(r.payment.url);
+        return;
+      }
+      load();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    setPaying(false);
+  }
+
   if (!order) {
     return error ? <p className="px-6 py-24 text-center text-gray-500">{error}</p>
       : <div className="flex justify-center py-24 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -62,6 +79,12 @@ export default function TrackOrderPage() {
   const order_ = ['recibido', 'preparando', 'listo', 'en_camino', 'entregado'];
   const rank = (s: CustomerStatus) => order_.indexOf(s);
   const failed = order.status === 'rechazado' || order.status === 'cancelado';
+  const awaitingPayment = order.status === 'esperando_pago';
+  const paidOnline = order.online_payment_status === 'pagado';
+  const paymentLabel = paidOnline ? 'Pagado en línea con Clip'
+    : order.online_payment_status ? 'Pago en línea con Clip pendiente'
+      : order.paid ? 'Pagado'
+        : `Pago al ${delivery ? 'recibir' : 'recoger'}: ${order.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}`;
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8">
@@ -75,7 +98,16 @@ export default function TrackOrderPage() {
           <p className="mt-3 text-sm text-gray-600">Hora estimada: <b>{formatTimeShort(order.estimated_ready_at)}</b>{delivery && ' (más el envío)'}</p>
         )}
 
-        {failed ? (
+        {awaitingPayment ? (
+          <div className="mx-auto mt-5 max-w-md rounded-2xl bg-violet-50 p-4 text-left text-sm text-violet-900">
+            <p className="flex items-center gap-2 font-semibold"><CreditCard className="h-5 w-5" /> Falta pagar tu pedido</p>
+            <p className="mt-1">El restaurante lo empezará a preparar en cuanto se confirme tu pago con Clip.</p>
+            {order.payment_due_at && <p className="mt-1">Si no se paga antes de las <b>{formatTimeShort(order.payment_due_at)}</b>, el pedido se cancela solo.</p>}
+            <button className="btn-brand mt-3 w-full" onClick={payNow} disabled={paying}>
+              {paying && <Loader2 className="h-4 w-4 animate-spin" />} Pagar ahora con Clip
+            </button>
+          </div>
+        ) : failed ? (
           <div className="mx-auto mt-5 max-w-md rounded-2xl bg-red-50 p-4 text-left text-sm text-red-800">
             <p className="flex items-center gap-2 font-semibold"><XCircle className="h-5 w-5" /> {order.status === 'rechazado' ? 'El restaurante no pudo aceptar tu pedido' : 'Pedido cancelado'}</p>
             {order.cancel_reason && <p className="mt-1">Motivo: {order.cancel_reason}</p>}
@@ -132,14 +164,14 @@ export default function TrackOrderPage() {
           {Number(order.delivery_fee) > 0 && <div className="flex justify-between text-gray-600"><span>Envío</span><span>{formatMXN(order.delivery_fee)}</span></div>}
           <div className="flex justify-between text-base font-bold"><span>Total</span><span>{formatMXN(order.total)}</span></div>
           <p className="text-xs text-gray-500">
-            {order.paid ? 'Pagado' : `Pago al ${delivery ? 'recibir' : 'recoger'}: ${order.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}`}
-            {!order.paid && order.pay_with && ` · pagas con ${formatMXN(order.pay_with)}`}
+            {paymentLabel}
+            {!order.paid && !order.online_payment_status && order.pay_with && ` · pagas con ${formatMXN(order.pay_with)}`}
           </p>
         </div>
       </div>
 
       <div className="mt-5 flex flex-wrap justify-center gap-3">
-        {order.status === 'recibido' && (
+        {(order.status === 'recibido' || awaitingPayment) && !paidOnline && (
           <button className="btn-outline" onClick={cancel} disabled={cancelling}>{cancelling && <Loader2 className="h-4 w-4 animate-spin" />} Cancelar pedido</button>
         )}
         <Link to="/pedir" className="btn-brand">Hacer otro pedido</Link>
