@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import InvoicesPage from './platform/InvoicesPage';
 import ModulesCatalogPage from './platform/ModulesCatalogPage';
 import PlatformLayout from './platform/PlatformLayout';
 import CashPage from './pos/CashPage';
@@ -9,18 +10,21 @@ import PosSettingsPage from './pos/PosSettingsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
 import PlatformLogin from './platform/PlatformLogin';
+import PlatformSettingsPage from './platform/PlatformSettingsPage';
 import RestaurantDetailPage from './platform/RestaurantDetailPage';
 import RestaurantsPage from './platform/RestaurantsPage';
 import AdminLayout from './restaurant/AdminLayout';
 import BranchesPage from './restaurant/BranchesPage';
 import DashboardPage from './restaurant/DashboardPage';
 import RestaurantLogin from './restaurant/RestaurantLogin';
+import SubscriptionPage from './restaurant/SubscriptionPage';
 import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
 import { AccountPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage } from './site/AccountPages';
 import CheckoutPage from './site/CheckoutPage';
 import OrderPage from './site/OrderPage';
+import PaymentResultPage from './site/PaymentResultPage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
 import TrackOrderPage from './site/TrackOrderPage';
@@ -35,6 +39,7 @@ export default function App() {
           <Route path="/pedir" element={<OrderPage />} />
           <Route path="/pedir/checkout" element={<CheckoutPage />} />
           <Route path="/pedido/:token" element={<TrackOrderPage />} />
+          <Route path="/pago/resultado" element={<PaymentResultPage />} />
           <Route path="/cuenta" element={<AccountPage />} />
           <Route path="/cuenta/entrar" element={<LoginPage />} />
           <Route path="/cuenta/registro" element={<CustomerRegisterPage />} />
@@ -47,6 +52,8 @@ export default function App() {
           <Route index element={<RestaurantsPage />} />
           <Route path="restaurantes/:id" element={<RestaurantDetailPage />} />
           <Route path="modulos" element={<ModulesCatalogPage />} />
+          <Route path="cobros" element={<InvoicesPage />} />
+          <Route path="ajustes" element={<PlatformSettingsPage />} />
         </Route>
 
         {/* Administracion del restaurante */}
@@ -57,6 +64,7 @@ export default function App() {
           <Route path="usuarios" element={<UsersPage />} />
           <Route path="sitio" element={<WebsitePage />} />
           <Route path="pedidos-en-linea" element={<OnlineSettingsPage />} />
+          <Route path="suscripcion" element={<SubscriptionPage />} />
           {/* Punto de venta (modulo pos) */}
           <Route element={<PosGate />}>
             <Route path="pos" element={<RegisterPage />} />

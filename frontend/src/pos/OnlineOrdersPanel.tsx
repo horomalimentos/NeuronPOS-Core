@@ -1,4 +1,6 @@
-import { Bike, Check, ChefHat, Clock, CreditCard, Globe, MapPin, Phone, RefreshCw, Store, X } from 'lucide-react';
+import {
+  BadgeCheck, Bike, Check, ChefHat, Clock, CreditCard, Globe, MapPin, PackageCheck, Phone, RefreshCw, Store, X,
+} from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -13,7 +15,8 @@ const POLL_MS = 10000;
  * Pedidos en linea de la sucursal dentro de la pantalla de venta: los
  * pendientes se aceptan (van a cocina) o se rechazan con motivo (el cliente
  * lo ve en su seguimiento). Los aceptados se abren para cobrarlos con el
- * flujo normal de caja; los de domicilio se marcan "salió a reparto".
+ * flujo normal de caja; los de domicilio se marcan "salió a reparto". Los
+ * pagados en línea con Clip no pasan por caja: se marcan entregados.
  */
 export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }: {
   branchId: string; role: Role; onOpen: (id: string) => void; onChanged: (pending: number) => void;
@@ -36,10 +39,13 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
     return () => clearInterval(t);
   }, [load]);
 
-  async function act(o: Order, action: 'accept' | 'reject' | 'dispatch') {
+  async function act(o: Order, action: 'accept' | 'reject' | 'dispatch' | 'deliver') {
     let body: Record<string, unknown> | undefined;
     if (action === 'reject') {
-      const reason = window.prompt('Motivo del rechazo (el cliente lo verá):');
+      const paidOnline = o.online_payment_status === 'pagado';
+      const reason = window.prompt(paidOnline
+        ? 'Este pedido ya se pagó en línea: al rechazarlo tendrás que reembolsarlo desde tu panel de Clip.\n\nMotivo del rechazo (el cliente lo verá):'
+        : 'Motivo del rechazo (el cliente lo verá):');
       if (!reason?.trim()) return;
       body = { reason: reason.trim() };
     }
@@ -99,9 +105,20 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
                   {canAct && o.order_type === 'domicilio' && !o.dispatched_at && (
                     <Button variant="secondary" onClick={() => act(o, 'dispatch')} loading={busy === o.id}><Bike className="h-4 w-4" /> Salió a reparto</Button>
                   )}
-                  <Button className="flex-1" onClick={() => onOpen(o.id)}>
-                    <CreditCard className="h-4 w-4" /> {canAct ? `Abrir y cobrar ${formatMXN(num(o.total) - num(o.paid_amount))}` : 'Abrir'}
-                  </Button>
+                  {o.online_payment_status === 'pagado' ? (
+                    <>
+                      <Button variant="secondary" onClick={() => onOpen(o.id)}>Abrir</Button>
+                      {canAct && (
+                        <Button className="flex-1" onClick={() => act(o, 'deliver')} loading={busy === o.id}>
+                          <PackageCheck className="h-4 w-4" /> {o.order_type === 'domicilio' ? 'Entregado' : 'Entregado al cliente'}
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <Button className="flex-1" onClick={() => onOpen(o.id)}>
+                      <CreditCard className="h-4 w-4" /> {canAct ? `Abrir y cobrar ${formatMXN(num(o.total) - num(o.paid_amount))}` : 'Abrir'}
+                    </Button>
+                  )}
                 </div>
               </OnlineCard>
             ))}
@@ -157,11 +174,18 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
       </ul>
       {o.notes && <p className="flex gap-1.5 text-xs text-amber-200/90"><ChefHat className="h-3.5 w-3.5 flex-shrink-0" /> {o.notes}</p>}
       <div className="flex items-center justify-between text-sm">
-        <span className="text-gray-400">
-          Paga al {delivery ? 'recibir' : 'recoger'}: {o.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}
-          {num(o.pay_with) > 0 && ` (con ${formatMXN(o.pay_with)})`}
-          {num(o.delivery_fee) > 0 && ` · envío ${formatMXN(o.delivery_fee)}`}
-        </span>
+        {o.online_payment_status === 'pagado' ? (
+          <span className="flex items-center gap-1.5 font-medium text-emerald-300">
+            <BadgeCheck className="h-4 w-4" /> Pagado en línea con Clip
+            {num(o.delivery_fee) > 0 && <span className="font-normal text-gray-400">· envío {formatMXN(o.delivery_fee)}</span>}
+          </span>
+        ) : (
+          <span className="text-gray-400">
+            Paga al {delivery ? 'recibir' : 'recoger'}: {o.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}
+            {num(o.pay_with) > 0 && ` (con ${formatMXN(o.pay_with)})`}
+            {num(o.delivery_fee) > 0 && ` · envío ${formatMXN(o.delivery_fee)}`}
+          </span>
+        )}
         <span className="text-base font-semibold text-white">{formatMXN(o.total)}</span>
       </div>
       {children}

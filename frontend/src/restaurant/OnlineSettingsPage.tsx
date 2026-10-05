@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import type { PublicBranch } from '../lib/types';
 import { openLabel } from '../site/hours';
+import ClipPaymentsCard from './ClipPaymentsCard';
 import { canManage, useAdmin } from './context';
 import { ModuleLocked } from './WebsitePage';
 
@@ -125,9 +126,11 @@ export default function OnlineSettingsPage() {
             <span>A domicilio {mods && !mods.domicilios && <span className="block text-xs text-amber-300">Requiere el módulo "Domicilios".</span>}</span>
           </label>
         </div>
-        <p className="text-xs text-gray-500">Pago: al recoger o al recibir (efectivo o tarjeta). Se cobra en la caja del punto de venta.</p>
+        <p className="text-xs text-gray-500">Pago al recoger o al recibir (efectivo o tarjeta): se cobra en la caja del punto de venta. Para cobrar en línea, configura Clip abajo.</p>
         <div className="flex justify-end"><Button type="submit" loading={saving}><Save className="h-4 w-4" /> Guardar</Button></div>
       </form>
+
+      <ClipPaymentsCard isAdmin={me.user.role === 'admin'} />
 
       <h2 className="mb-3 mt-8 text-lg font-semibold text-white">Por sucursal</h2>
       <p className="mb-4 text-sm text-gray-400">Solo se aceptan pedidos con la sucursal abierta. El horario se edita en Sucursales.</p>

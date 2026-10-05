@@ -30,7 +30,8 @@ export default function PaymentModal({ order, methods, sessionId, onClose, onPai
   onPaid: (order: Order, change: number) => void;
   onPrint: (order: Order, change: number) => void;
 }) {
-  const active = methods.filter((m) => m.active);
+  // Los pagos en línea (Clip) los registra el portal, no la caja.
+  const active = methods.filter((m) => m.active && m.kind !== 'en_linea');
   const remaining = round2(num(order.total) - num(order.paid_amount));
   const newLine = (methodId: string, amount: number): Line => ({
     key: nextKey++, methodId, amount: amount > 0 ? amount.toFixed(2) : '', tip: '', received: '', reference: '',

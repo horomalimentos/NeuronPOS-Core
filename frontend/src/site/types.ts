@@ -56,9 +56,17 @@ export interface PortalBranch extends PublicBranch {
 }
 
 export interface PaymentOption {
-  code: string;
+  code: 'contra_entrega' | 'clip';
   name: string;
+  /** true = se paga en linea antes de que el restaurante lo prepare. */
+  online: boolean;
   methods: { code: 'efectivo' | 'tarjeta'; name: string }[];
+}
+
+/** Lo que regresa POST /portal/orders: a donde mandar al cliente para pagar. */
+export interface PaymentStart {
+  action: 'none' | 'redirect';
+  url?: string;
 }
 
 export interface PortalConfig {
@@ -115,7 +123,7 @@ export interface Address {
   reference: string | null;
 }
 
-export type CustomerStatus = 'recibido' | 'preparando' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
+export type CustomerStatus = 'esperando_pago' | 'recibido' | 'preparando' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
 
 export interface CustomerOrder {
   id: string;
@@ -132,6 +140,9 @@ export interface CustomerOrder {
   notes: string | null;
   payment_preference: 'efectivo' | 'tarjeta' | null;
   pay_with: Money | null;
+  payment_provider: string | null;
+  online_payment_status: 'pendiente' | 'pagado' | 'cancelado' | null;
+  payment_due_at: string | null;
   items: {
     name: string;
     quantity: number;
