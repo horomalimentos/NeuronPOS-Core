@@ -1,0 +1,31 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Valores por defecto (marca NeuronPOS); applyBranding() los reemplaza
+     con los colores del restaurante. Formato "R G B" para Tailwind. */
+  --brand-primary: 200 32 42;
+  --brand-secondary: 30 30 30;
+  --brand-contrast: 255 255 255;
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-gray-950 text-gray-100 antialiased;
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-gray-700 bg-gray-800 px-3.5 py-2.5 text-sm text-white
+      placeholder-gray-500 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30
+      disabled:opacity-50;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-gray-400;
+  }
+  .card {
+    @apply rounded-2xl border border-gray-800 bg-gray-900;
+  }
+}

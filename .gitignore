@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 uploads/
+*.tsbuildinfo
+.env.*
+!.env.example
