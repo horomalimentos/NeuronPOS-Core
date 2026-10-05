@@ -1,9 +1,10 @@
-import { MapPin, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
+import { Clock, MapPin, Pencil, Phone, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import type { Branch } from '../lib/types';
+import BranchHoursModal from './BranchHoursModal';
 import { canManage, useAdmin } from './context';
 
 const TIMEZONES = [
@@ -16,6 +17,7 @@ export default function BranchesPage() {
   const [branches, setBranches] = useState<Branch[] | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState<Branch | 'new' | null>(null);
+  const [hoursOf, setHoursOf] = useState<Branch | null>(null);
 
   const load = useCallback(() => {
     api<{ branches: Branch[] }>('/branches').then((r) => setBranches(r.branches)).catch((e) => setError(errorMessage(e)));
@@ -50,6 +52,7 @@ export default function BranchesPage() {
                   {!b.active && <span className="text-xs text-amber-300">Inactiva</span>}
                 </div>
                 <div className="flex gap-1">
+                  <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white" onClick={() => setHoursOf(b)} aria-label="Horario" title="Horario"><Clock className="h-4 w-4" /></button>
                   <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white" onClick={() => setEditing(b)} aria-label="Editar"><Pencil className="h-4 w-4" /></button>
                   {isAdmin && <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-red-300" onClick={() => remove(b)} aria-label="Borrar"><Trash2 className="h-4 w-4" /></button>}
                 </div>
@@ -63,6 +66,7 @@ export default function BranchesPage() {
           ))}
         </div>
       )}
+      {hoursOf && <BranchHoursModal branch={hoursOf} onClose={() => setHoursOf(null)} />}
       {editing && (
         <BranchModal
           branch={editing === 'new' ? null : editing}

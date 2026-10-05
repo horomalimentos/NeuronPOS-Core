@@ -1,5 +1,5 @@
 import {
-  Building2, ChefHat, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, Store, UtensilsCrossed, Users, Wallet,
+  Building2, ChefHat, Globe, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, ShoppingBag, Store, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -40,7 +40,8 @@ export default function AdminLayout() {
   };
 
   const role = me.user.role;
-  const hasPos = Boolean(me.modules.find((m) => m.code === 'pos')?.enabled);
+  const has = (code: string) => Boolean(me.modules.find((m) => m.code === code)?.enabled);
+  const hasPos = has('pos');
   const nav = [
     { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: true },
     { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
@@ -49,6 +50,8 @@ export default function AdminLayout() {
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
+    { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
+    { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
     { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: canManage(role) },
     { to: '/admin/usuarios', label: 'Usuarios', icon: Users, end: false, show: canManage(role) },
   ].filter((n) => n.show);
