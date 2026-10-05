@@ -30,13 +30,17 @@ export function discountCents(subtotalCents, discount) {
 /**
  * Totales de una orden.
  * items: [{ unit_price, modifiers_total, quantity, voided? }]
- * opts: { discount, taxRatePct, pricesIncludeTax }
+ * opts: { discount, taxRatePct, pricesIncludeTax, deliveryFee }
  *
  * - pricesIncludeTax = true (precios con IVA): total = subtotal - descuento y
  *   el impuesto se desglosa: tax = total - total / (1 + tasa).
  * - pricesIncludeTax = false: tax = (subtotal - descuento) * tasa y se suma.
+ * - deliveryFee (pedidos a domicilio): se suma al final, sin descuento ni
+ *   impuesto (es un cargo fijo por sucursal).
  */
-export function calculateOrderTotals(items, { discount = null, taxRatePct = 0, pricesIncludeTax = true } = {}) {
+export function calculateOrderTotals(items, {
+  discount = null, taxRatePct = 0, pricesIncludeTax = true, deliveryFee = 0,
+} = {}) {
   const subtotal = (items || [])
     .filter((it) => !it.voided)
     .reduce((s, it) => s + lineTotalCents(it), 0);
@@ -52,11 +56,13 @@ export function calculateOrderTotals(items, { discount = null, taxRatePct = 0, p
     tax = Math.round(base * rate);
     total = base + tax;
   }
+  const fee = Math.max(0, toCents(deliveryFee));
   return {
     subtotal: fromCents(subtotal),
     discount_amount: fromCents(disc),
     tax_amount: fromCents(tax),
-    total: fromCents(total),
+    delivery_fee: fromCents(fee),
+    total: fromCents(total + fee),
   };
 }
 

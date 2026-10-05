@@ -29,3 +29,31 @@ body {
     @apply rounded-2xl border border-gray-800 bg-gray-900;
   }
 }
+
+/* Sitio publico y portal de clientes: tema claro con los colores del
+   restaurante (el panel y el POS siguen en tema oscuro). */
+@layer components {
+  .site-light {
+    color-scheme: light;
+    @apply min-h-screen bg-stone-50 text-gray-900;
+  }
+  .input-light {
+    @apply w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900
+      placeholder-gray-400 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20
+      disabled:opacity-50;
+  }
+  .label-light {
+    @apply mb-1.5 block text-sm font-medium text-gray-700;
+  }
+  .btn-brand {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-semibold
+      text-brand-contrast shadow-sm transition hover:bg-brand/90 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-full border border-gray-300 bg-white px-5 py-2.5
+      text-sm font-semibold text-gray-800 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .card-light {
+    @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
+  }
+}

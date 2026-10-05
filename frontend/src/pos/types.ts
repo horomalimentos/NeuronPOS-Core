@@ -146,7 +146,19 @@ export interface Order {
   created_at: string;
   items?: OrderItem[];
   payments?: OrderPayment[];
+  // Pedidos en linea (source = 'web')
+  source?: 'pos' | 'web';
+  online_status?: OnlineStatus | null;
+  delivery_fee?: Money;
+  delivery_reference?: string | null;
+  payment_preference?: 'efectivo' | 'tarjeta' | null;
+  pay_with?: Money | null;
+  accepted_at?: string | null;
+  estimated_ready_at?: string | null;
+  dispatched_at?: string | null;
 }
+
+export type OnlineStatus = 'pendiente' | 'aceptada' | 'rechazada';
 
 export interface PaymentMethod {
   id: string;

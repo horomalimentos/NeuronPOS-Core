@@ -18,7 +18,7 @@ interface Options {
   noRedirect?: boolean;
 }
 
-const LOGIN_PATH: Record<Realm, string> = { platform: '/panel/login', restaurant: '/admin/login' };
+const LOGIN_PATH: Record<Realm, string> = { platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar' };
 
 export async function api<T>(path: string, { method = 'GET', body, realm = 'restaurant', noRedirect }: Options = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -26,7 +26,7 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
   const token = session.getToken(realm);
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
-  if (slug && realm === 'restaurant') headers['X-Restaurant-Slug'] = slug;
+  if (slug && realm !== 'platform') headers['X-Restaurant-Slug'] = slug;
 
   let res: Response;
   try {
@@ -38,6 +38,8 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (!res.ok) {
+    // Sesion de cliente de otro restaurante (mismo navegador en desarrollo): se descarta.
+    if (res.status === 403 && realm === 'customer' && data?.code === 'TENANT_MISMATCH') session.setToken(realm, null);
     if (res.status === 401 && token && !noRedirect) {
       session.setToken(realm, null);
       window.location.assign(LOGIN_PATH[realm]);
@@ -48,5 +50,8 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
 }
 
 export const platformApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'platform' });
+
+/** Sitio publico y portal de clientes: solo manda el token del cliente (nunca el del personal). */
+export const portalApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'customer' });
 
 export const errorMessage = (err: unknown) => (err instanceof Error ? err.message : 'Ocurrio un error inesperado');

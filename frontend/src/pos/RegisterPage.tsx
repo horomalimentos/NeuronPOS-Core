@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, Ban, ChefHat, ClipboardList, CreditCard, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
+  ArrowLeft, Ban, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
   ShoppingBag, Tag, Trash2, Truck, Utensils, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -11,6 +11,7 @@ import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import DiscountModal from './DiscountModal';
 import ModifierModal, { type CartSelection } from './ModifierModal';
+import OnlineOrdersPanel from './OnlineOrdersPanel';
 import PaymentModal from './PaymentModal';
 import {
   ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, ORDER_TYPE_LABEL, formatTime, num, posCan, posPrefs, round2,
@@ -56,7 +57,8 @@ export default function RegisterPage() {
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
 
-  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas'>('mesas');
+  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea'>('mesas');
+  const [pendingOnline, setPendingOnline] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -76,6 +78,9 @@ export default function RegisterPage() {
       .catch((e) => setError(errorMessage(e)));
     api<{ orders: Order[] }>(`/pos/orders?branch_id=${branchId}&status=activas`)
       .then((r) => setOpenOrders(r.orders)).catch(() => {});
+    // Pedidos en linea por aceptar (insignia de la pestana "En linea").
+    api<{ pending_count: number }>(`/pos/online-orders?branch_id=${branchId}&status=pendientes`)
+      .then((r) => setPendingOnline(r.pending_count)).catch(() => {});
   }, [branchId]);
 
   useEffect(() => {
@@ -253,17 +258,22 @@ export default function RegisterPage() {
         {header}
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
         <div className="mb-4 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm">
-          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList]] as const)
+          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe]] as const)
             .map(([key, label, Icon]) => (
               <button key={key} onClick={() => setTab(key)}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 font-medium ${tab === key ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
+                className={`relative flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 font-medium ${tab === key ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
                 <Icon className="h-4 w-4" /> <span className="truncate">{label}</span>
+                {key === 'linea' && pendingOnline > 0 && (
+                  <span className="flex h-5 min-w-[1.25rem] animate-pulse items-center justify-center rounded-full bg-amber-400 px-1.5 text-xs font-bold text-gray-950"
+                    aria-label={`${pendingOnline} pedidos por aceptar`}>{pendingOnline}</span>
+                )}
               </button>
             ))}
         </div>
         {tab === 'mesas' && <TableGrid zones={zones} tables={tables} onPick={openTable} canManage={posCan.manage(role)} />}
         {tab === 'nueva' && <NewOrderForm onStart={(d) => setDraft(d)} />}
         {tab === 'abiertas' && <OpenOrdersList orders={openOrders} onPick={openOrder} />}
+        {tab === 'linea' && <OnlineOrdersPanel branchId={branchId} role={role} onOpen={openOrder} onChanged={setPendingOnline} />}
       </>
     );
   }
@@ -327,6 +337,13 @@ export default function RegisterPage() {
               {order && <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${ORDER_STATUS_STYLE[order.status]}`}>{ORDER_STATUS_LABEL[order.status]}</span>}
             </div>
             {customer && <p className="mt-1 text-xs text-gray-400">{customer}</p>}
+            {order?.source === 'web' && (
+              <p className="mt-1.5 inline-flex flex-wrap items-center gap-1.5 rounded-lg bg-brand/10 px-2 py-1 text-xs text-gray-200">
+                <Globe className="h-3.5 w-3.5 text-brand" /> Pedido en línea · paga con {order.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}
+                {num(order.pay_with) > 0 && ` (${formatMXN(order.pay_with)})`}
+                {order.delivery_reference && ` · ${order.delivery_reference}`}
+              </p>
+            )}
           </div>
 
           <div className="flex-1 space-y-1 overflow-y-auto p-3">
@@ -373,6 +390,7 @@ export default function RegisterPage() {
                 <Row label="Subtotal" value={formatMXN(order.subtotal)} />
                 {num(order.discount_amount) > 0 && <Row label={`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`} value={`-${formatMXN(order.discount_amount)}`} />}
                 <Row label={`IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' incl.' : ''}`} value={formatMXN(order.tax_amount)} />
+                {num(order.delivery_fee) > 0 && <Row label="Envío" value={formatMXN(order.delivery_fee)} />}
                 <Row label="Total" value={formatMXN(order.total)} strong />
                 {num(order.paid_amount) > 0 && <Row label="Pagado" value={formatMXN(order.paid_amount)} />}
                 {num(order.paid_amount) > 0 && <Row label="Saldo" value={formatMXN(remaining)} strong />}
@@ -515,7 +533,10 @@ function OpenOrdersList({ orders, onPick }: { orders: Order[]; onPick: (id: stri
             <span className="font-semibold text-white">Folio {o.folio}</span>
             <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${ORDER_STATUS_STYLE[o.status]}`}>{ORDER_STATUS_LABEL[o.status]}</span>
           </div>
-          <p className="mt-1 text-sm text-gray-300">{o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}</p>
+          <p className="mt-1 text-sm text-gray-300">
+            {o.source === 'web' && <Globe className="mr-1 inline h-3.5 w-3.5 text-brand" aria-label="En línea" />}
+            {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}
+          </p>
           <div className="mt-2 flex justify-between text-sm text-gray-400"><span>{formatTime(o.created_at)}</span><span className="font-semibold text-white">{formatMXN(o.total)}</span></div>
         </button>
       ))}

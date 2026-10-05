@@ -102,6 +102,32 @@ export interface Me {
   branches: Branch[];
 }
 
+export interface BranchHours {
+  weekday: number;
+  opens_at: string;
+  closes_at: string;
+}
+
+export interface BranchClosure {
+  closed_on: string;
+  reason: string | null;
+}
+
+/** Sucursal tal como la ve el publico (sitio y portal). */
+export interface PublicBranch {
+  id: string;
+  name: string;
+  address: string | null;
+  phone: string | null;
+  timezone: string;
+  maps_url: string | null;
+  hours: BranchHours[];
+  closures: BranchClosure[];
+  open_now: boolean;
+  today: { opens_at: string; closes_at: string } | null;
+  closed_today: boolean;
+}
+
 export interface PublicSite {
   restaurant: {
     slug: string;
@@ -112,5 +138,7 @@ export interface PublicSite {
     available: boolean;
   };
   modules: string[];
-  branches: { name: string; address: string | null; phone: string | null }[];
+  ordering: boolean;
+  seo: { title: string; description: string | null };
+  branches: PublicBranch[];
 }

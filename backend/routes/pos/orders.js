@@ -5,6 +5,10 @@
 // Flujo de estado: abierta -> enviada -> lista -> pagada, o cancelada (con
 // motivo). Se puede cobrar desde abierta/enviada/lista; al cobrar, lo que no
 // se habia enviado a cocina se envia.
+//
+// Los pedidos en linea (source = 'web', ver routes/pos/online.js) son
+// ordenes normales: mientras esperan aceptacion (online_status = 'pendiente')
+// no aparecen en "activas", no se envian a cocina y no se cobran.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
@@ -32,12 +36,15 @@ const ORDER_SELECT = `
          o.subtotal, o.discount_type, o.discount_value, o.discount_amount, o.discount_reason,
          o.tax_rate_pct, o.prices_include_tax, o.tax_amount, o.total, o.paid_amount, o.tip_amount,
          o.created_by, u.name AS created_by_name, o.sent_at, o.ready_at, o.paid_at,
-         o.cancelled_at, o.cancel_reason, o.created_at, o.updated_at
+         o.cancelled_at, o.cancel_reason, o.created_at, o.updated_at,
+         o.source, o.online_status, o.customer_id, o.delivery_fee, o.delivery_reference,
+         o.payment_provider, o.payment_preference, o.pay_with, o.accepted_at, o.estimated_ready_at,
+         o.dispatched_at, o.public_token
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN users u ON u.id = o.created_by AND u.restaurant_id = o.restaurant_id`;
 
-async function loadItems(db, restaurantId, orderIds) {
+export async function loadItems(db, restaurantId, orderIds) {
   const items = (await db.query(
     `SELECT id, order_id, menu_item_id, name, unit_price, modifiers_total, quantity, line_total,
             notes, sent_at, voided_at, void_reason, created_at
@@ -75,7 +82,7 @@ export async function loadOrder(db, restaurantId, id) {
 }
 
 /** Bloquea la orden (FOR UPDATE) y valida acceso a su sucursal. */
-async function lockOrder(db, req, id) {
+export async function lockOrder(db, req, id) {
   requireUuid(id);
   const { rows } = await db.query(
     'SELECT * FROM orders WHERE id = $1 AND restaurant_id = $2 FOR UPDATE',
@@ -86,9 +93,16 @@ async function lockOrder(db, req, id) {
   return order;
 }
 
-function assertActive(order) {
+export function assertActive(order) {
   if (!ACTIVE_STATUSES.includes(order.status)) {
     throw badRequest(order.status === 'pagada' ? 'La orden ya esta pagada' : 'La orden esta cancelada', 'ORDER_CLOSED');
+  }
+}
+
+/** Un pedido en linea sin aceptar no va a cocina ni se cobra. */
+function assertAccepted(order) {
+  if (order.source === 'web' && order.online_status === 'pendiente') {
+    throw badRequest('Acepta el pedido en linea antes de continuar', 'ONLINE_ORDER_PENDING');
   }
 }
 
@@ -96,7 +110,7 @@ function assertActive(order) {
  * Recalcula subtotal, descuento, impuesto y total con los articulos vigentes.
  * Nunca deja el total por debajo de lo ya pagado.
  */
-async function recalcOrder(db, restaurantId, order) {
+export async function recalcOrder(db, restaurantId, order) {
   const items = (await db.query(
     `SELECT unit_price, modifiers_total, quantity, voided_at IS NOT NULL AS voided
        FROM order_items WHERE restaurant_id = $1 AND order_id = $2`,
@@ -106,6 +120,7 @@ async function recalcOrder(db, restaurantId, order) {
     discount: order.discount_type ? { type: order.discount_type, value: order.discount_value } : null,
     taxRatePct: order.tax_rate_pct,
     pricesIncludeTax: order.prices_include_tax,
+    deliveryFee: order.delivery_fee,
   });
   if (toCents(totals.total) < toCents(order.paid_amount)) {
     throw badRequest('El total no puede quedar por debajo de lo ya pagado', 'TOTAL_BELOW_PAID');
@@ -122,7 +137,7 @@ async function recalcOrder(db, restaurantId, order) {
 // Precios de articulos (siempre del lado del servidor)
 // ---------------------------------------------------------------------------
 
-function readItemInputs(value) {
+export function readItemInputs(value) {
   if (!Array.isArray(value) || value.length === 0) throw badRequest('Agrega al menos un articulo', 'MISSING_ITEMS');
   if (value.length > 100) throw badRequest('Demasiados articulos en una sola operacion', 'INVALID_FIELD');
   return value.map((it) => ({
@@ -197,7 +212,8 @@ export async function priceItems(db, restaurantId, branchId, inputs) {
   });
 }
 
-async function insertItems(db, restaurantId, orderId, userId, lines) {
+/** Inserta las lineas ya valuadas. userId es NULL en pedidos en linea. */
+export async function insertItems(db, restaurantId, orderId, userId, lines) {
   for (const l of lines) {
     const { rows } = await db.query(
       `INSERT INTO order_items (restaurant_id, order_id, menu_item_id, name, unit_price, modifiers_total,
@@ -228,6 +244,15 @@ async function checkTable(db, restaurantId, branchId, tableId, exceptOrderId = n
   if (rows[0].busy) throw conflict('La mesa ya tiene una orden abierta', 'TABLE_OCCUPIED');
 }
 
+/** Siguiente folio de la sucursal (el candado evita folios repetidos). */
+export async function nextFolio(db, restaurantId, branchId) {
+  await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`folio:${branchId}`]);
+  return (await db.query(
+    'SELECT coalesce(max(folio), 0) + 1 AS n FROM orders WHERE branch_id = $1 AND restaurant_id = $2',
+    [branchId, restaurantId],
+  )).rows[0].n;
+}
+
 const isTableConflict = (err) => err?.code === '23505' && err.constraint === 'orders_one_active_per_table';
 
 // ---------------------------------------------------------------------------
@@ -241,7 +266,10 @@ router.get('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
   if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) throw badRequest('Fecha invalida', 'INVALID_DATE');
   const params = [req.tenant.id, branchId];
   let where = 'o.restaurant_id = $1 AND o.branch_id = $2';
-  if (status === 'activas') where += ` AND o.status IN ('abierta', 'enviada', 'lista')`;
+  // Los pedidos en linea por aceptar se ven en /online-orders, no aqui.
+  if (status === 'activas') {
+    where += ` AND o.status IN ('abierta', 'enviada', 'lista') AND o.online_status IS DISTINCT FROM 'pendiente'`;
+  }
   else if (status !== 'todas') { params.push(status); where += ` AND o.status = $${params.length}`; }
   if (date) {
     params.push(date);
@@ -291,12 +319,7 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
       if (tableId) await checkTable(db, req.tenant.id, branchId, tableId);
       const lines = items.length ? await priceItems(db, req.tenant.id, branchId, items) : [];
 
-      // Folio consecutivo por sucursal: el candado evita folios repetidos.
-      await db.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`folio:${branchId}`]);
-      const folio = (await db.query(
-        'SELECT coalesce(max(folio), 0) + 1 AS n FROM orders WHERE branch_id = $1 AND restaurant_id = $2',
-        [branchId, req.tenant.id],
-      )).rows[0].n;
+      const folio = await nextFolio(db, req.tenant.id, branchId);
 
       const { rows } = await db.query(
         `INSERT INTO orders (restaurant_id, branch_id, folio, order_type, table_id, guests, customer_name,
@@ -427,6 +450,7 @@ router.post('/orders/:id/send', requireRole(...ROLES.orders), ah(async (req, res
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
+    assertAccepted(o);
     const sent = await db.query(
       `UPDATE order_items SET sent_at = now()
         WHERE order_id = $1 AND restaurant_id = $2 AND sent_at IS NULL AND voided_at IS NULL`,
@@ -524,8 +548,10 @@ router.post('/orders/:id/cancel', requireRole(...ROLES.orders), ah(async (req, r
     if (!ROLES.cashier.includes(req.user.role) && o.sent_at) {
       throw forbidden('La orden ya se envio a cocina: pide a un cajero o gerente que la cancele', 'ROLE_REQUIRED');
     }
+    // Cancelar un pedido en linea sin aceptar equivale a rechazarlo.
     await db.query(
-      `UPDATE orders SET status = 'cancelada', cancelled_at = now(), cancelled_by = $3, cancel_reason = $4, updated_at = now()
+      `UPDATE orders SET status = 'cancelada', cancelled_at = now(), cancelled_by = $3, cancel_reason = $4, updated_at = now(),
+              online_status = CASE WHEN online_status = 'pendiente' THEN 'rechazada' ELSE online_status END
         WHERE id = $1 AND restaurant_id = $2`,
       [o.id, req.tenant.id, req.user.id, reason],
     );
@@ -554,6 +580,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
   const result = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
+    assertAccepted(o);
     const live = await db.query(
       'SELECT count(*)::int AS n FROM order_items WHERE order_id = $1 AND restaurant_id = $2 AND voided_at IS NULL',
       [o.id, req.tenant.id],

@@ -9,11 +9,14 @@ Este repo es independiente del NeuronPOS de Horom Sushi: base de datos propia,
 proceso pm2 propio y dominio propio. Usa el mismo stack (React + Vite +
 TypeScript + Tailwind, Express ESM + `pg`, Postgres).
 
-> **Estado: Fase 1b (punto de venta).** Sobre los cimientos de la fase 1a
+> **Estado: Fase 2 (sitio web y pedidos en línea).** Sobre la fase 1a
 > (esquema multi-restaurante, resolución del restaurante, autenticación,
-> módulos, Panel NeuronPOS, sucursales y usuarios) ya está el POS: menú con
-> modificadores, mesas, órdenes, cobro, caja con corte, pantalla de cocina y
-> ticket imprimible. Ver [Punto de venta](#punto-de-venta-módulo-pos).
+> módulos, Panel NeuronPOS, sucursales y usuarios) y la 1b (POS: menú con
+> modificadores, mesas, órdenes, cobro, caja, cocina y ticket), cada
+> restaurante tiene ahora su sitio público, horarios por sucursal y un portal
+> de clientes con pedidos en línea que llegan al POS. Ver
+> [Punto de venta](#punto-de-venta-módulo-pos) y
+> [Sitio web y pedidos en línea](#sitio-web-y-pedidos-en-línea-fase-2).
 
 ## Estructura
 
@@ -22,10 +25,12 @@ backend/            API Express (ESM) + pg
   app.js            arma la app (server.js la levanta, las pruebas la importan)
   config/           variables de entorno y pool de Postgres (withTenant / withPlatform)
   middleware/       tenant.js, auth.js, requireModule.js
-  routes/           platform.js (Panel), auth, me, branches, users, public
-  routes/pos/       POS: menu, tables, orders (y cocina), cash, settings
+  routes/           platform.js (Panel), auth, me, branches (y horarios), users, public,
+                    website (Sitio web), online (config. de pedidos), portal (clientes)
+  routes/pos/       POS: menu, tables, orders (y cocina), online (pedidos web), cash, settings
   services/         billing.js (cobro mensual), access.js (reglas 402), restaurants.js,
-                    posMath.js (totales, pagos y corte de caja en centavos)
+                    posMath.js (totales, pagos y corte de caja en centavos), hours.js
+                    (abierto/cerrado), online.js, onlinePayments.js, siteContent.js
   scripts/          migrate.js, create-owner.js
   tests/            node:test (unitarias + integración con Postgres)
 db/migrations/      SQL numerado (001_, 002_, ...), se aplica con npm run migrate
@@ -33,7 +38,7 @@ frontend/           React 18 + Vite + TS + Tailwind
   src/platform/     Panel NeuronPOS (dueño de la plataforma)
   src/restaurant/   Administración del restaurante
   src/pos/          Punto de venta: venta, cobro, caja, cocina, menú, mesas, ticket
-  src/site/         Vista pública del sitio (provisional)
+  src/site/         Sitio público, menú en línea, checkout, seguimiento y cuenta del cliente
 ```
 
 ## Requisitos
@@ -86,6 +91,8 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 - Panel NeuronPOS: <http://localhost:5173/panel>
 - Restaurante por subdominio: <http://horom.localhost:5173/admin> (los
   navegadores resuelven `*.localhost` sin tocar `/etc/hosts`).
+- Sitio y portal de clientes: <http://horom.localhost:5173/> y
+  <http://horom.localhost:5173/pedir>.
 - Alternativa: <http://localhost:5173/admin?restaurante=horom> guarda el slug y
   lo manda en el header `X-Restaurant-Slug`.
 
@@ -101,7 +108,10 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `REQUIRE_RLS_ROLE` | `true` = no arrancar si el rol de BD se salta RLS (en producción siempre aplica) | `false` |
 | `JWT_SECRET` | Secreto para firmar los tokens (**obligatorio en producción**) | solo en dev: `dev-secret-cambiar` |
 | `JWT_EXPIRES_IN` | Vigencia del token | `12h` |
-| `LOGIN_RATE_LIMIT` | Intentos de login por IP cada 15 min | `20` |
+| `CUSTOMER_JWT_EXPIRES_IN` | Vigencia de la sesión de un cliente del portal | `30d` |
+| `LOGIN_RATE_LIMIT` | Intentos de login por IP cada 15 min (personal y clientes) | `20` |
+| `PUBLIC_RATE_LIMIT` | Requests al sitio y al portal por IP y restaurante cada 15 min | `600` |
+| `ORDER_RATE_LIMIT` | Pedidos en línea por IP y restaurante cada hora | `20` |
 | `PLATFORM_DOMAIN` | Dominio base; los restaurantes viven en `<slug>.<dominio>` | `localhost` |
 | `RESERVED_SUBDOMAINS` | Subdominios que nunca son restaurantes | `www,app,api,admin,panel,static,cdn,mail` |
 | `ALLOW_SLUG_HEADER` | Acepta el header `X-Restaurant-Slug` | `true` fuera de producción |
@@ -112,8 +122,9 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 
 Una sola base de datos compartida. Toda tabla que pertenece a un restaurante
 tiene `restaurant_id` (`restaurant_modules`, `delivery_settings`, `branches`,
-`users`, `user_branches`, `subscription_invoices` y las 17 tablas del POS de
-`004_pos.sql`). La protección tiene tres capas:
+`users`, `user_branches`, `subscription_invoices`, las 17 tablas del POS de
+`004_pos.sql` y las 8 de la fase 2 en `005_sitio_portal.sql`). La protección
+tiene tres capas:
 
 1. **Resolución del restaurante** (`middleware/tenant.js`), en este orden:
    - `Host`: `<slug>.<PLATFORM_DOMAIN>` o el `custom_domain` del restaurante.
@@ -123,13 +134,15 @@ tiene `restaurant_id` (`restaurant_modules`, `delivery_settings`, `branches`,
 
    El JWT de un usuario lleva el `restaurant_id`; si el restaurante resuelto
    por Host/header no coincide, la API responde `403 TENANT_MISMATCH`. Los
-   tokens de usuario (`typ: user`) y de plataforma (`typ: platform`) no son
-   intercambiables.
+   tokens de usuario (`typ: user`), de plataforma (`typ: platform`) y de
+   cliente del portal (`typ: customer`, audiencia `customer`) no son
+   intercambiables. El portal nunca toma el restaurante del token: siempre
+   del Host, y el token de un cliente solo sirve en ese restaurante.
 
 2. **Consultas con filtro explícito**: cada consulta de las rutas del
    restaurante filtra por `restaurant_id = req.tenant.id`.
 
-3. **Row Level Security en Postgres** (`003_rls.sql` y `004_pos.sql`), como red
+3. **Row Level Security en Postgres** (`003_rls.sql`, `004_pos.sql` y `005_sitio_portal.sql`), como red
    de seguridad si alguna consulta olvida el filtro:
    - Todas las rutas usan `withTenant(restaurantId, fn)` (`config/database.js`),
      que toma una conexión, abre una transacción y ejecuta
@@ -213,8 +226,11 @@ Restaurante (restaurante resuelto por Host, header o token):
 | GET | `/api/me` | Usuario, restaurante (marca y estado), módulos (sin precios), sucursales |
 | GET/POST/PATCH/DELETE | `/api/branches[/:id]` | Sucursales (escritura: admin y gerente; borrar: admin) |
 | GET/POST/PATCH/DELETE | `/api/users[/:id]` | Usuarios (lectura: admin y gerente; escritura: admin) |
-| GET | `/api/public/site` | Público: marca, módulos habilitados y sucursales |
+| GET | `/api/public/site` | Público: marca, módulos, sucursales con horario, SEO, si hay pedidos en línea |
+| GET | `/api/public/landing` | Público (módulo `landing`): contenido, galería, menú de muestra y sucursales |
+| GET/PUT | `/api/branches/:id/hours` | Horario semanal y días cerrados (editar: admin y gerente) |
 | | `/api/pos/*` | Punto de venta, ver abajo |
+| | `/api/website/*`, `/api/online/*`, `/api/portal/*` | Sitio web y pedidos en línea, ver abajo |
 | GET | `/api/health` | Estado del servidor y la BD |
 
 Roles de usuario: `admin`, `gerente`, `cajero`, `mesero`, `cocina`,
@@ -283,6 +299,90 @@ El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
 iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
 impresión nativo. La pantalla de cocina se actualiza cada 5 segundos.
 
+## Sitio web y pedidos en línea (fase 2)
+
+Cada restaurante tiene su sitio en su dominio o subdominio (el restaurante se
+resuelve por `Host`, igual que el resto de la API). Marca (logo y colores) del
+restaurante; contenido editable por el restaurante.
+
+**Tablas** (`005_sitio_portal.sql`, todas con RLS y llaves compuestas):
+`site_content` (JSON validado por `services/siteContent.js`), `site_gallery`,
+`branch_hours` (un horario por día; cierre antes que apertura = cierra después
+de medianoche; misma hora = 24 h), `branch_closures` (días cerrados),
+`online_settings`, `branch_online_settings` (recibe pedidos, entrega a
+domicilio, costo de envío fijo), `customers` (correo único **por
+restaurante**, contraseña bcrypt) y `customer_addresses`. En `orders` se
+agregan `source` (`pos` | `web`), `online_status` (`pendiente` → `aceptada`
+o `rechazada`), `customer_id`, `delivery_fee`, `delivery_reference`,
+`payment_provider`, `payment_preference`, `pay_with`, `public_token`,
+`accepted_at/by`, `estimated_ready_at` y `dispatched_at`; `created_by` puede
+ser NULL solo en pedidos web.
+
+**Sitio web (módulo `landing`)**: `/` muestra portada (imagen, título,
+subtítulo y botón "Ordenar en línea" si hay pedidos en línea), acerca de, menú
+de muestra (del menú del POS, solo lectura), galería, sucursales con
+dirección, teléfono, enlace a Google Maps y horario (abierto/cerrado
+calculado en la zona horaria de la sucursal), redes y pie. `<title>` y meta
+description/og se fijan por restaurante al cargar (`seo_title`,
+`seo_description`). Sin el módulo, `/` muestra solo el nombre y el enlace para
+ordenar (si tiene portal) o "Sitio no disponible". Se edita en
+**Admin → Sitio web**; las imágenes son URLs por ahora.
+
+**Portal de clientes (módulo `portal`)**: registro, inicio de sesión,
+perfil, direcciones, historial y seguimiento con estado en vivo (sondeo cada
+8 s). Menú en línea por sucursal (respeta productos agotados), detalle con
+modificadores (mínimo/máximo), carrito en `localStorage`, checkout para
+recoger o a domicilio (este requiere además el módulo `domicilios` y que la
+sucursal entregue) y pago al recibir (efectivo, con "¿con cuánto pagas?", o
+tarjeta). Se permite pedir como invitado con nombre y teléfono: el
+seguimiento usa un token aleatorio. La configuración (encender/apagar, pedido
+mínimo, tiempo de preparación, aceptar automáticamente o manualmente, recoger
+/ domicilio y costo de envío por sucursal) está en **Admin → Pedidos en
+línea**; el horario, en **Sucursales → Horario**.
+
+Reglas:
+- Precios siempre del servidor: el pedido se valúa con el mismo
+  `priceItems` del POS y `posMath` (el costo de envío se suma al final, sin
+  descuento ni IVA). Cualquier precio que mande el cliente se ignora.
+  `POST /api/portal/quote` da los totales al checkout.
+- Solo se aceptan pedidos con la sucursal **abierta** (sin horario
+  configurado = cerrada), con los pedidos en línea encendidos, el módulo `pos`
+  activo y el mínimo cubierto.
+- El pedido entra al POS como orden con `source = 'web'`. Si no es automático
+  queda `pendiente`: no aparece en "Abiertas", no va a cocina y no se cobra
+  hasta aceptarlo en **Vender → En línea** (insignia con el número de
+  pendientes). Aceptar lo manda a cocina y fija la hora estimada; rechazar
+  exige motivo, que el cliente ve. Los de domicilio se marcan "salió a
+  reparto". Se cobran con el flujo normal de caja; pagado = entregado.
+- Estado para el cliente: recibido → en preparación → listo para recoger / en
+  camino → entregado; o rechazado / cancelado (el cliente puede cancelar
+  mientras no se acepte).
+- Pagos en línea: `services/onlinePayments.js` define la interfaz de un
+  proveedor (`validate`, `start`); hoy solo existe `contra_entrega`. Una
+  pasarela se agrega como otro proveedor (más su webhook).
+- Límites por restaurante e IP: lecturas públicas, login/registro de
+  clientes y creación de pedidos (ver variables de entorno).
+
+| Método | Ruta | Descripción |
+|---|---|---|
+| GET/PATCH | `/api/website`, `/api/website/content` | Contenido del sitio (admin, gerente; módulo `landing`) |
+| POST/PATCH/DELETE | `/api/website/gallery[/:id]` | Galería |
+| GET/PATCH | `/api/online/settings` | Configuración de pedidos en línea (admin, gerente; módulo `portal`) |
+| PUT | `/api/online/branches/:id` | `online_enabled`, `delivery_enabled`, `delivery_fee` |
+| GET | `/api/portal/config` · `/api/portal/menu?branch_id=` | Sucursales (abierto, envío), opciones de pago; menú en línea |
+| POST | `/api/portal/auth/register` · `/auth/login` | Cuenta del cliente (token `customer`) |
+| GET/PATCH | `/api/portal/me` | Perfil (y cambio de contraseña con la actual) |
+| POST/PATCH/DELETE | `/api/portal/me/addresses[/:id]` | Direcciones |
+| POST | `/api/portal/quote` | Totales del servidor |
+| POST | `/api/portal/orders` | Crear pedido (cliente o invitado) |
+| GET | `/api/portal/orders[/:id]` | Historial del cliente |
+| GET/POST | `/api/portal/track/:token` · `/cancel` | Seguimiento por token / cancelar antes de aceptar |
+| GET | `/api/pos/online-orders?branch_id=&status=pendientes\|activas\|todas` | Lista para el POS + `pending_count` |
+| POST | `/api/pos/online-orders/:id/accept` · `/reject` · `/dispatch` | admin, gerente, cajero |
+
+Todo `/api/portal/*` pasa por `requireModule('portal')` (402) y
+`/api/public/landing` por `requireModule('landing')`.
+
 ## Pruebas
 
 ```bash
@@ -309,6 +409,15 @@ Qué cubren:
   todas las rutas; totales con modificadores, IVA incluido o encima,
   descuentos por rol; pagos divididos con propina y cambio; flujo de cocina;
   corte de caja (esperado, contado y diferencias).
+- Fase 2 (`portal.test.js`, `hours.test.js`): clientes, direcciones,
+  pedidos y contenido del sitio no se cruzan entre restaurantes (API y RLS);
+  el token de un cliente de A no sirve en B ni en rutas del personal o de la
+  plataforma, y los tokens del personal/plataforma no sirven en el portal;
+  402 sin `landing`, `portal` o `domicilios`; precios manipulados se ignoran;
+  pedidos rechazados con la sucursal cerrada, sin horario, apagados o bajo el
+  mínimo; flujo pedido web → aceptar → cocina → lista → reparto → cobro en
+  caja; rechazo con motivo; aceptación automática; horarios nocturnos, 24 h,
+  días cerrados y zona horaria.
 
 Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 
@@ -330,6 +439,9 @@ Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 - POS, pendiente: estaciones de cocina e impresión por estación, socket.io
   en lugar de sondeo, mover artículos entre mesas / unir y dividir cuentas por
   artículo, reportes de ventas, inventario y recetas, promociones.
-- Domicilios: repartidores, estados de entrega y comisión por pedido.
-- Sitio web y portal de clientes por restaurante.
+- Domicilios: repartidores, estados de entrega, comisión por pedido y zonas
+  o costo de envío por distancia.
+- Portal, pendiente: pago en línea (pasarela), programar pedidos para más
+  tarde, subir imágenes (hoy son URLs), notificaciones por WhatsApp/correo y
+  push en lugar de sondeo, recuperar contraseña, lealtad/puntos.
 - Facturación automática con proveedor de pagos.

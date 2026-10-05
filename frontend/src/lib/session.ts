@@ -1,8 +1,10 @@
 // Tokens y restaurante de desarrollo guardados en localStorage. Las cuentas
-// de plataforma y de restaurante usan llaves distintas y nunca se mezclan.
+// de plataforma, del personal del restaurante y de clientes del portal usan
+// llaves distintas y nunca se mezclan.
 const KEYS = {
   platform: 'npc_platform_token',
   restaurant: 'npc_token',
+  customer: 'npc_customer_token',
   slug: 'npc_dev_slug',
 } as const;
 
@@ -23,7 +25,7 @@ function write(key: string, value: string | null) {
   }
 }
 
-export type Realm = 'platform' | 'restaurant';
+export type Realm = 'platform' | 'restaurant' | 'customer';
 
 export const session = {
   getToken: (realm: Realm) => read(KEYS[realm]),
@@ -42,7 +44,10 @@ export function captureSlugFromUrl() {
   if (slug !== null) {
     const next = slug.trim().toLowerCase() || null;
     // Cambiar de restaurante invalida la sesion del anterior.
-    if (next !== read(KEYS.slug)) session.setToken('restaurant', null);
+    if (next !== read(KEYS.slug)) {
+      session.setToken('restaurant', null);
+      session.setToken('customer', null);
+    }
     session.setDevSlug(next);
   }
 }

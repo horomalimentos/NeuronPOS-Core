@@ -9,10 +9,13 @@ import { resolveTenant } from './middleware/tenant.js';
 import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
 import meRouter from './routes/me.js';
+import onlineRouter from './routes/online.js';
 import platformRouter from './routes/platform.js';
+import portalRouter from './routes/portal.js';
 import posRouter from './routes/pos/index.js';
 import publicRouter from './routes/public.js';
 import usersRouter from './routes/users.js';
+import websiteRouter from './routes/website.js';
 import { errorHandler, notFound } from './utils/http.js';
 
 export function createApp() {
@@ -48,6 +51,10 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/public', publicRouter);
   app.use('/api/pos', posRouter);
+  // Fase 2: sitio web y portal de clientes.
+  app.use('/api/website', websiteRouter);
+  app.use('/api/online', onlineRouter);
+  app.use('/api/portal', portalRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

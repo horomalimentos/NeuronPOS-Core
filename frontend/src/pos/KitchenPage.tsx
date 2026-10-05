@@ -72,7 +72,10 @@ export default function KitchenPage() {
               <article key={o.id} className={`card flex flex-col border-t-4 ${tone}`}>
                 <header className="flex items-start justify-between border-b border-gray-800 p-4">
                   <div>
-                    <h3 className="text-lg font-bold text-white">{o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}</h3>
+                    <h3 className="text-lg font-bold text-white">
+                      {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}
+                      {o.source === 'web' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">En línea</span>}
+                    </h3>
                     <p className="text-xs text-gray-400">Folio {o.folio}{o.customer_name && ` · ${o.customer_name}`}</p>
                   </div>
                   <div className="text-right">

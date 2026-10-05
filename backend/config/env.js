@@ -12,6 +12,8 @@ export const env = {
   port: parseInt(process.env.PORT, 10) || 8100,
   jwtSecret: process.env.JWT_SECRET || (isProduction ? null : 'dev-secret-cambiar'),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '12h',
+  // Sesiones de clientes del portal (mas largas que las del personal).
+  customerJwtExpiresIn: process.env.CUSTOMER_JWT_EXPIRES_IN || '30d',
   // Dominio base de la plataforma: los restaurantes viven en <slug>.<dominio>.
   platformDomain: (process.env.PLATFORM_DOMAIN || 'localhost').toLowerCase(),
   // Subdominios que nunca son restaurantes (panel, api, www...).
@@ -22,6 +24,10 @@ export const env = {
   allowSlugHeader: bool(process.env.ALLOW_SLUG_HEADER, !isProduction),
   corsOrigins: (process.env.CORS_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean),
   loginRateLimit: parseInt(process.env.LOGIN_RATE_LIMIT, 10) || 20,
+  // Rutas publicas (sitio y portal): requests por IP y restaurante cada 15 min.
+  publicRateLimit: parseInt(process.env.PUBLIC_RATE_LIMIT, 10) || 600,
+  // Pedidos en linea creados por IP y restaurante cada hora.
+  orderRateLimit: parseInt(process.env.ORDER_RATE_LIMIT, 10) || 20,
 };
 
 if (!env.jwtSecret) {
