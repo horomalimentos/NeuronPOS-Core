@@ -1,6 +1,6 @@
 import {
-  Award, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt,
-  Settings, ShoppingBag, Store, Trophy, UtensilsCrossed, Users, Wallet,
+  Award, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt,
+  Settings, ShoppingBag, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -56,6 +56,9 @@ export default function AdminLayout() {
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
+    { to: '/admin/reparto', label: 'Reparto', icon: Bike, end: false, show: has('domicilios') && posCan.cashier(role) },
+    { to: '/repartidor', label: 'Mis entregas', icon: Bike, end: false, show: has('domicilios') && role === 'repartidor' },
+    { to: '/admin/domicilios', label: 'Domicilios', icon: Truck, end: false, show: has('domicilios') && canManage(role) },
     { to: '/admin/rh', label: 'RH', icon: Contact, end: false, show: has('rh') && canManage(role) },
     { to: '/admin/checador', label: 'Checador', icon: Clock, end: false, show: has('rh') },
     { to: '/admin/mi-nomina', label: 'Mi nómina', icon: Receipt, end: false, show: has('rh') },

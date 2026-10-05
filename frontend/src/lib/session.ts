@@ -1,10 +1,12 @@
 // Tokens y restaurante de desarrollo guardados en localStorage. Las cuentas
-// de plataforma, del personal del restaurante y de clientes del portal usan
-// llaves distintas y nunca se mezclan.
+// de plataforma, del personal del restaurante, de clientes del portal y de
+// repartidores de la flota usan llaves distintas y nunca se mezclan.
 const KEYS = {
   platform: 'npc_platform_token',
   restaurant: 'npc_token',
   customer: 'npc_customer_token',
+  // Repartidor de la flota de la plataforma (fase 5).
+  fleet: 'npc_fleet_token',
   slug: 'npc_dev_slug',
 } as const;
 
@@ -25,7 +27,7 @@ function write(key: string, value: string | null) {
   }
 }
 
-export type Realm = 'platform' | 'restaurant' | 'customer';
+export type Realm = 'platform' | 'restaurant' | 'customer' | 'fleet';
 
 export const session = {
   getToken: (realm: Realm) => read(KEYS[realm]),

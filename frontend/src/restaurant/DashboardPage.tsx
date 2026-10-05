@@ -16,6 +16,8 @@ export default function DashboardPage() {
     rh: manager ? { to: '/admin/rh', label: 'Abrir recursos humanos' } : { to: '/admin/mi-nomina', label: 'Ver mi nómina' },
     empleado_mes: manager ? { to: '/admin/empleado-del-mes', label: 'Ver ranking del mes' } : { to: '/admin/muro', label: 'Ver el muro' },
   };
+  if (me.user.role === 'repartidor') links.domicilios = { to: '/repartidor', label: 'Abrir app del repartidor' };
+  else if (manager || me.user.role === 'cajero') links.domicilios = { to: '/admin/reparto', label: 'Abrir reparto' };
   if (manager) {
     links.landing = { to: '/admin/sitio', label: 'Editar sitio web' };
     links.portal = { to: '/admin/pedidos-en-linea', label: 'Configurar pedidos' };

@@ -18,7 +18,12 @@ interface Options {
   noRedirect?: boolean;
 }
 
-const LOGIN_PATH: Record<Realm, string> = { platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar' };
+const LOGIN_PATH: Record<Realm, string> = {
+  platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor',
+};
+
+/** La app del repartidor tiene su propio login (personal del restaurante o flota). */
+const loginPath = (realm: Realm) => (window.location.pathname.startsWith('/repartidor') ? '/repartidor' : LOGIN_PATH[realm]);
 
 export async function api<T>(path: string, { method = 'GET', body, realm = 'restaurant', noRedirect }: Options = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -26,7 +31,7 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
   const token = session.getToken(realm);
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
-  if (slug && realm !== 'platform') headers['X-Restaurant-Slug'] = slug;
+  if (slug && realm !== 'platform' && realm !== 'fleet') headers['X-Restaurant-Slug'] = slug;
 
   let res: Response;
   try {
@@ -42,12 +47,15 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
     if (res.status === 403 && realm === 'customer' && data?.code === 'TENANT_MISMATCH') session.setToken(realm, null);
     if (res.status === 401 && token && !noRedirect) {
       session.setToken(realm, null);
-      window.location.assign(LOGIN_PATH[realm]);
+      window.location.assign(loginPath(realm));
     }
     throw new ApiError(res.status, data?.error || `Error ${res.status}`, data?.code);
   }
   return data as T;
 }
+
+/** App de los repartidores de la flota de la plataforma. */
+export const fleetApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'fleet' });
 
 export const platformApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'platform' });
 
