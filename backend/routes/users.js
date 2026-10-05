@@ -3,6 +3,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { withTenant } from '../config/database.js';
 import { authenticateUser, requireRole } from '../middleware/auth.js';
+import { requireOperational } from '../middleware/requireModule.js';
 import {
   EMAIL_RE, UUID_RE, ah, badRequest, bool, buildSet, notFound, oneOf, requireUuid, str,
 } from '../utils/http.js';
@@ -10,7 +11,7 @@ import {
 export const ROLES = ['admin', 'gerente', 'cajero', 'mesero', 'cocina', 'repartidor'];
 
 const router = Router();
-router.use(authenticateUser);
+router.use(authenticateUser, requireOperational);
 
 const SELECT_USERS = `
   SELECT u.id, u.email, u.name, u.role, u.active, u.last_login_at, u.created_at,

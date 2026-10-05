@@ -14,7 +14,9 @@ import platformRouter from './routes/platform.js';
 import portalRouter from './routes/portal.js';
 import posRouter from './routes/pos/index.js';
 import publicRouter from './routes/public.js';
+import subscriptionRouter from './routes/subscription.js';
 import usersRouter from './routes/users.js';
+import webhooksRouter from './routes/webhooks.js';
 import websiteRouter from './routes/website.js';
 import { errorHandler, notFound } from './utils/http.js';
 
@@ -28,7 +30,11 @@ export function createApp() {
     origin: env.corsOrigins.length ? env.corsOrigins : !env.isProduction,
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Restaurant-Slug'],
   }));
-  app.use(express.json({ limit: '1mb' }));
+  // Los webhooks de Clip se firman sobre el cuerpo crudo: se guarda en req.rawBody.
+  app.use(express.json({
+    limit: '1mb',
+    verify: (req, res, buf) => { if (req.originalUrl.startsWith('/api/webhooks/')) req.rawBody = buf; },
+  }));
 
   app.get('/api/health', async (req, res) => {
     try {
@@ -42,6 +48,8 @@ export function createApp() {
   // Panel NeuronPOS (dueno de la plataforma): no usa tenant.
   app.use('/api/platform/auth', platformAuthRouter);
   app.use('/api/platform', platformRouter);
+  // Webhooks de Clip (fase 3): el restaurante va en la ruta, no en el Host.
+  app.use('/api/webhooks', webhooksRouter);
 
   // Todo lo demas es de un restaurante.
   app.use('/api', resolveTenant);
@@ -55,6 +63,8 @@ export function createApp() {
   app.use('/api/website', websiteRouter);
   app.use('/api/online', onlineRouter);
   app.use('/api/portal', portalRouter);
+  // Fase 3: suscripcion del restaurante (funciona aun suspendido, para pagar).
+  app.use('/api/subscription', subscriptionRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

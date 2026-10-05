@@ -14,7 +14,7 @@ import { env } from '../config/env.js';
 import { SLUG_RE, notFound } from '../utils/http.js';
 
 export const RESTAURANT_COLUMNS = `id, slug, name, custom_domain, logo_url, primary_color,
-  secondary_color, status, trial_ends_at`;
+  secondary_color, status, trial_ends_at, suspended_reason, billing_day, activated_at`;
 
 /**
  * Interpreta el Host. Regresa { slug } | { customDomain } | null (host de la

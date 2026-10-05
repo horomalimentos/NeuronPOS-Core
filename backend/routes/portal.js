@@ -23,6 +23,9 @@ import {
 import { DEFAULT_PROVIDER, getPaymentProvider, publicPaymentOptions } from '../services/onlinePayments.js';
 import { calculateOrderTotals, toCents } from '../services/posMath.js';
 import {
+  ensureOrderCheckout, getPaymentSettings, loadRestaurantClipCredentials, onlinePaymentAvailable, reconcileOrder,
+} from '../services/restaurantPayments.js';
+import {
   EMAIL_RE, HttpError, ah, badRequest, notFound, oneOf, requireUuid, str,
 } from '../utils/http.js';
 import { loadMenu } from './pos/menu.js';
@@ -60,6 +63,7 @@ router.get('/config', ah(async (req, res) => {
   const data = await withTenant(req.tenant.id, async (db) => ({
     settings: await getOnlineSettings(db, req.tenant.id),
     branches: await loadBranches(db, req.tenant.id),
+    clipAvailable: onlinePaymentAvailable(await getPaymentSettings(db, req.tenant.id)),
   }));
   const s = data.settings;
   const delivery = s.allow_delivery && !mods.domicilios;
@@ -78,7 +82,7 @@ router.get('/config', ah(async (req, res) => {
       delivery_available: delivery && b.delivery_enabled,
       delivery_fee: b.delivery_fee,
     })),
-    payment_options: publicPaymentOptions(),
+    payment_options: publicPaymentOptions({ clipAvailable: data.clipAvailable }),
   });
 }));
 
@@ -354,7 +358,8 @@ async function prepareOrder(db, req, input, mods) {
   const totals = calculateOrderTotals(lines, {
     taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee,
   });
-  const provider = getPaymentProvider(input.payment.provider || DEFAULT_PROVIDER);
+  const clipAvailable = onlinePaymentAvailable(await getPaymentSettings(db, rid));
+  const provider = getPaymentProvider(input.payment.provider || DEFAULT_PROVIDER, { clipAvailable });
   const payment = provider.validate(input.payment, { total: totals.total });
   return { settings, branch, lines, totals, pos, provider, payment, address, reference };
 }
@@ -392,26 +397,32 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
   const input = readOrderInput(req.body, req.customer);
   const mods = await readMods(req, input);
   const rid = req.tenant.id;
+  // Pago en linea: credenciales del restaurante (se descifran fuera de la transaccion).
+  const creds = input.payment.provider === 'clip' ? await loadRestaurantClipCredentials(rid) : null;
   const result = await withTenant(rid, async (db) => {
     const p = await prepareOrder(db, req, input, mods);
+    const online = p.provider.online;
+    const timeout = online ? (await getPaymentSettings(db, rid)).payment_timeout_minutes : null;
     const folio = await nextFolio(db, rid, p.branch.id);
     const token = crypto.randomBytes(18).toString('base64url');
     const { rows } = await db.query(
       `INSERT INTO orders (restaurant_id, branch_id, folio, order_type, source, online_status, customer_id,
                            customer_name, customer_phone, customer_address, delivery_reference, notes,
                            tax_rate_pct, prices_include_tax, delivery_fee, payment_provider,
-                           payment_preference, pay_with, public_token)
-       VALUES ($1, $2, $3, $4, 'web', 'pendiente', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+                           payment_preference, pay_with, public_token, online_payment_status, payment_due_at)
+       VALUES ($1, $2, $3, $4, 'web', 'pendiente', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+               $18, now() + make_interval(mins => $19::int))
        RETURNING *`,
       [rid, p.branch.id, folio, input.order_type, req.customer?.id ?? null, input.name, input.phone,
         input.order_type === 'domicilio' ? p.address : null, input.order_type === 'domicilio' ? p.reference : null,
         input.notes, p.pos.tax_rate_pct, p.pos.prices_include_tax, p.totals.delivery_fee, p.provider.code,
-        p.payment.payment_preference, p.payment.pay_with, token],
+        p.payment.payment_preference, p.payment.pay_with, token, online ? 'pendiente' : null, timeout],
     );
     const order = rows[0];
     await insertItems(db, rid, order.id, null, p.lines);
     await recalcOrder(db, rid, order);
-    if (p.settings.auto_accept) {
+    // Con pago en linea se acepta (o espera aceptacion) hasta que Clip confirme el pago.
+    if (p.settings.auto_accept && !online) {
       await acceptOnlineOrder(db, rid, order.id, { prepMinutes: p.settings.prep_time_minutes });
     }
     if (input.save_address && req.customer && input.order_type === 'domicilio' && !input.address_id) {
@@ -423,7 +434,8 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
         [rid, req.customer.id, p.address, p.reference],
       );
     }
-    const next = await p.provider.start({ db, restaurantId: rid, order });
+    const totals = await loadOrder(db, rid, order.id);
+    const next = await p.provider.start({ db, restaurantId: rid, tenant: req.tenant, order: totals, creds });
     const full = await loadOrder(db, rid, order.id);
     return { order: customerOrderView(full, p.branch), payment: next };
   });
@@ -481,14 +493,41 @@ router.post('/track/:token/cancel', ah(async (req, res) => {
     if (o.online_status !== 'pendiente' || !['abierta', 'enviada', 'lista'].includes(o.status)) {
       throw badRequest('El restaurante ya esta preparando tu pedido: llama a la sucursal para cancelarlo', 'CANNOT_CANCEL');
     }
+    // Ya pagado en linea: cancelarlo implica un reembolso, lo hace la sucursal.
+    if (o.online_payment_status === 'pagado') {
+      throw badRequest('Tu pedido ya esta pagado: llama a la sucursal para cancelarlo y gestionar tu reembolso', 'CANNOT_CANCEL');
+    }
     await db.query(
-      `UPDATE orders SET status = 'cancelada', cancelled_at = now(), cancel_reason = 'Cancelado por el cliente', updated_at = now()
+      `UPDATE orders SET status = 'cancelada', cancelled_at = now(), cancel_reason = 'Cancelado por el cliente', updated_at = now(),
+              online_payment_status = CASE WHEN online_payment_status = 'pendiente' THEN 'cancelado' ELSE online_payment_status END
         WHERE id = $1 AND restaurant_id = $2`,
+      [o.id, req.tenant.id],
+    );
+    await db.query(
+      `UPDATE clip_checkouts SET status = 'cancelled', updated_at = now()
+        WHERE order_id = $1 AND restaurant_id = $2 AND status = 'pending'`,
       [o.id, req.tenant.id],
     );
     return (await customerViews(db, req.tenant.id, [await findByToken(db, req.tenant.id, req.params.token)]))[0];
   });
   res.json({ order });
+}));
+
+// Pago en linea: al regresar de Clip se concilia con Clip (no se cree en la URL).
+router.post('/track/:token/verify-payment', ah(async (req, res) => {
+  const rid = req.tenant.id;
+  const o = await withTenant(rid, (db) => findByToken(db, rid, req.params.token));
+  if (o.online_payment_status) await reconcileOrder(rid, o.id);
+  const order = await withTenant(rid, async (db) =>
+    (await customerViews(db, rid, [await findByToken(db, rid, req.params.token)]))[0]);
+  res.json({ order });
+}));
+
+// Liga de pago vigente (o una nueva) para terminar de pagar.
+router.post('/track/:token/pay', ah(async (req, res) => {
+  if (!TOKEN_RE.test(String(req.params.token || ''))) throw notFound('Pedido no encontrado', 'ORDER_NOT_FOUND');
+  const payment = await ensureOrderCheckout(req.tenant, req.params.token);
+  res.json({ payment });
 }));
 
 export default router;

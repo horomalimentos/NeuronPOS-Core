@@ -3,6 +3,7 @@ import { withTenant } from '../config/database.js';
 import { authenticateUser } from '../middleware/auth.js';
 import { checkRestaurantAccess } from '../services/access.js';
 import { listRestaurantModules } from '../services/restaurants.js';
+import { billingSummary } from '../services/subscriptions.js';
 import { ah } from '../utils/http.js';
 
 const router = Router();
@@ -18,7 +19,9 @@ router.get('/', authenticateUser, ah(async (req, res) => {
         ORDER BY name`,
       [tenant.id, ['admin', 'gerente'].includes(user.role), user.branch_ids],
     );
-    return { modules, branches: branches.rows };
+    // Banner de pago pendiente / suspension (solo admin y gerente ven montos).
+    const billing = ['admin', 'gerente'].includes(user.role) ? await billingSummary(db, tenant) : null;
+    return { modules, branches: branches.rows, billing };
   });
   const access = checkRestaurantAccess(tenant);
   res.json({
@@ -29,6 +32,7 @@ router.get('/', authenticateUser, ah(async (req, res) => {
       code: m.module_code, name: m.name, description: m.description, enabled: m.is_active,
     })),
     branches: data.branches,
+    billing: data.billing,
   });
 }));
 

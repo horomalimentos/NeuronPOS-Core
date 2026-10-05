@@ -46,10 +46,11 @@ async function cutInputs(db, restaurantId, sessionId) {
       WHERE m.restaurant_id = $1 AND m.session_id = $2 ORDER BY m.created_at`,
     [restaurantId, sessionId],
   )).rows;
-  // Metodos activos y cualquier otro que se haya usado en el turno.
+  // Metodos activos y cualquier otro que se haya usado en el turno. Los pagos
+  // en linea (Clip) no pasan por caja: no tienen turno y no entran al corte.
   const methods = (await db.query(
     `SELECT id, name, kind FROM payment_methods
-      WHERE restaurant_id = $1 AND (active OR id = ANY($2::uuid[]))
+      WHERE restaurant_id = $1 AND kind <> 'en_linea' AND (active OR id = ANY($2::uuid[]))
       ORDER BY sort_order, name`,
     [restaurantId, [...new Set(payments.map((p) => p.payment_method_id))]],
   )).rows;

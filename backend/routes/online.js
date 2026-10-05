@@ -8,6 +8,7 @@ import { authenticateUser, requireRole } from '../middleware/auth.js';
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { checkModuleAccess } from '../services/access.js';
 import { getOnlineSettings, loadBranches, publicBranch } from '../services/online.js';
+import { getPaymentSettings, publicPaymentSettings, updatePaymentSettings } from '../services/restaurantPayments.js';
 import { ah, badRequest, bool, buildSet, money, notFound, requireUuid } from '../utils/http.js';
 import { int } from './pos/common.js';
 
@@ -83,6 +84,22 @@ router.put('/branches/:id', ah(async (req, res) => {
     return snapshot(req, db);
   });
   res.json(data);
+}));
+
+// ---------------------------------------------------------------------------
+// Pago en linea con Clip (fase 3): credenciales de la cuenta de Clip del
+// restaurante. Se guardan cifradas y nunca se regresan: solo "configurado".
+// Ver: admin y gerente. Cambiar: solo admin.
+// ---------------------------------------------------------------------------
+
+router.get('/payments', ah(async (req, res) => {
+  const row = await withTenant(req.tenant.id, (db) => getPaymentSettings(db, req.tenant.id));
+  res.json({ payments: publicPaymentSettings(row, req.tenant) });
+}));
+
+router.put('/payments', requireRole('admin'), ah(async (req, res) => {
+  const row = await withTenant(req.tenant.id, (db) => updatePaymentSettings(db, req.tenant.id, req.body || {}));
+  res.json({ payments: publicPaymentSettings(row, req.tenant) });
 }));
 
 export default router;

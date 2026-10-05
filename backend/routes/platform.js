@@ -7,6 +7,8 @@ import { authenticatePlatform } from '../middleware/auth.js';
 import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
 import { getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant } from '../services/restaurants.js';
+import { addDays, getPlatformSettings, listInvoices, today } from '../services/subscriptions.js';
+import platformBillingRouter from './platformBilling.js';
 import {
   COLOR_RE, DOMAIN_RE, EMAIL_RE, SLUG_RE, ah, badRequest, bool, buildSet, dateOrNull,
   money, notFound, oneOf, requireUuid, str,
@@ -16,7 +18,24 @@ const router = Router();
 router.use(authenticatePlatform);
 
 const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS, 10) || 14;
-const DETAIL_COLUMNS = `${RESTAURANT_COLUMNS}, contact_name, contact_email, contact_phone, notes, created_at, updated_at`;
+const DETAIL_COLUMNS = `${RESTAURANT_COLUMNS}, contact_name, contact_email, contact_phone, notes, dunning_grace_until,
+  created_at, updated_at`;
+
+/** Dia de cobro 1-31 (NULL = el dia en que se activo). */
+function billingDay(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 31) throw badRequest('El dia de cobro debe ser de 1 a 31', 'INVALID_FIELD');
+  return n;
+}
+
+/** Al cambiar el estado a mano: motivo de suspension y fecha de alta. */
+function statusSideEffects(status) {
+  if (status === 'suspended') return { suspended_reason: 'manual' };
+  if (status === 'active' || status === 'trial') return { suspended_reason: null };
+  return {};
+}
 
 function restaurantFields(body, { creating }) {
   const f = {
@@ -32,6 +51,7 @@ function restaurantFields(body, { creating }) {
     contact_email: str(body.contact_email, { field: 'contact_email', max: 200 }),
     contact_phone: str(body.contact_phone, { field: 'contact_phone', max: 40 }),
     notes: str(body.notes, { field: 'notes', max: 2000 }),
+    billing_day: billingDay(body.billing_day),
   };
   if (f.slug && !SLUG_RE.test(f.slug)) {
     throw badRequest('El slug solo puede tener minusculas, numeros y guiones', 'INVALID_SLUG');
@@ -57,12 +77,8 @@ async function getRestaurantDetail(db, id) {
             (SELECT count(*) FROM users WHERE restaurant_id = $1)::int AS users`,
     [id],
   );
-  const invoices = await db.query(
-    `SELECT id, period, amount_mxn, status, paid_at, created_at
-       FROM subscription_invoices WHERE restaurant_id = $1 ORDER BY period DESC LIMIT 24`,
-    [id],
-  );
-  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices: invoices.rows };
+  const invoices = await listInvoices(db, { restaurantId: id, limit: 24 });
+  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices };
 }
 
 router.get('/me', (req, res) => res.json({ admin: req.platformAdmin }));
@@ -107,7 +123,11 @@ router.get('/restaurants', ah(async (req, res) => {
   const result = await withPlatform(async (db) => {
     const { rows } = await db.query(
       `SELECT ${DETAIL_COLUMNS},
-              (SELECT count(*) FROM branches b WHERE b.restaurant_id = r.id)::int AS branch_count
+              (SELECT count(*) FROM branches b WHERE b.restaurant_id = r.id)::int AS branch_count,
+              (SELECT count(*) FROM subscription_invoices i
+                WHERE i.restaurant_id = r.id AND i.status IN ('pending', 'overdue'))::int AS unpaid_invoices,
+              EXISTS (SELECT 1 FROM subscription_invoices i
+                       WHERE i.restaurant_id = r.id AND i.status = 'overdue') AS has_overdue
          FROM restaurants r ORDER BY r.name`,
     );
     const totals = await monthlyTotalsByRestaurant(db, rows.map((r) => r.id));
@@ -127,6 +147,8 @@ router.post('/restaurants', ah(async (req, res) => {
   if (f.status === 'trial' && !f.trial_ends_at) {
     f.trial_ends_at = new Date(Date.now() + TRIAL_DAYS * 86400000).toISOString();
   }
+  if (f.status === 'active') f.activated_at = new Date().toISOString();
+  Object.assign(f, f.status === 'suspended' ? { suspended_reason: 'manual' } : {});
   const moduleCodes = Array.isArray(body.modules) ? body.modules.map(String) : [];
 
   let admin = null;
@@ -193,11 +215,13 @@ router.patch('/restaurants/:id', ah(async (req, res) => {
   const f = restaurantFields(req.body || {}, { creating: false });
   if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
   if (f.slug === null) throw badRequest('El slug no puede quedar vacio', 'MISSING_FIELD');
-  const set = buildSet(f);
+  const set = buildSet({ ...f, ...statusSideEffects(f.status) });
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const detail = await withPlatform(async (db) => {
     const { rowCount } = await db.query(
-      `UPDATE restaurants SET ${set.sql}, updated_at = now() WHERE id = $${set.values.length + 1}`,
+      `UPDATE restaurants SET ${set.sql}, updated_at = now()
+              ${f.status === 'active' ? ', activated_at = coalesce(activated_at, now())' : ''}
+        WHERE id = $${set.values.length + 1}`,
       [...set.values, req.params.id],
     );
     if (!rowCount) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
@@ -206,12 +230,19 @@ router.patch('/restaurants/:id', ah(async (req, res) => {
   res.json(detail);
 }));
 
+// Suspender a mano (no se levanta sola al pagar) o reactivar a mano. Al
+// reactivar, el cobro automatico no vuelve a suspender por adeudo antes de
+// hoy + dias de gracia (para dar tiempo de pagar).
 async function setStatus(req, res, status) {
   requireUuid(req.params.id);
   const detail = await withPlatform(async (db) => {
+    const { grace_days: grace } = await getPlatformSettings(db);
     const { rowCount } = await db.query(
-      'UPDATE restaurants SET status = $1, updated_at = now() WHERE id = $2',
-      [status, req.params.id],
+      status === 'suspended'
+        ? `UPDATE restaurants SET status = $1, suspended_reason = 'manual', updated_at = now() WHERE id = $2`
+        : `UPDATE restaurants SET status = $1, suspended_reason = NULL, activated_at = coalesce(activated_at, now()),
+                  dunning_grace_until = $3, updated_at = now() WHERE id = $2`,
+      status === 'suspended' ? [status, req.params.id] : [status, req.params.id, addDays(today(), grace)],
     );
     if (!rowCount) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
     return getRestaurantDetail(db, req.params.id);
@@ -313,6 +344,9 @@ router.put('/restaurants/:id/delivery', ah(async (req, res) => {
   });
   res.json(detail);
 }));
+
+// Cobro de suscripciones: facturas, ligas de Clip y configuracion (fase 3).
+router.use(platformBillingRouter);
 
 router.get('/restaurants/:id/charge', ah(async (req, res) => {
   requireUuid(req.params.id);
