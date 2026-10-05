@@ -80,6 +80,7 @@ export function publicBranch(b) {
 // ---------------------------------------------------------------------------
 
 export const CUSTOMER_STATUS_LABEL = {
+  esperando_pago: 'Esperando tu pago en línea',
   recibido: 'Recibido, esperando confirmación',
   preparando: 'En preparación',
   listo: 'Listo para recoger',
@@ -93,6 +94,7 @@ export const CUSTOMER_STATUS_LABEL = {
 export function customerStatus(o) {
   if (o.status === 'cancelada') return o.online_status === 'rechazada' ? 'rechazado' : 'cancelado';
   if (o.status === 'pagada') return 'entregado';
+  if (o.online_payment_status === 'pendiente') return 'esperando_pago';
   if (o.online_status === 'pendiente') return 'recibido';
   if (o.status === 'lista') return o.order_type === 'domicilio' && o.dispatched_at ? 'en_camino' : 'listo';
   if (o.order_type === 'domicilio' && o.dispatched_at) return 'en_camino';
@@ -118,6 +120,10 @@ export function customerOrderView(o, branch = null) {
     notes: o.notes,
     payment_preference: o.payment_preference,
     pay_with: o.pay_with,
+    // Pago en linea (Clip): pendiente, pagado o cancelado; null = pago al recibir.
+    payment_provider: o.payment_provider,
+    online_payment_status: o.online_payment_status ?? null,
+    payment_due_at: o.online_payment_status === 'pendiente' ? o.payment_due_at : null,
     items: (o.items || []).filter((i) => !i.voided_at).map((i) => ({
       name: i.name,
       quantity: i.quantity,
@@ -134,7 +140,7 @@ export function customerOrderView(o, branch = null) {
     prices_include_tax: o.prices_include_tax,
     delivery_fee: o.delivery_fee,
     total: o.total,
-    paid: o.status === 'pagada',
+    paid: o.status === 'pagada' || o.online_payment_status === 'pagado',
     cancel_reason: o.status === 'cancelada' ? o.cancel_reason : null,
     created_at: o.created_at,
     accepted_at: o.accepted_at,
