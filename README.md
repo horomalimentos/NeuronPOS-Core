@@ -806,18 +806,95 @@ simulada: asignar, app del repartidor, mapa de la caja y del cliente, cobro
 en la puerta, corte, y en la flota asignar desde el Panel, entregar,
 liquidar, corte del repartidor y reporte.
 
-## Producción (resumen)
+## Despliegue en el servidor
 
-- Base de datos propia (`neuronpos_core`) con rol propio, aunque comparta
-  servidor con Horom.
-- `NODE_ENV=production`, `JWT_SECRET` largo, `PLATFORM_DOMAIN` real,
-  `ALLOW_SLUG_HEADER=false` si todo se sirve por subdominio.
-- Backend con pm2: `pm2 start backend/ecosystem.config.cjs --env production`
-  (proceso `neuronpos-core`).
-- nginx: certificado comodín para `*.<PLATFORM_DOMAIN>`, servir
-  `frontend/dist` y mandar `/api` al backend conservando `Host`
-  (`proxy_set_header Host $host;`). Los dominios propios de cada restaurante
-  se agregan como `server_name` adicionales apuntando a lo mismo.
+NeuronPOS Core corre en el mismo servidor que Horom pero totalmente aparte:
+base de datos `neuronpos_core` con rol propio, proceso pm2 `neuronpos-core`
+en el puerto 8100, carpeta `/opt/neuronpos-core` y su propio bloque de nginx.
+No toca nada de Horom.
+
+### 1. DNS de neuronpos.mx
+
+Apunta a la IP pública del servidor dos registros A:
+
+| Nombre | Tipo | Valor |
+|---|---|---|
+| `neuronpos.mx` (`@`) | A | IP del servidor |
+| `*.neuronpos.mx` (`*`) | A | IP del servidor |
+
+`www` queda cubierto por el comodín y nginx lo redirige al dominio raíz.
+
+### 2. Instalación
+
+```bash
+sudo git clone https://github.com/horomalimentos/NeuronPOS-Core /opt/neuronpos-core
+sudo chown -R "$USER" /opt/neuronpos-core
+cd /opt/neuronpos-core && bash deploy/instalar.sh
+```
+
+`deploy/instalar.sh` crea el rol `neuron_app` (sin SUPERUSER ni BYPASSRLS) y
+la base, genera `backend/.env` con secretos aleatorios (`JWT_SECRET`,
+`PAYMENT_SECRETS_KEY`; respáldalos fuera del servidor), corre las
+migraciones, compila el frontend y arranca pm2. Se puede volver a correr sin
+peligro: no recrea la base ni pisa un `.env` existente.
+
+### 3. Certificado comodín y nginx
+
+Un certificado para `*.neuronpos.mx` solo se puede emitir con reto DNS. Lo
+más simple es manejar el DNS del dominio en Cloudflare (gratis, registros en
+"DNS only") y usar su plugin de certbot:
+
+```bash
+sudo apt install python3-certbot-dns-cloudflare
+# /root/.secrets/cloudflare.ini con: dns_cloudflare_api_token = <token con permiso DNS:Edit>
+sudo chmod 600 /root/.secrets/cloudflare.ini
+sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
+  -d neuronpos.mx -d '*.neuronpos.mx'
+```
+
+Si el DNS se queda en el proveedor del dominio, se puede emitir a mano con
+`certbot certonly --manual --preferred-challenges dns -d neuronpos.mx -d '*.neuronpos.mx'`,
+pero hay que repetir el registro TXT cada 90 días.
+
+Luego:
+
+```bash
+sudo cp deploy/neuronpos-app.conf /etc/nginx/snippets/neuronpos-app.conf
+sudo cp deploy/nginx-neuronpos.conf /etc/nginx/sites-available/neuronpos
+sudo ln -s /etc/nginx/sites-available/neuronpos /etc/nginx/sites-enabled/neuronpos
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Los dominios propios de un restaurante (por ejemplo `turestaurante.com`) se
+agregan como un bloque más en `nginx-neuronpos.conf` (hay una plantilla
+comentada), con su certificado de `certbot --nginx`, y se registran en el
+Panel en el campo de dominio propio del restaurante.
+
+### 4. Primer acceso
+
+```bash
+cd /opt/neuronpos-core/backend && npm run create-owner -- --email tu@correo.com --name "Alex"
+```
+
+El Panel NeuronPOS queda en `https://neuronpos.mx/panel`. Cada restaurante
+que des de alta vive en `https://<slug>.neuronpos.mx`.
+
+### 5. Clip
+
+En `backend/.env` llena `CLIP_API_KEY`, `CLIP_SECRET_KEY` y
+`CLIP_WEBHOOK_SECRET` de tu cuenta de Clip, y en el dashboard de Clip
+registra el webhook `https://neuronpos.mx/api/webhooks/clip/plataforma`.
+Después: `pm2 reload neuronpos-core --update-env`. Cada restaurante registra
+en su propia cuenta de Clip la URL que le muestra su pantalla de ajustes.
+
+### Actualizar
+
+```bash
+cd /opt/neuronpos-core && bash deploy/actualizar.sh
+```
+
+Trae `main`, corre migraciones nuevas, compila y recarga pm2. Se detiene si
+hay cambios locales sin commit.
 
 ## Siguientes fases
 
