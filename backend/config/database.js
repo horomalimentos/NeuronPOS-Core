@@ -76,6 +76,37 @@ export function withPlatform(fn) {
 }
 
 /**
+ * Contexto de un repartidor de la flota de la plataforma (fase 5): con RLS
+ * solo ve su propia fila, sus ofertas, sus cortes y las solicitudes de
+ * reparto que tiene asignadas. Las tablas de los restaurantes siguen
+ * cerradas (no hay app.restaurant_id).
+ */
+export function withFleetDriver(driverId, fn) {
+  if (!driverId || !UUID_RE.test(String(driverId))) {
+    return Promise.reject(new Error('withFleetDriver requiere un id de repartidor valido'));
+  }
+  return inTransaction(
+    (c) => c.query("SELECT set_config('app.fleet_driver_id', $1, true)", [String(driverId)]),
+    fn,
+  );
+}
+
+/**
+ * Dentro de una transaccion ya abierta (Panel o repartidor de la flota),
+ * corre fn con el contexto RLS de UN restaurante y luego lo quita. Lo usa la
+ * sincronizacion de una solicitud de reparto con la orden del restaurante.
+ */
+export async function asTenant(db, restaurantId, fn) {
+  if (!restaurantId || !UUID_RE.test(String(restaurantId))) throw new Error('asTenant requiere un restaurant_id valido');
+  const prev = (await db.query("SELECT coalesce(current_setting('app.restaurant_id', true), '') AS v")).rows[0].v;
+  await db.query("SELECT set_config('app.restaurant_id', $1, true)", [String(restaurantId)]);
+  // Si fn falla la transaccion completa se revierte: no hace falta restaurar.
+  const result = await fn(db);
+  await db.query("SELECT set_config('app.restaurant_id', $1, true)", [prev]);
+  return result;
+}
+
+/**
  * Advierte si el rol de la app se salta RLS (superuser o BYPASSRLS).
  * Con REQUIRE_RLS_ROLE=true el servidor se niega a arrancar en ese caso.
  */
