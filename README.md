@@ -9,10 +9,11 @@ Este repo es independiente del NeuronPOS de Horom Sushi: base de datos propia,
 proceso pm2 propio y dominio propio. Usa el mismo stack (React + Vite +
 TypeScript + Tailwind, Express ESM + `pg`, Postgres).
 
-> **Estado: Fase 1a (cimientos).** Ya están el esquema multi-restaurante, la
-> resolución del restaurante, la autenticación, el control de módulos, el Panel
-> NeuronPOS y la administración básica del restaurante (sucursales y usuarios).
-> El POS, el menú y las órdenes se portan en la siguiente fase.
+> **Estado: Fase 1b (punto de venta).** Sobre los cimientos de la fase 1a
+> (esquema multi-restaurante, resolución del restaurante, autenticación,
+> módulos, Panel NeuronPOS, sucursales y usuarios) ya está el POS: menú con
+> modificadores, mesas, órdenes, cobro, caja con corte, pantalla de cocina y
+> ticket imprimible. Ver [Punto de venta](#punto-de-venta-módulo-pos).
 
 ## Estructura
 
@@ -21,14 +22,17 @@ backend/            API Express (ESM) + pg
   app.js            arma la app (server.js la levanta, las pruebas la importan)
   config/           variables de entorno y pool de Postgres (withTenant / withPlatform)
   middleware/       tenant.js, auth.js, requireModule.js
-  routes/           platform.js (Panel), auth, me, branches, users, public, pos
-  services/         billing.js (cobro mensual), access.js (reglas 402), restaurants.js
+  routes/           platform.js (Panel), auth, me, branches, users, public
+  routes/pos/       POS: menu, tables, orders (y cocina), cash, settings
+  services/         billing.js (cobro mensual), access.js (reglas 402), restaurants.js,
+                    posMath.js (totales, pagos y corte de caja en centavos)
   scripts/          migrate.js, create-owner.js
   tests/            node:test (unitarias + integración con Postgres)
 db/migrations/      SQL numerado (001_, 002_, ...), se aplica con npm run migrate
 frontend/           React 18 + Vite + TS + Tailwind
   src/platform/     Panel NeuronPOS (dueño de la plataforma)
   src/restaurant/   Administración del restaurante
+  src/pos/          Punto de venta: venta, cobro, caja, cocina, menú, mesas, ticket
   src/site/         Vista pública del sitio (provisional)
 ```
 
@@ -108,8 +112,8 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 
 Una sola base de datos compartida. Toda tabla que pertenece a un restaurante
 tiene `restaurant_id` (`restaurant_modules`, `delivery_settings`, `branches`,
-`users`, `user_branches`, `subscription_invoices`). La protección tiene tres
-capas:
+`users`, `user_branches`, `subscription_invoices` y las 17 tablas del POS de
+`004_pos.sql`). La protección tiene tres capas:
 
 1. **Resolución del restaurante** (`middleware/tenant.js`), en este orden:
    - `Host`: `<slug>.<PLATFORM_DOMAIN>` o el `custom_domain` del restaurante.
@@ -125,7 +129,7 @@ capas:
 2. **Consultas con filtro explícito**: cada consulta de las rutas del
    restaurante filtra por `restaurant_id = req.tenant.id`.
 
-3. **Row Level Security en Postgres** (`db/migrations/003_rls.sql`), como red
+3. **Row Level Security en Postgres** (`003_rls.sql` y `004_pos.sql`), como red
    de seguridad si alguna consulta olvida el filtro:
    - Todas las rutas usan `withTenant(restaurantId, fn)` (`config/database.js`),
      que toma una conexión, abre una transacción y ejecuta
@@ -210,12 +214,74 @@ Restaurante (restaurante resuelto por Host, header o token):
 | GET/POST/PATCH/DELETE | `/api/branches[/:id]` | Sucursales (escritura: admin y gerente; borrar: admin) |
 | GET/POST/PATCH/DELETE | `/api/users[/:id]` | Usuarios (lectura: admin y gerente; escritura: admin) |
 | GET | `/api/public/site` | Público: marca, módulos habilitados y sucursales |
-| GET | `/api/pos/status` | Marcador protegido con `requireModule('pos')` |
+| | `/api/pos/*` | Punto de venta, ver abajo |
 | GET | `/api/health` | Estado del servidor y la BD |
 
 Roles de usuario: `admin`, `gerente`, `cajero`, `mesero`, `cocina`,
 `repartidor`. Los `admin` tienen acceso a todas las sucursales; el resto, a
 las de `user_branches` (la primera es la principal).
+
+## Punto de venta (módulo `pos`)
+
+Todas las rutas `/api/pos/*` pasan por `authenticateUser` y
+`requireModule('pos')` (402 si el restaurante no lo tiene, está suspendido o
+venció su prueba). Las pantallas del frontend (`/admin/pos`, `/admin/cocina`,
+`/admin/caja`, `/admin/menu`, `/admin/mesas`, `/admin/pos/ajustes`) solo se
+muestran con el módulo contratado.
+
+**Tablas** (`004_pos.sql`, todas con RLS): `pos_settings`, `menu_categories`,
+`menu_items`, `menu_item_branches` (disponibilidad por sucursal),
+`modifier_groups`, `modifiers`, `menu_item_modifier_groups`,
+`restaurant_zones`, `restaurant_tables`, `payment_methods`, `cash_sessions`,
+`cash_movements`, `cash_session_counts`, `orders`, `order_items`,
+`order_item_modifiers`, `order_payments`. Al crear un restaurante se siembran
+la configuración y los métodos Efectivo, Tarjeta y Transferencia
+(`seed_pos_defaults`).
+
+**Reglas principales**
+- Precios siempre del lado del servidor: el cliente manda producto,
+  cantidad, modificadores y notas. Se validan mínimo/máximo por grupo y la
+  disponibilidad en la sucursal. Nombre y precios se copian a la orden.
+- Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
+  dirección del cliente; la logística de reparto llega con el módulo
+  Domicilios). Folio consecutivo por sucursal.
+- Estados: `abierta → enviada → lista → pagada`, o `cancelada` con motivo.
+  Una mesa solo tiene una orden activa (índice único); está ocupada mientras
+  la tenga. Al cobrar, lo no enviado se manda a cocina.
+- Totales en centavos (`services/posMath.js`): IVA configurable, incluido en
+  el precio (se desglosa) o encima del subtotal; la tasa se fija al crear la
+  orden. Descuento por porcentaje o cantidad: admin/gerente sin límite, cajero
+  hasta `cashier_max_discount_pct` (0 = no puede), mesero no.
+- Pagos: uno o varios (cuenta dividida), cada uno con propina; solo el
+  efectivo da cambio. Requieren un turno de caja abierto de la sucursal.
+- Caja: un turno abierto por terminal y sucursal. Esperado por método =
+  ventas + propinas; en efectivo además fondo + entradas − salidas. Al cerrar
+  se captura lo contado por método y se guarda la diferencia.
+- Artículos ya enviados a cocina solo los cancela admin/gerente con motivo.
+  Productos, mesas y métodos con historial se desactivan en lugar de borrarse.
+
+| Método | Ruta | Roles |
+|---|---|---|
+| GET | `/api/pos/menu[?branch_id=&all=1]` | todos menos repartidor (`all=1` admin/gerente) |
+| POST/PATCH/DELETE | `/api/pos/categories[/:id]`, `/items[/:id]`, `/modifier-groups[/:id]` | admin, gerente |
+| PUT | `/api/pos/items/:id/availability` | admin, gerente, cajero |
+| GET | `/api/pos/tables?branch_id=` (zonas, mesas y su estado) | admin, gerente, cajero, mesero |
+| POST/PATCH/DELETE | `/api/pos/zones[/:id]`, `/api/pos/tables[/:id]` | admin, gerente |
+| GET/PATCH | `/api/pos/settings` | leer: todos; editar: admin, gerente |
+| GET/POST/PATCH/DELETE | `/api/pos/payment-methods[/:id]` | leer: todos; editar: admin, gerente |
+| GET/POST | `/api/pos/orders` (`?branch_id=&status=activas\|pagada\|cancelada\|todas&date=`) | admin, gerente, cajero, mesero |
+| GET/PATCH | `/api/pos/orders/:id` | ídem (GET también cocina) |
+| POST | `/api/pos/orders/:id/items` · PATCH/DELETE `/items/:itemId` | ídem |
+| POST | `/api/pos/orders/:id/send` · `/cancel` | ídem |
+| POST | `/api/pos/orders/:id/ready` | admin, gerente, cocina |
+| PUT/DELETE | `/api/pos/orders/:id/discount` | admin, gerente, cajero (con límite) |
+| POST | `/api/pos/orders/:id/payments` | admin, gerente, cajero |
+| GET | `/api/pos/kitchen?branch_id=` | todos menos repartidor |
+| GET/POST | `/api/pos/cash-sessions` · `/open` · `/:id` · `/:id/movements` · `/:id/close` | admin, gerente, cajero |
+
+El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
+iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
+impresión nativo. La pantalla de cocina se actualiza cada 5 segundos.
 
 ## Pruebas
 
@@ -238,6 +304,11 @@ Qué cubren:
   y prueba vencida.
 - Cobro mensual: precio de catálogo, precio especial, descuento, módulos
   vencidos y redondeo en centavos.
+- POS (`pos.test.js`, `posMath.test.js`): A no ve, edita, usa ni cobra el
+  menú, mesas, órdenes o caja de B (API y RLS); `requireModule('pos')` en
+  todas las rutas; totales con modificadores, IVA incluido o encima,
+  descuentos por rol; pagos divididos con propina y cambio; flujo de cocina;
+  corte de caja (esperado, contado y diferencias).
 
 Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 
@@ -256,6 +327,9 @@ Frontend: `npm run lint` y `npm run build` (incluye `tsc`).
 
 ## Siguientes fases
 
-- Portar el POS (menú, órdenes, caja) de NeuronPOS sobre `withTenant`.
+- POS, pendiente: estaciones de cocina e impresión por estación, socket.io
+  en lugar de sondeo, mover artículos entre mesas / unir y dividir cuentas por
+  artículo, reportes de ventas, inventario y recetas, promociones.
+- Domicilios: repartidores, estados de entrega y comisión por pedido.
 - Sitio web y portal de clientes por restaurante.
 - Facturación automática con proveedor de pagos.
