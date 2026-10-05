@@ -3,13 +3,24 @@ import { Link } from 'react-router-dom';
 import { PageHeader, StatusBadge } from '../components/ui';
 import { formatDate } from '../lib/format';
 import { moduleIcon } from '../lib/modules';
-import { useAdmin } from './context';
+import { canManage, useAdmin } from './context';
 
 export default function DashboardPage() {
   const { me } = useAdmin();
   const r = me.restaurant;
   const enabled = me.modules.filter((m) => m.enabled);
   const locked = me.modules.filter((m) => !m.enabled);
+  const manager = canManage(me.user.role);
+  const links: Record<string, { to: string; label: string }> = {
+    pos: { to: '/admin/pos', label: 'Abrir punto de venta' },
+    rh: manager ? { to: '/admin/rh', label: 'Abrir recursos humanos' } : { to: '/admin/mi-nomina', label: 'Ver mi nómina' },
+    empleado_mes: manager ? { to: '/admin/empleado-del-mes', label: 'Ver ranking del mes' } : { to: '/admin/muro', label: 'Ver el muro' },
+  };
+  if (manager) {
+    links.landing = { to: '/admin/sitio', label: 'Editar sitio web' };
+    links.portal = { to: '/admin/pedidos-en-linea', label: 'Configurar pedidos' };
+  }
+  const link = (code: string) => links[code];
 
   return (
     <>
@@ -33,9 +44,9 @@ export default function DashboardPage() {
               </div>
               <h3 className="mt-4 font-semibold text-white">{m.name}</h3>
               <p className="mt-1 text-sm text-gray-400">{m.description}</p>
-              {m.code === 'pos' ? (
-                <Link to="/admin/pos" className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-contrast">
-                  Abrir punto de venta <ArrowRight className="h-3 w-3" />
+              {link(m.code) ? (
+                <Link to={link(m.code)!.to} className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-semibold text-brand-contrast">
+                  {link(m.code)!.label} <ArrowRight className="h-3 w-3" />
                 </Link>
               ) : <p className="mt-3 text-xs text-gray-600">Disponible próximamente en esta plataforma.</p>}
             </div>

@@ -21,6 +21,17 @@ import SubscriptionPage from './restaurant/SubscriptionPage';
 import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
+import AttendancePage from './rh/AttendancePage';
+import EmployeesPage from './rh/EmployeesPage';
+import KioskPage from './rh/KioskPage';
+import ModuleGate from './rh/ModuleGate';
+import MyPayrollPage from './rh/MyPayrollPage';
+import PayrollPage from './rh/PayrollPage';
+import PayrollPeriodPage from './rh/PayrollPeriodPage';
+import RecognitionPage from './rh/RecognitionPage';
+import RhLayout from './rh/RhLayout';
+import RhSettingsPage from './rh/RhSettingsPage';
+import WallPage from './rh/WallPage';
 import { AccountPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage } from './site/AccountPages';
 import CheckoutPage from './site/CheckoutPage';
 import OrderPage from './site/OrderPage';
@@ -73,6 +84,24 @@ export default function App() {
             <Route path="menu" element={<MenuAdminPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
+          </Route>
+          {/* Recursos humanos y nomina (modulo rh) */}
+          <Route element={<ModuleGate code="rh" name="Recursos humanos" />}>
+            <Route path="rh" element={<RhLayout />}>
+              <Route index element={<EmployeesPage />} />
+              <Route path="asistencia" element={<AttendancePage />} />
+              <Route path="nomina" element={<PayrollPage />} />
+              <Route path="nomina/:id" element={<PayrollPeriodPage />} />
+              <Route path="ajustes" element={<RhSettingsPage />} />
+            </Route>
+            <Route path="checador" element={<KioskPage />} />
+            <Route path="mi-nomina" element={<MyPayrollPage />} />
+          </Route>
+          {/* Empleado del mes (modulo empleado_mes) */}
+          <Route element={<ModuleGate code="empleado_mes" name="Empleado del mes" />}>
+            <Route path="empleado-del-mes" element={<RecognitionPage />} />
+            <Route path="empleado-del-mes/empleados" element={<EmployeesPage />} />
+            <Route path="muro" element={<WallPage />} />
           </Route>
         </Route>
 

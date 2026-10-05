@@ -1,6 +1,6 @@
 import {
-  Building2, ChefHat, CreditCard, Globe, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, ShoppingBag, Store,
-  UtensilsCrossed, Users, Wallet,
+  Award, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt,
+  Settings, ShoppingBag, Store, Trophy, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -56,6 +56,11 @@ export default function AdminLayout() {
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
+    { to: '/admin/rh', label: 'RH', icon: Contact, end: false, show: has('rh') && canManage(role) },
+    { to: '/admin/checador', label: 'Checador', icon: Clock, end: false, show: has('rh') },
+    { to: '/admin/mi-nomina', label: 'Mi nómina', icon: Receipt, end: false, show: has('rh') },
+    { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
+    { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
     { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: !blocked && canManage(role) },
