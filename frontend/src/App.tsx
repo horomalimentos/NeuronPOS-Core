@@ -1,9 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import ModulesCatalogPage from './platform/ModulesCatalogPage';
 import PlatformLayout from './platform/PlatformLayout';
+import CashPage from './pos/CashPage';
+import KitchenPage from './pos/KitchenPage';
 import MenuAdminPage from './pos/MenuAdminPage';
 import PosGate from './pos/PosGate';
 import PosSettingsPage from './pos/PosSettingsPage';
+import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
 import PlatformLogin from './platform/PlatformLogin';
 import RestaurantDetailPage from './platform/RestaurantDetailPage';
@@ -37,6 +40,9 @@ export default function App() {
           <Route path="usuarios" element={<UsersPage />} />
           {/* Punto de venta (modulo pos) */}
           <Route element={<PosGate />}>
+            <Route path="pos" element={<RegisterPage />} />
+            <Route path="cocina" element={<KitchenPage />} />
+            <Route path="caja" element={<CashPage />} />
             <Route path="menu" element={<MenuAdminPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />

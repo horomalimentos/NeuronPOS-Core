@@ -1,5 +1,5 @@
 import {
-  Building2, LayoutDashboard, LayoutGrid, LogOut, Settings, Store, UtensilsCrossed, Users,
+  Building2, ChefHat, LayoutDashboard, LayoutGrid, LogOut, Monitor, Settings, Store, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -43,6 +43,9 @@ export default function AdminLayout() {
   const hasPos = Boolean(me.modules.find((m) => m.code === 'pos')?.enabled);
   const nav = [
     { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: true },
+    { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
+    { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
+    { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
