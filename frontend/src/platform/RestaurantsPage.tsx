@@ -92,6 +92,11 @@ export default function RestaurantsPage() {
                       {r.status === 'trial' && r.trial_ends_at && (
                         <span className="mt-1 block text-xs text-gray-500">hasta {formatDate(r.trial_ends_at)}</span>
                       )}
+                      {r.unpaid_invoices > 0 && (
+                        <span className={`mt-1 block text-xs ${r.has_overdue ? 'text-red-300' : 'text-amber-300'}`}>
+                          {r.has_overdue ? 'Pago vencido' : 'Pago pendiente'}
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex gap-1.5">

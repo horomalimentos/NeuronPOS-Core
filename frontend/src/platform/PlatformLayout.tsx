@@ -1,4 +1,4 @@
-import { BrainCircuit, Building2, LogOut, Package } from 'lucide-react';
+import { BrainCircuit, Building2, LogOut, Package, Receipt, Settings } from 'lucide-react';
 import { useEffect } from 'react';
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { resetBranding } from '../lib/branding';
@@ -7,6 +7,8 @@ import { session } from '../lib/session';
 const NAV = [
   { to: '/panel', label: 'Restaurantes', icon: Building2, end: true },
   { to: '/panel/modulos', label: 'Módulos y precios', icon: Package, end: false },
+  { to: '/panel/cobros', label: 'Cobros', icon: Receipt, end: false },
+  { to: '/panel/ajustes', label: 'Ajustes', icon: Settings, end: false },
 ];
 
 export default function PlatformLayout() {
@@ -26,13 +28,13 @@ export default function PlatformLayout() {
           <div className="flex items-center gap-2 font-semibold text-white">
             <BrainCircuit className="h-6 w-6 text-brand" /> Panel NeuronPOS
           </div>
-          <nav className="flex flex-1 gap-1">
+          <nav className="flex flex-1 gap-1 overflow-x-auto">
             {NAV.map(({ to, label, icon: Icon, end }) => (
               <NavLink
                 key={to}
                 to={to}
                 end={end}
-                className={({ isActive }) => `flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition
+                className={({ isActive }) => `flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition
                   ${isActive ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}
               >
                 <Icon className="h-4 w-4" /> {label}
