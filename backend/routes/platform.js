@@ -158,6 +158,8 @@ router.post('/restaurants', ah(async (req, res) => {
       [rid, moduleCodes],
     );
     await db.query('INSERT INTO delivery_settings (restaurant_id) VALUES ($1)', [rid]);
+    // Configuracion del POS y metodos de pago basicos (efectivo, tarjeta, transferencia).
+    await db.query('SELECT seed_pos_defaults($1)', [rid]);
     const branch = await db.query(
       'INSERT INTO branches (restaurant_id, name) VALUES ($1, $2) RETURNING id',
       [rid, branchName],
