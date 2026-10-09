@@ -51,10 +51,13 @@ const ORDER_SELECT = `
 
 export async function loadItems(db, restaurantId, orderIds) {
   const items = (await db.query(
-    `SELECT id, order_id, menu_item_id, name, unit_price, modifiers_total, quantity, line_total,
-            notes, sent_at, voided_at, void_reason, created_at
-       FROM order_items WHERE restaurant_id = $1 AND order_id = ANY($2::uuid[])
-      ORDER BY created_at, id`,
+    `SELECT i.id, i.order_id, i.menu_item_id, i.name, i.unit_price, i.modifiers_total, i.quantity, i.line_total,
+            i.notes, i.sent_at, i.ready_at, i.voided_at, i.void_reason, i.created_at, i.station_id,
+            s.name AS station_name
+       FROM order_items i
+       LEFT JOIN kitchen_stations s ON s.id = i.station_id AND s.restaurant_id = i.restaurant_id
+      WHERE i.restaurant_id = $1 AND i.order_id = ANY($2::uuid[])
+      ORDER BY i.created_at, i.id`,
     [restaurantId, orderIds],
   )).rows;
   const mods = (await db.query(
@@ -161,8 +164,10 @@ export async function priceItems(db, restaurantId, branchId, inputs) {
   const itemIds = [...new Set(inputs.map((i) => i.menu_item_id))];
   const menuItems = new Map((await db.query(
     `SELECT i.id, i.name, i.price, i.active,
-            coalesce(b.available, true) AS available
+            coalesce(b.available, true) AS available,
+            coalesce(i.station_id, c.station_id) AS station_id
        FROM menu_items i
+       LEFT JOIN menu_categories c ON c.id = i.category_id AND c.restaurant_id = i.restaurant_id
        LEFT JOIN menu_item_branches b ON b.menu_item_id = i.id AND b.branch_id = $3
       WHERE i.restaurant_id = $1 AND i.id = ANY($2::uuid[])`,
     [restaurantId, itemIds, branchId],
@@ -212,6 +217,7 @@ export async function priceItems(db, restaurantId, branchId, inputs) {
       quantity: input.quantity,
       line_total: ((unitCents + modsCents) * input.quantity) / 100,
       notes: input.notes,
+      station_id: mi.station_id,
       modifiers: chosen,
     };
   });
@@ -222,9 +228,10 @@ export async function insertItems(db, restaurantId, orderId, userId, lines) {
   for (const l of lines) {
     const { rows } = await db.query(
       `INSERT INTO order_items (restaurant_id, order_id, menu_item_id, name, unit_price, modifiers_total,
-                                quantity, line_total, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-      [restaurantId, orderId, l.menu_item_id, l.name, l.unit_price, l.modifiers_total, l.quantity, l.line_total, l.notes, userId],
+                                quantity, line_total, notes, created_by, station_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+      [restaurantId, orderId, l.menu_item_id, l.name, l.unit_price, l.modifiers_total, l.quantity, l.line_total, l.notes,
+        userId, l.station_id || null],
     );
     for (const m of l.modifiers) {
       await db.query(
@@ -494,18 +501,37 @@ router.post('/orders/:id/send', requireRole(...ROLES.orders), ah(async (req, res
   res.json({ order });
 }));
 
-// Cocina marca la orden como lista (todo lo enviado hasta ahora).
+// Cocina marca como listo lo enviado hasta ahora. Con station_id solo lo de
+// esa estacion ("general" = lo que no tiene estacion); la orden queda lista
+// cuando ya no le queda nada pendiente.
 router.post('/orders/:id/ready', requireRole(...ROLES.kitchenReady), ah(async (req, res) => {
+  const raw = req.body?.station_id;
+  const general = raw === 'general';
+  const stationId = raw && !general ? requireUuid(raw, 'station_id') : null;
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     if (o.status === 'cancelada') throw badRequest('La orden esta cancelada', 'ORDER_CLOSED');
     if (!o.sent_at) throw badRequest('La orden no se ha enviado a cocina', 'NOT_SENT');
     await db.query(
-      `UPDATE orders SET ready_at = now(),
-              status = CASE WHEN status = 'enviada' THEN 'lista' ELSE status END, updated_at = now()
-        WHERE id = $1 AND restaurant_id = $2`,
+      `UPDATE order_items SET ready_at = now()
+        WHERE order_id = $1 AND restaurant_id = $2 AND sent_at IS NOT NULL AND ready_at IS NULL AND voided_at IS NULL
+          ${general ? 'AND station_id IS NULL' : stationId ? 'AND station_id = $3' : ''}`,
+      stationId ? [o.id, req.tenant.id, stationId] : [o.id, req.tenant.id],
+    );
+    const pending = await db.query(
+      `SELECT 1 FROM order_items
+        WHERE order_id = $1 AND restaurant_id = $2 AND sent_at IS NOT NULL AND ready_at IS NULL AND voided_at IS NULL
+        LIMIT 1`,
       [o.id, req.tenant.id],
     );
+    if (!pending.rowCount) {
+      await db.query(
+        `UPDATE orders SET ready_at = now(),
+                status = CASE WHEN status = 'enviada' THEN 'lista' ELSE status END, updated_at = now()
+          WHERE id = $1 AND restaurant_id = $2`,
+        [o.id, req.tenant.id],
+      );
+    }
     return loadOrder(db, req.tenant.id, o.id);
   });
   res.json({ order });
@@ -714,8 +740,15 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
 // Cocina (KDS): ordenes con articulos enviados que aun no se marcan listos.
 // ---------------------------------------------------------------------------
 
+// Pantalla de cocina: ordenes con algo enviado y pendiente. Con station_id
+// solo lo de esa estacion ("general" = articulos sin estacion). Cada orden
+// trae sus articulos enviados; is_new marca los pendientes.
 router.get('/kitchen', requireRole(...ROLES.kitchen), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
+  const raw = req.query.station_id;
+  const general = raw === 'general';
+  const stationId = raw && !general ? requireUuid(raw, 'station_id') : null;
+  const inStation = (alias) => (general ? `AND ${alias}.station_id IS NULL` : stationId ? `AND ${alias}.station_id = $3` : '');
   const orders = await withTenant(req.tenant.id, async (db) => {
     const list = (await db.query(
       `${ORDER_SELECT}
@@ -723,18 +756,18 @@ router.get('/kitchen', requireRole(...ROLES.kitchen), ah(async (req, res) => {
           AND o.created_at > now() - interval '24 hours'
           AND EXISTS (SELECT 1 FROM order_items i
                        WHERE i.order_id = o.id AND i.restaurant_id = o.restaurant_id
-                         AND i.sent_at IS NOT NULL AND i.voided_at IS NULL
-                         AND (o.ready_at IS NULL OR i.sent_at > o.ready_at))
+                         AND i.sent_at IS NOT NULL AND i.voided_at IS NULL AND i.ready_at IS NULL ${inStation('i')})
         ORDER BY o.sent_at, o.created_at`,
-      [req.tenant.id, branchId],
+      stationId ? [req.tenant.id, branchId, stationId] : [req.tenant.id, branchId],
     )).rows;
     if (!list.length) return [];
     const items = await loadItems(db, req.tenant.id, list.map((o) => o.id));
+    const mine = (i) => (general ? !i.station_id : stationId ? i.station_id === stationId : true);
     return list.map((o) => ({
       ...o,
       items: items
-        .filter((i) => i.order_id === o.id && i.sent_at && !i.voided_at)
-        .map((i) => ({ ...i, is_new: !o.ready_at || new Date(i.sent_at) > new Date(o.ready_at) })),
+        .filter((i) => i.order_id === o.id && i.sent_at && !i.voided_at && mine(i))
+        .map((i) => ({ ...i, is_new: !i.ready_at })),
     }));
   });
   res.json({ orders });

@@ -5,9 +5,9 @@ import { api, errorMessage } from '../lib/api';
 import { nativeInfo } from '../lib/native';
 import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
-import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan } from './lib';
+import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan, posPrefs } from './lib';
 import { comandaHtml, printHtml } from './ticket';
-import type { Order } from './types';
+import type { KitchenStation, Order } from './types';
 import { usePosBranch } from './usePosBranch';
 
 const POLL_MS = 5000;
@@ -15,7 +15,8 @@ const POLL_MS = 5000;
 /**
  * Pantalla de cocina (KDS): ordenes enviadas que aun no estan listas. Se
  * actualiza cada 5 segundos. Los articulos agregados despues de marcar lista
- * aparecen resaltados como nuevos.
+ * aparecen resaltados como nuevos. Cada pantalla puede mostrar solo una
+ * estacion (barra, parrilla...); la eleccion se guarda en este equipo.
  */
 export default function KitchenPage() {
   const { me } = useAdmin();
@@ -25,6 +26,13 @@ export default function KitchenPage() {
   const [now, setNow] = useState(() => Date.now());
   const [marking, setMarking] = useState<string | null>(null);
   const canReady = posCan.kitchenReady(me.user.role);
+  const [stations, setStations] = useState<KitchenStation[]>([]);
+  const [station, setStationState] = useState(posPrefs.getStation);
+  const setStation = (id: string) => { posPrefs.setStation(id); setStationState(id); };
+  useEffect(() => {
+    api<{ stations: KitchenStation[] }>('/pos/menu').then((m) => setStations(m.stations || [])).catch(() => undefined);
+  }, []);
+  const stationName = station === 'general' ? 'Cocina general' : stations.find((s) => s.id === station)?.name;
   // Neuron KDS con impresora de comandas: imprime lo que va llegando (ordenes
   // del POS y pedidos en linea). Lo que ya estaba al abrir no se imprime.
   const seen = useRef<Set<string> | null>(null);
@@ -44,14 +52,14 @@ export default function KitchenPage() {
       void printHtml(comandaHtml(o, fresh.filter((f) => f.o === o).map((f) => f.it), branch), 'comanda');
     }
   }, [orders, printComandas, branches, branchId]);
-  useEffect(() => { seen.current = null; }, [branchId]);
+  useEffect(() => { seen.current = null; }, [branchId, station]);
 
   const load = useCallback(() => {
     if (!branchId) return;
-    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}`)
+    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}${station ? `&station_id=${station}` : ''}`)
       .then((r) => { setOrders(r.orders); setError(''); setNow(Date.now()); })
       .catch((e) => setError(errorMessage(e)));
-  }, [branchId]);
+  }, [branchId, station]);
 
   useEffect(() => {
     load();
@@ -62,7 +70,7 @@ export default function KitchenPage() {
   async function ready(o: Order) {
     setMarking(o.id);
     try {
-      await api(`/pos/orders/${o.id}/ready`, { method: 'POST' });
+      await api(`/pos/orders/${o.id}/ready`, { method: 'POST', body: station ? { station_id: station } : {} });
       setOrders((list) => (list || []).filter((x) => x.id !== o.id));
     } catch (e) {
       setError(errorMessage(e));
@@ -74,10 +82,17 @@ export default function KitchenPage() {
   return (
     <>
       <PageHeader
-        title="Cocina"
+        title={stationName ? `Cocina · ${stationName}` : 'Cocina'}
         subtitle="Órdenes enviadas a cocina, de la más antigua a la más reciente."
         actions={<>
           <BranchSelect branches={branches} value={branchId} onChange={setBranchId} />
+          {stations.length > 0 && (
+            <select className="input w-auto" value={station} onChange={(e) => setStation(e.target.value)} aria-label="Estación">
+              <option value="">Todas las estaciones</option>
+              <option value="general">Cocina general</option>
+              {stations.filter((s) => s.active || s.id === station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Actualizar</Button>
         </>}
       />
@@ -111,6 +126,9 @@ export default function KitchenPage() {
                       <div className="flex gap-2 text-base">
                         <span className="font-bold text-white">{it.quantity}×</span>
                         <span className="text-white">{it.name}</span>
+                        {!station && it.station_name && (
+                          <span className="ml-auto self-center rounded-full bg-gray-800 px-2 py-0.5 text-xs text-gray-300">{it.station_name}</span>
+                        )}
                       </div>
                       {it.modifiers.map((m, i) => <div key={i} className="pl-7 text-sm text-gray-300">+ {m.name}</div>)}
                       {it.notes && <div className="pl-7 text-sm italic text-amber-200">{it.notes}</div>}

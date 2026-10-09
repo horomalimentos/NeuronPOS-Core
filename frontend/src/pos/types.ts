@@ -8,6 +8,15 @@ export interface MenuCategory {
   description: string | null;
   sort_order: number;
   active: boolean;
+  /** Estacion de cocina por omision de sus productos (null = cocina general). */
+  station_id: string | null;
+}
+
+export interface KitchenStation {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
 }
 
 export interface Modifier {
@@ -41,12 +50,15 @@ export interface MenuItem {
   modifier_group_ids: string[];
   unavailable_branch_ids: string[];
   available: boolean;
+  /** null = la de su categoria. */
+  station_id: string | null;
 }
 
 export interface Menu {
   categories: MenuCategory[];
   items: MenuItem[];
   modifier_groups: ModifierGroup[];
+  stations: KitchenStation[];
 }
 
 export interface Zone {
@@ -96,6 +108,9 @@ export interface OrderItem {
   line_total: Money;
   notes: string | null;
   sent_at: string | null;
+  ready_at: string | null;
+  station_id: string | null;
+  station_name: string | null;
   voided_at: string | null;
   void_reason: string | null;
   modifiers: OrderItemModifier[];

@@ -60,6 +60,9 @@ export const posPrefs = {
   setBranch: (id: string) => write('npc_pos_branch', id),
   getTerminal: () => read('npc_pos_terminal') || 'Caja 1',
   setTerminal: (name: string) => write('npc_pos_terminal', name),
+  /** Estacion que muestra esta pantalla de cocina ('' = todas, 'general' = sin estacion). */
+  getStation: () => read('npc_kds_station') || '',
+  setStation: (id: string) => write('npc_kds_station', id),
 };
 
 export const num = (v: unknown) => Number(v || 0);

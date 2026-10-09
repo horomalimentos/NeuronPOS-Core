@@ -298,6 +298,57 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal(Number(again.body.order.total), 380);
     });
 
+    test('estaciones de cocina: cada estacion ve y marca lo suyo', async () => {
+      const created = await api(A, 'POST', '/api/pos/stations', { name: 'Barra' });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const barra = created.body.station;
+      assert.equal((await api(A, 'POST', '/api/pos/stations', { name: 'barra' })).body.code, 'STATION_EXISTS');
+      assert.equal((await api(cocina, 'POST', '/api/pos/stations', { name: 'Parrilla' })).status, 403);
+      // B no puede usar la estacion de A.
+      const ajena = await api(B, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id });
+      assert.equal(ajena.body.code, 'STATION_NOT_FOUND');
+
+      const bebidas = (await api(A, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id })).body.category;
+      assert.equal(bebidas.station_id, barra.id);
+      const refresco = (await api(A, 'POST', '/api/pos/items', { category_id: bebidas.id, name: 'Refresco', price: 30 })).body.item;
+      // Producto de una categoria sin estacion que va a la barra.
+      const flan = (await api(A, 'POST', '/api/pos/items', {
+        category_id: catA.id, name: 'Flan', price: 40, station_id: barra.id,
+      })).body.item;
+      const menu = await api(cocina, 'GET', '/api/pos/menu');
+      assert.deepEqual(menu.body.stations.map((s) => s.name), ['Barra']);
+
+      const o = (await api(mesero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar',
+        items: [{ menu_item_id: refresco.id, quantity: 1 }, { menu_item_id: flan.id, quantity: 1 }, { menu_item_id: aguaA.id, quantity: 1 }],
+      })).body.order;
+      const sent = await api(mesero, 'POST', `/api/pos/orders/${o.id}/send`);
+      assert.deepEqual(sent.body.order.items.map((i) => i.station_name), ['Barra', 'Barra', null]);
+
+      const kds = (station) => api(cocina, 'GET', `/api/pos/kitchen?branch_id=${branchA.id}&station_id=${station}`);
+      const enBarra = (await kds(barra.id)).body.orders.find((x) => x.id === o.id);
+      assert.deepEqual(enBarra.items.map((i) => i.name), ['Refresco', 'Flan']);
+      const enGeneral = (await kds('general')).body.orders.find((x) => x.id === o.id);
+      assert.deepEqual(enGeneral.items.map((i) => i.name), ['Agua']);
+
+      const r1 = await api(cocina, 'POST', `/api/pos/orders/${o.id}/ready`, { station_id: barra.id });
+      assert.equal(r1.body.order.status, 'enviada', 'falta la cocina general');
+      assert.ok(!(await kds(barra.id)).body.orders.some((x) => x.id === o.id));
+      assert.ok((await kds('general')).body.orders.some((x) => x.id === o.id));
+      const r2 = await api(cocina, 'POST', `/api/pos/orders/${o.id}/ready`, { station_id: 'general' });
+      assert.equal(r2.body.order.status, 'lista');
+      assert.ok(r2.body.order.items.every((i) => i.ready_at));
+
+      // Cambiar el menu no mueve lo ya vendido; una estacion usada solo se desactiva.
+      const del = await api(A, 'DELETE', `/api/pos/stations/${barra.id}`);
+      assert.deepEqual(del.body, { archived: true });
+      const after = await api(A, 'GET', '/api/pos/menu?all=1');
+      assert.equal(after.body.categories.find((c) => c.id === bebidas.id).station_id, null);
+      assert.equal(after.body.stations[0].active, false);
+      assert.equal((await api(A, 'GET', `/api/pos/orders/${o.id}`)).body.order.items[0].station_name, 'Barra');
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de estaciones' })).status, 200);
+    });
+
     test('quitar articulos: libre si no se envio; enviado solo gerente con motivo', async () => {
       const added = await api(mesero, 'POST', `/api/pos/orders/${order.id}/items`, { items: [{ menu_item_id: aguaA.id }] });
       const fresh = added.body.order.items.at(-1);

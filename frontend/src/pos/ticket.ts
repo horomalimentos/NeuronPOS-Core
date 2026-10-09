@@ -128,9 +128,14 @@ export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | n
   const who = order.order_type === 'comedor'
     ? `Mesa ${esc(order.table_name)}`
     : ORDER_TYPE_LABEL[order.order_type];
-  const lines = items.map((it) => `<div class="it"><b>${it.quantity} x ${esc(it.name)}</b>
+  const line = (it: OrderItem) => `<div class="it"><b>${it.quantity} x ${esc(it.name)}</b>
     ${it.modifiers.map((m) => `<div class="mod">+ ${esc(m.name)}</div>`).join('')}
-    ${it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : ''}</div>`).join('');
+    ${it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : ''}</div>`;
+  // Agrupada por estacion de cocina cuando la orden va a varias.
+  const stations = [...new Set(items.map((it) => it.station_name || ''))];
+  const lines = stations.length > 1
+    ? stations.map((st) => `<div class="st">${esc(st || 'Cocina general')}</div>${items.filter((it) => (it.station_name || '') === st).map(line).join('')}`).join('')
+    : `${stations[0] ? `<div class="st">${esc(stations[0])}</div>` : ''}${items.map(line).join('')}`;
   const body = `<div class="center"><h1>${who}</h1>
       <div>Folio ${order.folio}${order.source === 'web' ? ' · EN LÍNEA' : ''}</div>
       <div class="muted">${formatDateTime(items[0]?.sent_at || order.sent_at || order.created_at)}${branch ? ` · ${esc(branch.name)}` : ''}</div></div><hr>
@@ -142,6 +147,7 @@ export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | n
   h1 { font-size: 22px; }
   .it { font-size: 16px; margin: 6px 0; }
   .it .mod { font-size: 14px; color: #000; }
+  .st { font-size: 13px; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #000; margin-top: 8px; }
 </style>`);
 }
 
