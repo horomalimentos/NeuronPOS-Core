@@ -13,6 +13,7 @@ import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { invCan } from '../inventory/lib';
+import ApprovalPinButton from '../pos/ApprovalPin';
 import { posCan } from '../pos/lib';
 import type { Me } from '../lib/types';
 import { canManage, type AdminContext } from './context';
@@ -114,6 +115,7 @@ export default function AdminLayout() {
             {ROLE_LABEL[me.user.role]}
           </div>
           {has('push') && ['admin', 'gerente', 'cajero', 'repartidor'].includes(role) && <PushBell target={{ realm: 'restaurant' }} />}
+          {hasPos && posCan.manage(role) && <ApprovalPinButton />}
           {getNative() && (
             <button onClick={() => { void getNative()?.openSettings(); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Impresoras de la app" title="Impresoras de la app">
               <Printer className="h-4 w-4" />

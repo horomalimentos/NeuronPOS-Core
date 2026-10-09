@@ -30,10 +30,12 @@ export function discountCents(subtotalCents, discount) {
 /**
  * Totales de una orden.
  * items: [{ unit_price, modifiers_total, quantity, voided? }]
- * opts: { discount, taxRatePct, pricesIncludeTax, deliveryFee, promoDiscount }
+ * opts: { discount, taxRatePct, pricesIncludeTax, deliveryFee, promoDiscount, itemDiscount }
  *
  * - promoDiscount (pesos, de las promociones automaticas) se resta primero; el
  *   descuento manual se calcula sobre lo que queda.
+ * - itemDiscount (pesos, descuentos por articulo) va despues de las
+ *   promociones y antes del descuento a la cuenta.
  * - pricesIncludeTax = true (precios con IVA): total = subtotal - descuento y
  *   el impuesto se desglosa: tax = total - total / (1 + tasa).
  * - pricesIncludeTax = false: tax = (subtotal - descuento) * tasa y se suma.
@@ -41,14 +43,15 @@ export function discountCents(subtotalCents, discount) {
  *   impuesto (es un cargo fijo por sucursal).
  */
 export function calculateOrderTotals(items, {
-  discount = null, taxRatePct = 0, pricesIncludeTax = true, deliveryFee = 0, promoDiscount = 0,
+  discount = null, taxRatePct = 0, pricesIncludeTax = true, deliveryFee = 0, promoDiscount = 0, itemDiscount = 0,
 } = {}) {
   const subtotal = (items || [])
     .filter((it) => !it.voided)
     .reduce((s, it) => s + lineTotalCents(it), 0);
   const promo = Math.min(Math.max(0, toCents(promoDiscount)), subtotal);
-  const disc = discountCents(subtotal - promo, discount);
-  const base = subtotal - promo - disc;
+  const itemDisc = Math.min(Math.max(0, toCents(itemDiscount)), subtotal - promo);
+  const disc = discountCents(subtotal - promo - itemDisc, discount);
+  const base = subtotal - promo - itemDisc - disc;
   const rate = Number(taxRatePct || 0) / 100;
   let tax;
   let total;
@@ -63,6 +66,7 @@ export function calculateOrderTotals(items, {
   return {
     subtotal: fromCents(subtotal),
     promo_discount: fromCents(promo),
+    item_discount: fromCents(itemDisc),
     discount_amount: fromCents(disc),
     tax_amount: fromCents(tax),
     delivery_fee: fromCents(fee),

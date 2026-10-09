@@ -1,4 +1,4 @@
-import { CheckCircle2, Gift, Plus, Printer, Trash2, UserRound, Wallet } from 'lucide-react';
+import { CheckCircle2, Gift, Plus, Printer, Split, Trash2, UserRound, Wallet } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import CustomerPicker from '../loyalty/CustomerPicker';
 import { fmtPoints, type LoyaltyCustomer, type LoyaltySettings, type WalletSettings } from '../loyalty/types';
@@ -246,6 +246,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
             )}
           </div>
         )}
+        <SplitPanel order={order} remaining={remaining}
+          onSplit={(amounts) => setLines(amounts.map((a) => newLine(lines[0]?.methodId || active[0]?.id || '', a)))} />
 
         {lines.map((l) => {
           const isCash = kindOf(l.methodId) === 'efectivo';
@@ -330,5 +332,69 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
         <CustomerPicker initialQuery={order.customer_phone || ''} onPick={attach} onClose={() => setPicking(false)} />
       )}
     </Modal>
+  );
+}
+
+/**
+ * Dividir la cuenta (como en Horom): en partes iguales (un pago por persona) o
+ * cobrar ahora solo los articulos de alguien. La parte de cada articulo ya
+ * incluye su proporcion de promociones, descuentos e impuestos.
+ */
+function SplitPanel({ order, remaining, onSplit }: { order: Order; remaining: number; onSplit: (amounts: number[]) => void }) {
+  const [mode, setMode] = useState<'' | 'iguales' | 'articulos'>('');
+  const [people, setPeople] = useState('2');
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const items = (order.items || []).filter((i) => !i.voided_at);
+  const base = num(order.total) - num(order.delivery_fee);
+  const ratio = num(order.subtotal) > 0 ? base / num(order.subtotal) : 1;
+  const share = round2(items.reduce((s, i) => s + (num(i.line_total) / i.quantity) * (picked[i.id] || 0), 0) * ratio);
+
+  if (remaining <= 0) return null;
+  if (!mode) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="ghost" onClick={() => setMode('iguales')}><Split className="h-4 w-4" /> Dividir en partes iguales</Button>
+        {items.length > 1 && <Button type="button" variant="ghost" onClick={() => setMode('articulos')}><Split className="h-4 w-4" /> Cobrar por artículos</Button>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 rounded-xl border border-dashed border-gray-700 p-3">
+      {mode === 'iguales' ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block"><span className="label">Personas</span>
+            <input className="input w-24" type="number" min="2" max="20" value={people} onChange={(e) => setPeople(e.target.value)} /></label>
+          <p className="pb-2 text-sm text-gray-400">{formatMXN(remaining / Math.max(2, Number(people) || 2))} cada una</p>
+          <Button type="button" variant="secondary" onClick={() => {
+            const n = Math.min(20, Math.max(2, Number(people) || 2));
+            const each = Math.floor((remaining * 100) / n) / 100;
+            onSplit(Array.from({ length: n }, (_, k) => (k === n - 1 ? round2(remaining - each * (n - 1)) : each)));
+            setMode('');
+          }}>Hacer {Math.max(2, Number(people) || 2)} pagos</Button>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm text-gray-400">Marca lo que paga esta persona:</p>
+          <ul className="max-h-48 space-y-1 overflow-y-auto">
+            {items.map((i) => (
+              <li key={i.id} className="flex items-center gap-2 text-sm">
+                <select className="input w-16 py-1" value={picked[i.id] || 0} onChange={(e) => setPicked({ ...picked, [i.id]: Number(e.target.value) })} aria-label={`Cantidad de ${i.name}`}>
+                  {Array.from({ length: i.quantity + 1 }, (_, q) => <option key={q} value={q}>{q}</option>)}
+                </select>
+                <span className="flex-1 text-gray-200">de {i.quantity} × {i.name}</span>
+                <span className="text-gray-400">{formatMXN(num(i.line_total) / i.quantity)} c/u</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-gray-300">Le toca: <b className="text-white">{formatMXN(Math.min(share, remaining))}</b></p>
+            <Button type="button" variant="secondary" disabled={share <= 0} onClick={() => { onSplit([Math.min(share, remaining)]); setMode(''); setPicked({}); }}>
+              Cobrar esta parte
+            </Button>
+          </div>
+        </>
+      )}
+      <button type="button" className="text-xs text-gray-500 hover:text-gray-300" onClick={() => setMode('')}>Cancelar división</button>
+    </div>
   );
 }

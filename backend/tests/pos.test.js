@@ -617,6 +617,44 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal((await api(B, 'GET', '/api/pos/promotions')).body.promotions.length, 0);
     });
 
+    test('descuento por articulo y PIN rotativo del gerente para pasar el limite del cajero', async () => {
+      await api(A, 'PATCH', '/api/pos/settings', { cashier_max_discount_pct: 10 });
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 2 }, { menu_item_id: aguaA.id, quantity: 1 }],
+      })).body.order;
+      const [l1, l2] = o.items;
+      // Dentro del limite: 10% del articulo de $100.
+      const ok = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l1.id}/discount`, { type: 'percent', value: 10, reason: 'Cortesia' });
+      assert.equal(Number(ok.body.order.item_discount), 10);
+      assert.equal(Number(ok.body.order.total), 140);
+      // Arriba del limite: necesita PIN.
+      const over = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50 });
+      assert.equal(over.body.code, 'DISCOUNT_NOT_ALLOWED');
+      assert.equal((await api(cajero, 'GET', '/api/pos/approval-pin')).status, 403, 'el cajero no ve el PIN');
+      const { pin } = (await api(A, 'GET', '/api/pos/approval-pin')).body;
+      assert.match(pin, /^\d{6}$/);
+      const wrong = String((Number(pin) + 1) % 1000000).padStart(6, '0');
+      assert.equal((await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin: wrong })).body.code, 'INVALID_PIN');
+      // El PIN de otro restaurante no sirve.
+      const pinB = (await api(B, 'GET', '/api/pos/approval-pin')).body.pin;
+      if (pinB !== pin) {
+        assert.equal((await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin: pinB })).body.code, 'INVALID_PIN');
+      }
+      const withPin = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin });
+      assert.equal(withPin.status, 200, JSON.stringify(withPin.body));
+      // 150 - 10 - 50 (el articulo de $50 queda en 0) = 90
+      assert.equal(Number(withPin.body.order.total), 90);
+      assert.equal(Number(withPin.body.order.items.find((i) => i.id === l2.id).discount_amount), 50);
+      // Descuento a la cuenta sobre lo que queda, tambien con PIN.
+      const cuenta = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/discount`, { type: 'percent', value: 50, pin });
+      assert.equal(Number(cuenta.body.order.discount_amount), 45);
+      assert.equal(Number(cuenta.body.order.total), 45);
+      const removed = await api(cajero, 'DELETE', `/api/pos/orders/${o.id}/items/${l2.id}/discount`);
+      assert.equal(Number(removed.body.order.item_discount), 10);
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de descuentos' })).status, 200);
+      await api(A, 'PATCH', '/api/pos/settings', { cashier_max_discount_pct: 0 });
+    });
+
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {
       const del = await api(A, 'DELETE', `/api/pos/items/${aguaA.id}`);
       assert.equal(del.status, 200);

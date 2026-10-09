@@ -16,7 +16,8 @@ import { commitRedemption, countingCodeFailures, earnForOrder, prepareRedemption
 import { commitWalletPayment, prepareWalletPayment } from '../../services/wallet.js';
 import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
-import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
+import { verifyApprovalPin, pinExpiresAt, pinFor, pinLocked } from '../../services/approvalPin.js';
+import { calculateOrderTotals, discountCents, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
 import { promotionsFor } from '../../services/promotions.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
@@ -47,7 +48,7 @@ const ORDER_SELECT = `
          o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at, o.scheduled_for,
          o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.channel_id, ch.name AS channel_name, ch.color AS channel_color, o.channel_order_number,
-         o.channel_commission_pct, o.promo_discount
+         o.channel_commission_pct, o.promo_discount, o.item_discount
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN sales_channels ch ON ch.id = o.channel_id AND ch.restaurant_id = o.restaurant_id
@@ -57,6 +58,7 @@ export async function loadItems(db, restaurantId, orderIds) {
   const items = (await db.query(
     `SELECT i.id, i.order_id, i.menu_item_id, i.name, i.unit_price, i.modifiers_total, i.quantity, i.line_total,
             i.notes, i.sent_at, i.ready_at, i.voided_at, i.void_reason, i.created_at, i.station_id,
+            i.discount_type, i.discount_value, i.discount_amount, i.discount_reason,
             s.name AS station_name
        FROM order_items i
        LEFT JOIN kitchen_stations s ON s.id = i.station_id AND s.restaurant_id = i.restaurant_id
@@ -128,7 +130,8 @@ function assertAccepted(order) {
  */
 export async function recalcOrder(db, restaurantId, order) {
   const items = (await db.query(
-    `SELECT i.menu_item_id, i.unit_price, i.modifiers_total, i.quantity, i.voided_at IS NOT NULL AS voided,
+    `SELECT i.id, i.menu_item_id, i.unit_price, i.modifiers_total, i.quantity, i.voided_at IS NOT NULL AS voided,
+            i.discount_type, i.discount_value, i.discount_amount,
             coalesce((SELECT array_agg(m.modifier_id) FROM order_item_modifiers m
                        WHERE m.order_item_id = i.id AND m.restaurant_id = i.restaurant_id), '{}') AS modifier_ids
        FROM order_items i WHERE i.restaurant_id = $1 AND i.order_id = $2`,
@@ -138,12 +141,23 @@ export async function recalcOrder(db, restaurantId, order) {
   const promos = await promotionsFor(db, restaurantId, {
     branchId: order.branch_id, source: order.source || 'pos', lines: items,
   });
+  // Descuento de cada articulo sobre su importe (los quitados no cuentan).
+  let itemCents = 0;
+  for (const it of items) {
+    const cents = it.voided || !it.discount_type ? 0
+      : discountCents((toCents(it.unit_price) + toCents(it.modifiers_total)) * Number(it.quantity), { type: it.discount_type, value: it.discount_value });
+    itemCents += cents;
+    if (toCents(it.discount_amount) !== cents) {
+      await db.query('UPDATE order_items SET discount_amount = $3 WHERE id = $1 AND restaurant_id = $2', [it.id, restaurantId, cents / 100]);
+    }
+  }
   const totals = calculateOrderTotals(items, {
     discount: order.discount_type ? { type: order.discount_type, value: order.discount_value } : null,
     taxRatePct: order.tax_rate_pct,
     pricesIncludeTax: order.prices_include_tax,
     deliveryFee: order.delivery_fee,
     promoDiscount: promos.reduce((s, p) => s + p.cents, 0) / 100,
+    itemDiscount: itemCents / 100,
   });
   if (toCents(totals.total) < toCents(order.paid_amount)) {
     throw badRequest('El total no puede quedar por debajo de lo ya pagado', 'TOTAL_BELOW_PAID');
@@ -157,9 +171,10 @@ export async function recalcOrder(db, restaurantId, order) {
   }
   await db.query(
     `UPDATE orders SET subtotal = $3, discount_amount = $4, tax_amount = $5, total = $6, promo_discount = $7,
-            updated_at = now()
+            item_discount = $8, updated_at = now()
       WHERE id = $1 AND restaurant_id = $2`,
-    [order.id, restaurantId, totals.subtotal, totals.discount_amount, totals.tax_amount, totals.total, totals.promo_discount],
+    [order.id, restaurantId, totals.subtotal, totals.discount_amount, totals.tax_amount, totals.total, totals.promo_discount,
+      totals.item_discount],
   );
   return totals;
 }
@@ -582,6 +597,83 @@ router.post('/orders/:id/ready', requireRole(...ROLES.kitchenReady), ah(async (r
   res.json({ order });
 }));
 
+// ---------------------------------------------------------------------------
+// Descuentos: limite del cajero y PIN del gerente
+// ---------------------------------------------------------------------------
+
+/**
+ * Admin y gerente descuentan sin limite. El cajero hasta el % de la
+ * configuracion; arriba de eso (o si su limite es 0) necesita el PIN de un
+ * gerente. Regresa el id de quien autoriza (el usuario o el gerente).
+ */
+async function authorizeDiscount(db, req, pct, pin, what) {
+  if (isManager(req.user)) return req.user.id;
+  const settings = await getSettings(db, req.tenant.id);
+  const limit = Number(settings.cashier_max_discount_pct);
+  if (limit > 0 && pct <= limit + 1e-9) return req.user.id;
+  if (!pin) {
+    throw forbidden(limit > 0
+      ? `Tu rol puede descontar hasta ${limit}% ${what}. Pide el PIN del gerente.`
+      : 'Tu rol no puede aplicar descuentos sin el PIN del gerente', 'DISCOUNT_NOT_ALLOWED');
+  }
+  if (pinLocked(req.user.id)) throw new HttpError(429, 'Demasiados intentos con PIN. Espera unos minutos.', 'PIN_LOCKED');
+  const approver = await verifyApprovalPin(db, req.tenant.id, req.user.id, pin);
+  if (!approver) throw forbidden('El PIN no es valido o ya vencio', 'INVALID_PIN');
+  return approver;
+}
+
+// PIN vigente del gerente para dictarlo al cajero (cambia cada 10 minutos).
+router.get('/approval-pin', requireRole(...ROLES.manage), (req, res) => {
+  res.json({ pin: pinFor(req.user.id), expires_at: pinExpiresAt() });
+});
+
+// Descuento a un articulo (en % o $ sobre su importe).
+router.put('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+  requireUuid(req.params.itemId, 'itemId');
+  const body = req.body || {};
+  const type = oneOf(body.type, ['amount', 'percent'], 'type');
+  if (!type) throw badRequest('El tipo de descuento es obligatorio', 'MISSING_FIELD');
+  const value = money(body.value, { field: 'value' });
+  if (!(value > 0)) throw badRequest('El descuento debe ser mayor a cero', 'INVALID_FIELD');
+  if (type === 'percent' && value > 100) throw badRequest('El porcentaje no puede pasar de 100', 'INVALID_FIELD');
+  const reason = str(body.reason, { field: 'reason', max: 300 }) || null;
+  const order = await withTenant(req.tenant.id, async (db) => {
+    const o = await lockOrder(db, req, req.params.id);
+    assertActive(o);
+    const it = (await db.query(
+      'SELECT unit_price, modifiers_total, quantity, voided_at FROM order_items WHERE id = $1 AND order_id = $2 AND restaurant_id = $3',
+      [req.params.itemId, o.id, req.tenant.id],
+    )).rows[0];
+    if (!it || it.voided_at) throw notFound('Articulo no encontrado', 'ITEM_NOT_FOUND');
+    const line = (toCents(it.unit_price) + toCents(it.modifiers_total)) * it.quantity / 100;
+    const by = await authorizeDiscount(db, req, discountPercentOf(line, { type, value }), body.pin, 'por articulo');
+    await db.query(
+      `UPDATE order_items SET discount_type = $3, discount_value = $4, discount_reason = $5, discount_by = $6
+        WHERE id = $1 AND restaurant_id = $2`,
+      [req.params.itemId, req.tenant.id, type, value, reason, by],
+    );
+    await recalcOrder(db, req.tenant.id, o);
+    return loadOrder(db, req.tenant.id, o.id);
+  });
+  res.json({ order });
+}));
+
+router.delete('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+  requireUuid(req.params.itemId, 'itemId');
+  const order = await withTenant(req.tenant.id, async (db) => {
+    const o = await lockOrder(db, req, req.params.id);
+    assertActive(o);
+    await db.query(
+      `UPDATE order_items SET discount_type = NULL, discount_value = NULL, discount_amount = 0, discount_reason = NULL, discount_by = NULL
+        WHERE id = $1 AND order_id = $2 AND restaurant_id = $3`,
+      [req.params.itemId, o.id, req.tenant.id],
+    );
+    await recalcOrder(db, req.tenant.id, o);
+    return loadOrder(db, req.tenant.id, o.id);
+  });
+  res.json({ order });
+}));
+
 // Descuento a la cuenta: admin/gerente sin limite; cajero hasta el % de la
 // configuracion; meseros no.
 router.put('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
@@ -596,22 +688,14 @@ router.put('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (req,
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
-    if (!isManager(req.user)) {
-      const settings = await getSettings(db, req.tenant.id);
-      const limit = Number(settings.cashier_max_discount_pct);
-      const pct = discountPercentOf(o.subtotal, { type, value });
-      if (!(limit > 0) || pct > limit + 1e-9) {
-        throw forbidden(limit > 0
-          ? `Tu rol puede descontar hasta ${limit}% de la cuenta`
-          : 'Tu rol no puede aplicar descuentos', 'DISCOUNT_NOT_ALLOWED');
-      }
-    }
+    const base = Math.max(0, toCents(o.subtotal) - toCents(o.promo_discount) - toCents(o.item_discount)) / 100;
+    const by = await authorizeDiscount(db, req, discountPercentOf(base, { type, value }), body.pin, 'de la cuenta');
     o.discount_type = type;
     o.discount_value = value;
     await db.query(
       `UPDATE orders SET discount_type = $3, discount_value = $4, discount_reason = $5, discount_by = $6
         WHERE id = $1 AND restaurant_id = $2`,
-      [o.id, req.tenant.id, type, value, reason, req.user.id],
+      [o.id, req.tenant.id, type, value, reason, by],
     );
     await recalcOrder(db, req.tenant.id, o);
     return loadOrder(db, req.tenant.id, o.id);

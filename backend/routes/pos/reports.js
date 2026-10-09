@@ -52,7 +52,7 @@ const TOTALS = `
   WITH ${PAID}
   SELECT count(*)::int AS orders,
          coalesce(sum(subtotal), 0) AS subtotal,
-         coalesce(sum(discount_amount), 0) AS discounts,
+         coalesce(sum(discount_amount + item_discount), 0) AS discounts,
          coalesce(sum(promo_discount), 0) AS promotions,
          coalesce(sum(tax_amount), 0) AS tax,
          coalesce(sum(delivery_fee), 0) AS delivery_fees,
@@ -190,7 +190,7 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       WITH ${PAID}
       SELECT paid.created_by AS user_id, coalesce(u.name, 'Pedidos en línea') AS name,
              count(*)::int AS orders, sum(paid.total) AS total, sum(paid.tip_amount) AS tips,
-             sum(paid.discount_amount) AS discounts
+             sum(paid.discount_amount + paid.item_discount) AS discounts
         FROM paid
         LEFT JOIN users u ON u.id = paid.created_by AND u.restaurant_id = paid.restaurant_id
        GROUP BY 1, 2 ORDER BY sum(paid.total) DESC`);

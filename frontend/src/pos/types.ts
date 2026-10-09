@@ -125,6 +125,10 @@ export interface OrderItem {
   ready_at: string | null;
   station_id: string | null;
   station_name: string | null;
+  discount_type?: 'amount' | 'percent' | null;
+  discount_value?: Money | null;
+  discount_amount?: Money;
+  discount_reason?: string | null;
   voided_at: string | null;
   void_reason: string | null;
   modifiers: OrderItemModifier[];
@@ -202,6 +206,7 @@ export interface Order {
   channel_commission_pct?: Money;
   // Promociones automaticas aplicadas (se recalculan con cada cambio).
   promo_discount?: Money;
+  item_discount?: Money;
   promotions?: { promotion_id: string; name: string; amount: Money }[];
 }
 

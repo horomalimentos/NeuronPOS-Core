@@ -18,7 +18,7 @@ import {
 } from './lib';
 import { comandaHtml, lastSentItems, orderTicketHtml, printHtml } from './ticket';
 import type {
-  CashSession, DiningTable, Menu, MenuItem, Order, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone,
+  CashSession, DiningTable, Menu, MenuItem, Order, OrderItem, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone,
 } from './types';
 import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
@@ -75,6 +75,7 @@ export default function RegisterPage() {
   const [pickItem, setPickItem] = useState<MenuItem | null>(null);
   const [showPay, setShowPay] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
+  const [discountItem, setDiscountItem] = useState<OrderItem | null>(null);
   const [busy, setBusy] = useState(false);
 
   const inOrder = Boolean(draft || order);
@@ -306,8 +307,11 @@ export default function RegisterPage() {
     ? [order.customer_name, order.customer_phone, order.customer_address]
     : [draft!.customer_name, draft!.customer_phone, draft!.customer_address])].filter(Boolean).join(' · ');
   // Una plataforma puede limitar con que se cobra.
+  // Sin plataforma se ocultan los metodos reservados para alguna (ej. "Rappi pagado").
   const allowedIds = channels.find((c) => c.id === order?.channel_id)?.payment_method_ids || [];
-  const payMethods = allowedIds.length ? methods.filter((m) => allowedIds.includes(m.id)) : methods;
+  const reserved = new Set(channels.flatMap((c) => c.payment_method_ids));
+  const payMethods = allowedIds.length ? methods.filter((m) => allowedIds.includes(m.id))
+    : order?.channel_id ? methods : methods.filter((m) => !reserved.has(m.id));
   const unsentCount = items.filter((i) => !i.sent_at && !i.voided_at).length;
   const remaining = order ? round2(num(order.total) - num(order.paid_amount)) : 0;
   const maxPct = posCan.manage(role) ? null : num(settings?.cashier_max_discount_pct);
@@ -381,8 +385,14 @@ export default function RegisterPage() {
                     {it.modifiers.map((m, i) => <div key={i} className="text-xs text-gray-400">+ {m.name}</div>)}
                     {it.notes && <div className="text-xs italic text-amber-200/80">{it.notes}</div>}
                     <div className="text-[11px] text-gray-500">{it.voided_at ? `Cancelado: ${it.void_reason}` : it.sent_at ? `En cocina ${formatTime(it.sent_at)}` : 'Sin enviar'}</div>
+                    {num(it.discount_amount) > 0 && !it.voided_at && (
+                      <div className="text-[11px] text-emerald-300">Descuento -{formatMXN(it.discount_amount)}{it.discount_reason && ` · ${it.discount_reason}`}</div>
+                    )}
                   </div>
                   <span className="text-gray-300">{formatMXN(it.line_total)}</span>
+                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && posCan.cashier(role) && (
+                    <button onClick={() => setDiscountItem(it)} className="rounded p-1 text-gray-500 hover:text-emerald-300" aria-label="Descuento al artículo" title="Descuento al artículo"><Tag className="h-3.5 w-3.5" /></button>
+                  )}
                   {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && (!it.sent_at || posCan.manage(role)) && (
                     <button onClick={() => removeItem(it.id, Boolean(it.sent_at))} className="rounded p-1 text-gray-500 hover:text-red-300" aria-label="Quitar"><Trash2 className="h-3.5 w-3.5" /></button>
                   )}
@@ -413,6 +423,7 @@ export default function RegisterPage() {
               <>
                 <Row label="Subtotal" value={formatMXN(order.subtotal)} />
                 {(order.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promo: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
+                {num(order.item_discount) > 0 && <Row label="Descuentos por artículo" value={`-${formatMXN(order.item_discount)}`} />}
                 {num(order.discount_amount) > 0 && <Row label={`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`} value={`-${formatMXN(order.discount_amount)}`} />}
                 <Row label={`IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' incl.' : ''}`} value={formatMXN(order.tax_amount)} />
                 {num(order.delivery_fee) > 0 && <Row label="Envío" value={formatMXN(order.delivery_fee)} />}
@@ -458,6 +469,10 @@ export default function RegisterPage() {
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}
           onPaid={(o) => { setShowPay(false); setOrder(o); if (o.status === 'pagada') loadFloor(); }} />
+      )}
+      {discountItem && order && (
+        <DiscountModal order={order} item={discountItem} maxPct={maxPct} onClose={() => setDiscountItem(null)}
+          onSaved={(o) => { setDiscountItem(null); setOrder(o); }} />
       )}
       {showDiscount && order && (
         <DiscountModal order={order} maxPct={maxPct} onClose={() => setShowDiscount(false)}

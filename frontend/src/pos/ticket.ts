@@ -52,7 +52,8 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     const cls = it.voided_at ? 'void' : '';
     const mods = it.modifiers.map((m) => `<div class="mod">+ ${esc(m.name)}${num(m.price_delta) ? ` (${formatMXN(m.price_delta)})` : ''}</div>`).join('');
     const notes = it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : '';
-    return `<tr class="${cls}"><td>${it.quantity} x ${esc(it.name)}${mods}${notes}</td><td class="r">${formatMXN(it.line_total)}</td></tr>`;
+    const disc = num(it.discount_amount) && !it.voided_at ? `<div class="mod">Descuento -${formatMXN(it.discount_amount)}</div>` : '';
+    return `<tr class="${cls}"><td>${it.quantity} x ${esc(it.name)}${mods}${notes}${disc}</td><td class="r">${formatMXN(it.line_total)}</td></tr>`;
   }).join('');
   const who = order.order_type === 'comedor'
     ? `Mesa ${esc(order.table_name)}${order.guests ? ` · ${order.guests} pers.` : ''}`
@@ -82,6 +83,7 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     <table>
       ${row('Subtotal', formatMXN(order.subtotal))}
       ${(order.promotions || []).map((p) => row(`Promo ${esc(p.name)}`, `-${formatMXN(p.amount)}`)).join('')}
+      ${num(order.item_discount) ? row('Descuentos por artículo', `-${formatMXN(order.item_discount)}`) : ''}
       ${num(order.discount_amount) ? row(`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`, `-${formatMXN(order.discount_amount)}`) : ''}
       ${row(taxLabel, formatMXN(order.tax_amount))}
       ${num(order.delivery_fee) ? row('Envío', formatMXN(order.delivery_fee)) : ''}
