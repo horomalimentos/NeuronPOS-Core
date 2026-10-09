@@ -22,8 +22,8 @@ describe('reportes de ventas y fotos', { skip: SKIP_DB }, () => {
     process.env.UPLOADS_DIR = uploads;
     ctx = await setupDb();
     owner = await ownerToken(ctx);
-    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos'] });
-    B = await createRestaurant(ctx, owner, 'beta', { modules: ['pos'] });
+    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'reportes'] });
+    B = await createRestaurant(ctx, owner, 'beta', { modules: ['pos', 'reportes'] });
     branch = (await api(A, 'GET', '/api/branches')).body.branches[0];
     today = new Intl.DateTimeFormat('en-CA', { timeZone: branch.timezone }).format(new Date());
     methods = (await api(A, 'GET', '/api/pos/payment-methods')).body.payment_methods;
@@ -92,6 +92,13 @@ describe('reportes de ventas y fotos', { skip: SKIP_DB }, () => {
     const old = await api(A, 'GET', '/api/pos/reports/sales?from=2020-01-01&to=2020-01-31');
     assert.equal(old.body.summary.orders, 0);
     assert.equal(old.body.previous_range.from, '2019-12-01');
+  });
+
+  test('sin el modulo de reportes responde 402', async () => {
+    const C = await createRestaurant(ctx, owner, 'gamma', { modules: ['pos'] });
+    const res = await api(C, 'GET', `/api/pos/reports/sales?from=${today}&to=${today}`);
+    assert.equal(res.status, 402);
+    assert.equal(res.body.code, 'MODULE_NOT_ENABLED');
   });
 
   test('solo admin/gerente; fechas validas; cada restaurante ve lo suyo', async () => {

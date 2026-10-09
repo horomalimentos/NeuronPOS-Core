@@ -98,7 +98,9 @@ export default function App() {
             <Route path="menu" element={<MenuAdminPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
-            <Route path="reportes" element={<ReportsPage />} />
+            <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
+              <Route path="reportes" element={<ReportsPage />} />
+            </Route>
           </Route>
           {/* Recursos humanos y nomina (modulo rh) */}
           <Route element={<ModuleGate code="rh" name="Recursos humanos" />}>

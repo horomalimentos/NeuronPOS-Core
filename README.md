@@ -319,7 +319,7 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 | POST | `/api/pos/orders/:id/payments` | admin, gerente, cajero |
 | GET | `/api/pos/kitchen?branch_id=` | todos menos repartidor |
 | GET/POST | `/api/pos/cash-sessions` · `/open` · `/:id` · `/:id/movements` · `/:id/close` | admin, gerente, cajero |
-| GET | `/api/pos/reports/sales?from=&to=[&branch_id=]` | admin, gerente |
+| GET | `/api/pos/reports/sales?from=&to=[&branch_id=]` (módulo `reportes`) | admin, gerente |
 | POST | `/api/uploads/image` (cuerpo: la imagen, `Content-Type: image/*`, máx. 5 MB) | admin, gerente |
 
 **Reportes de ventas** (`/admin/reportes` y el resumen del día en Inicio):
