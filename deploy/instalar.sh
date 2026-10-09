@@ -56,7 +56,9 @@ psql_admin -d "$DB_NAME" -c "CREATE EXTENSION IF NOT EXISTS citext"
 
 paso "backend/.env"
 if [ ! -f "$ENV_FILE" ]; then
-  umask 077
+  # umask solo para el .env (en un subshell); si se queda, el frontend
+  # compilado sale sin permiso de lectura y nginx responde 403.
+  ( umask 077
   cat > "$ENV_FILE" <<ENV
 NODE_ENV=production
 PORT=$APP_PORT
@@ -94,6 +96,7 @@ BILLING_TIMEZONE=$BILLING_TIMEZONE
 BILLING_AUTO=true
 JOBS_ENABLED=true
 ENV
+  )
   echo "Creado $ENV_FILE (respalda PAYMENT_SECRETS_KEY y JWT_SECRET fuera del servidor)."
 else
   echo "Ya existe, no se toca."
