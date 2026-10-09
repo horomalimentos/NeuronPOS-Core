@@ -16,7 +16,7 @@ import PaymentModal from './PaymentModal';
 import {
   ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, ORDER_TYPE_LABEL, formatTime, num, posCan, posPrefs, round2,
 } from './lib';
-import { orderTicketHtml, printHtml } from './ticket';
+import { comandaHtml, lastSentItems, orderTicketHtml, printHtml } from './ticket';
 import type {
   CashSession, DiningTable, Menu, MenuItem, Order, OrderType, PaymentMethod, PosSettings, Zone,
 } from './types';
@@ -203,7 +203,12 @@ export default function RegisterPage() {
   const doSend = () => run(async () => {
     const o = await save();
     if (!o) return;
-    setOrder((await api<{ order: Order }>(`/pos/orders/${o.id}/send`, { method: 'POST' })).order);
+    const sent = (await api<{ order: Order }>(`/pos/orders/${o.id}/send`, { method: 'POST' })).order;
+    setOrder(sent);
+    // En la app NeuronPOS con impresora de comandas sale la comanda; en el
+    // navegador no hace nada.
+    const items = lastSentItems(sent);
+    if (items.length) void printHtml(comandaHtml(sent, items, branch), 'comanda');
   });
   const doCharge = () => run(async () => {
     if (!session) throw new Error(`Abre la caja "${terminal}" para cobrar`);
@@ -230,7 +235,8 @@ export default function RegisterPage() {
     const q = reason ? `?reason=${encodeURIComponent(reason)}` : '';
     setOrder((await api<{ order: Order }>(`/pos/orders/${order.id}/items/${itemId}${q}`, { method: 'DELETE' })).order);
   });
-  const print = (o: Order, change = 0) => printHtml(orderTicketHtml(o, me.restaurant, branch, settings, change));
+  const print = (o: Order, change = 0, opts: { openDrawer?: boolean } = {}) =>
+    printHtml(orderTicketHtml(o, me.restaurant, branch, settings, change), 'ticket', opts);
 
   // ---------------------------------------------------------------------------
   // Render

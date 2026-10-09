@@ -1,0 +1,12 @@
+{
+  "appId": "app.neuronpos.kds",
+  "productName": "Neuron KDS",
+  "artifactName": "NeuronKDS-${version}-${os}.${ext}",
+  "directories": { "output": "dist/kds", "buildResources": "build" },
+  "files": ["src/**/*", "package.json"],
+  "extraMetadata": { "neuronMode": "kds", "name": "neuronkds-desktop", "productName": "Neuron KDS" },
+  "publish": [{ "provider": "generic", "url": "https://neuronpos.app/api/descargas/kds" }],
+  "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon-kds.png", "verifyUpdateCodeSignature": false },
+  "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "shortcutName": "Neuron KDS", "artifactName": "NeuronKDS-Setup-${version}.${ext}" },
+  "linux": { "target": ["AppImage"], "icon": "build/icon-kds.png", "category": "Office" }
+}

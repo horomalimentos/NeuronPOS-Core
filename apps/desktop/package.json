@@ -1,0 +1,26 @@
+{
+  "name": "neuronpos-desktop",
+  "productName": "NeuronPOS",
+  "version": "1.0.0",
+  "description": "NeuronPOS y Neuron KDS para escritorio: punto de venta, cocina e impresión directa",
+  "author": "NeuronPOS",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "main": "src/main.js",
+  "neuronMode": "pos",
+  "scripts": {
+    "start": "electron .",
+    "start:kds": "NEURON_MODE=kds electron .",
+    "test": "node --test test/*.test.js",
+    "dist:pos": "electron-builder --config builder-pos.json",
+    "dist:kds": "electron-builder --config builder-kds.json"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "38.8.6",
+    "electron-builder": "^24.13.3"
+  }
+}

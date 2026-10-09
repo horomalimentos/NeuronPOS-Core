@@ -55,6 +55,17 @@ export function createApp() {
   app.use('/api/platform', platformRouter);
   // Webhooks de Clip (fase 3): el restaurante va en la ruta, no en el Host.
   app.use('/api/webhooks', webhooksRouter);
+  // Instaladores de NeuronPOS / Neuron KDS (escritorio y Android) y los
+  // archivos de actualizacion automatica. Los "latest*" nunca se cachean.
+  app.use('/api/descargas', express.static(env.downloadsDir, {
+    index: false,
+    dotfiles: 'ignore',
+    setHeaders(res, file) {
+      if (/latest[^/]*\.(ya?ml|json)$/.test(file) || file.endsWith('index.json')) res.setHeader('Cache-Control', 'no-cache');
+      if (file.endsWith('.apk')) res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    },
+  }));
+  app.use('/api/descargas', (req, res, next) => next(notFound('Archivo no encontrado', 'FILE_NOT_FOUND')));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
 

@@ -1,0 +1,12 @@
+{
+  "appId": "app.neuronpos.pos",
+  "productName": "NeuronPOS",
+  "artifactName": "NeuronPOS-${version}-${os}.${ext}",
+  "directories": { "output": "dist/pos", "buildResources": "build" },
+  "files": ["src/**/*", "package.json"],
+  "extraMetadata": { "neuronMode": "pos" },
+  "publish": [{ "provider": "generic", "url": "https://neuronpos.app/api/descargas/pos" }],
+  "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon.png", "verifyUpdateCodeSignature": false },
+  "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "shortcutName": "NeuronPOS", "artifactName": "NeuronPOS-Setup-${version}.${ext}" },
+  "linux": { "target": ["AppImage"], "icon": "build/icon.png", "category": "Office" }
+}

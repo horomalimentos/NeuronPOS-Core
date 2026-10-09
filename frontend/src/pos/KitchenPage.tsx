@@ -1,10 +1,12 @@
 import { CheckCircle2, ChefHat, RefreshCw } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { nativeInfo } from '../lib/native';
 import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan } from './lib';
+import { comandaHtml, printHtml } from './ticket';
 import type { Order } from './types';
 import { usePosBranch } from './usePosBranch';
 
@@ -23,6 +25,26 @@ export default function KitchenPage() {
   const [now, setNow] = useState(() => Date.now());
   const [marking, setMarking] = useState<string | null>(null);
   const canReady = posCan.kitchenReady(me.user.role);
+  // Neuron KDS con impresora de comandas: imprime lo que va llegando (ordenes
+  // del POS y pedidos en linea). Lo que ya estaba al abrir no se imprime.
+  const seen = useRef<Set<string> | null>(null);
+  const [printComandas, setPrintComandas] = useState(false);
+  useEffect(() => {
+    nativeInfo().then((info) => setPrintComandas(Boolean(info?.mode === 'kds' && info.printers.comanda)));
+  }, []);
+  useEffect(() => {
+    if (!orders) return;
+    const live = orders.flatMap((o) => (o.items || []).filter((it) => !it.voided_at).map((it) => ({ o, it })));
+    if (!seen.current) { seen.current = new Set(live.map(({ it }) => it.id)); return; }
+    const fresh = live.filter(({ it }) => !seen.current!.has(it.id));
+    fresh.forEach(({ it }) => seen.current!.add(it.id));
+    if (!printComandas || !fresh.length) return;
+    const branch = branches.find((b) => b.id === branchId) || null;
+    for (const o of new Set(fresh.map((f) => f.o))) {
+      void printHtml(comandaHtml(o, fresh.filter((f) => f.o === o).map((f) => f.it), branch), 'comanda');
+    }
+  }, [orders, printComandas, branches, branchId]);
+  useEffect(() => { seen.current = null; }, [branchId]);
 
   const load = useCallback(() => {
     if (!branchId) return;

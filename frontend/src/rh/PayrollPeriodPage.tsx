@@ -68,7 +68,7 @@ export default function PayrollPeriodPage() {
           <Button variant="secondary" onClick={() => downloadFile(`/rh/payroll/periods/${period.id}/export.csv`, `nomina-${period.start_date}.csv`).catch((e) => setError(errorMessage(e)))}>
             <Download className="h-4 w-4" /> CSV
           </Button>
-          <Button variant="secondary" onClick={() => printHtml(receiptsHtml(items, period, me.restaurant))} disabled={!items.length}><Printer className="h-4 w-4" /> Imprimir recibos</Button>
+          <Button variant="secondary" onClick={() => printHtml(receiptsHtml(items, period, me.restaurant), 'documento')} disabled={!items.length}><Printer className="h-4 w-4" /> Imprimir recibos</Button>
           {period.status === 'borrador' && <Button variant="secondary" loading={busy === 'calc'} onClick={() => action('calc', 'calculate')}><RefreshCw className="h-4 w-4" /> Recalcular</Button>}
           {period.status === 'borrador' && isAdmin && <Button loading={busy === 'approve'} onClick={() => action('approve', 'approve', undefined, 'Al aprobar, los recibos quedan fijos y los empleados podrán verlos y firmarlos. ¿Aprobar?')}><CheckCircle2 className="h-4 w-4" /> Aprobar</Button>}
           {period.status === 'aprobada' && isAdmin && <Button variant="secondary" loading={busy === 'reopen'} onClick={() => action('reopen', 'reopen')}><Unlock className="h-4 w-4" /> Reabrir</Button>}
@@ -142,7 +142,7 @@ function ItemModal({ itemId, onClose }: { itemId: string; onClose: () => void })
   return (
     <Modal title={data ? `Recibo · ${data.item.employee_name}` : 'Recibo'} onClose={onClose} wide>
       {error && <Alert>{error}</Alert>}
-      {!data ? <Spinner /> : <ReceiptView item={data.item} onPrint={() => printHtml(receiptHtml(data.item, data.period, me.restaurant))} />}
+      {!data ? <Spinner /> : <ReceiptView item={data.item} onPrint={() => printHtml(receiptHtml(data.item, data.period, me.restaurant), 'documento')} />}
     </Modal>
   );
 }

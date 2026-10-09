@@ -1,0 +1,17 @@
+// App de Android de NeuronPOS (punto de venta) y Neuron KDS (cocina).
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.13.0'
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
