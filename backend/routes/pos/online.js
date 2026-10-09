@@ -5,6 +5,7 @@
 // los ve como entregados.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
+import { deductOrder } from '../../services/inventory.js';
 import { requireRole } from '../../middleware/auth.js';
 import { acceptOnlineOrder, getOnlineSettings } from '../../services/online.js';
 import { toCents } from '../../services/posMath.js';
@@ -137,6 +138,7 @@ router.post('/online-orders/:id/deliver', requireRole(...ROLES.cashier), ah(asyn
         WHERE id = $1 AND restaurant_id = $2`,
       [o.id, req.tenant.id],
     );
+    await deductOrder(db, req.tenant.id, o.id, req.user.id);
     return loadOrder(db, req.tenant.id, o.id);
   });
   res.json({ order });

@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
   Settings, ShoppingBag, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -10,6 +10,7 @@ import { applyBranding } from '../lib/branding';
 import { getNative } from '../lib/native';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
+import { invCan } from '../inventory/lib';
 import { posCan } from '../pos/lib';
 import type { Me } from '../lib/types';
 import { canManage, type AdminContext } from './context';
@@ -55,6 +56,7 @@ export default function AdminLayout() {
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && has('reportes') && posCan.manage(role) },
+    { to: '/admin/inventario', label: 'Inventario', icon: Boxes, end: false, show: has('inventario') && invCan.staff(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },

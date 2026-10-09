@@ -11,6 +11,7 @@
 // no aparecen en "activas", no se envian a cocina y no se cobran.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
+import { deductOrder } from '../../services/inventory.js';
 import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
@@ -663,6 +664,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
           WHERE order_id = $1 AND restaurant_id = $2 AND sent_at IS NULL AND voided_at IS NULL`,
         [o.id, req.tenant.id],
       );
+      await deductOrder(db, req.tenant.id, o.id, req.user.id);
     }
     if (o.order_type === 'domicilio') await afterRegisterPayment(db, req.tenant.id, o.id, paid);
     return {
