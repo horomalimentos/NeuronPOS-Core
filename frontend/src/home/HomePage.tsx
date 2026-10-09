@@ -128,24 +128,7 @@ export default function HomePage() {
       <section id="precios" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-16">
         <h2 className="text-center text-3xl font-bold text-white">Precios por módulo</h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-gray-400">Sin contratos largos. Elige los módulos, paga cada mes con tarjeta y agrega o quita cuando quieras.</p>
-        <div className="mx-auto mt-10 max-w-3xl divide-y divide-gray-800 rounded-2xl border border-gray-800 bg-gray-900">
-          {(plans?.modules || FALLBACK).map((m) => {
-            const price = Number(m.monthly_price_mxn);
-            return (
-              <div key={m.code} className="flex items-center gap-4 px-5 py-4">
-                <div className="min-w-0 flex-1">
-                  <p className="font-medium text-white">{m.name}</p>
-                  <p className="truncate text-sm text-gray-500">{m.description}</p>
-                </div>
-                <p className="shrink-0 text-right">
-                  {price > 0
-                    ? <><span className="text-lg font-semibold text-white">{formatMXN(price)}</span><span className="text-sm text-gray-500"> /mes</span></>
-                    : <span className="text-sm text-gray-400">Pregunta por el precio</span>}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+        <PriceCalculator modules={plans?.modules || FALLBACK} trialDays={plans?.trial_days} />
         <p className="mt-4 text-center text-sm text-gray-500">Precios en pesos mexicanos.</p>
       </section>
 
@@ -190,6 +173,60 @@ export default function HomePage() {
           </span>
         </div>
       </footer>
+    </div>
+  );
+}
+
+const DEFAULT_PICK = ['pos', 'landing', 'portal'];
+
+/** Lista de modulos con casillas: el visitante arma su plan y ve el total al mes. */
+function PriceCalculator({ modules, trialDays }: { modules: Plan[]; trialDays?: number }) {
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(DEFAULT_PICK));
+  const toggle = (code: string) => setPicked((prev) => {
+    const next = new Set(prev);
+    if (next.has(code)) next.delete(code); else next.add(code);
+    return next;
+  });
+  const priced = modules.filter((m) => Number(m.monthly_price_mxn) > 0);
+  const total = modules.filter((m) => picked.has(m.code)).reduce((s, m) => s + Number(m.monthly_price_mxn), 0);
+  const allTotal = priced.reduce((s, m) => s + Number(m.monthly_price_mxn), 0);
+  const allPicked = priced.length > 0 && priced.every((m) => picked.has(m.code));
+
+  return (
+    <div className="mx-auto mt-10 max-w-3xl overflow-hidden rounded-2xl border border-gray-800 bg-gray-900">
+      <div className="divide-y divide-gray-800">
+        {modules.map((m) => {
+          const price = Number(m.monthly_price_mxn);
+          const on = picked.has(m.code);
+          return (
+            <label key={m.code} className={`flex cursor-pointer items-center gap-4 px-5 py-4 transition ${on ? 'bg-brand/5' : 'hover:bg-gray-800/40'}`}>
+              <input type="checkbox" checked={on} onChange={() => toggle(m.code)} className="h-5 w-5 shrink-0 accent-[rgb(var(--brand-primary))]" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium text-white">{m.name}</p>
+                <p className="text-sm text-gray-500">{m.description}</p>
+              </div>
+              <p className="shrink-0 text-right">
+                {price > 0
+                  ? <><span className="text-lg font-semibold text-white">{formatMXN(price)}</span><span className="text-sm text-gray-500"> /mes</span></>
+                  : <span className="text-sm text-gray-400">Pregunta por el precio</span>}
+              </p>
+            </label>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-4 border-t border-gray-800 bg-gray-950/60 px-5 py-5">
+        <div className="flex-1">
+          <p className="text-sm text-gray-400">Tu plan ({picked.size} {picked.size === 1 ? 'módulo' : 'módulos'})</p>
+          <p className="text-3xl font-bold text-white">{formatMXN(total)}<span className="text-base font-normal text-gray-500"> /mes</span></p>
+          {trialDays ? <p className="mt-1 text-sm text-gray-500">Los primeros {trialDays} días son gratis.</p> : null}
+        </div>
+        {allTotal > 0 && !allPicked && (
+          <button type="button" onClick={() => setPicked(new Set(modules.map((m) => m.code)))}
+            className="rounded-full border border-gray-700 px-5 py-2.5 text-sm font-semibold text-gray-200 hover:border-gray-500">
+            Ver todo incluido · {formatMXN(allTotal)}
+          </button>
+        )}
+      </div>
     </div>
   );
 }
