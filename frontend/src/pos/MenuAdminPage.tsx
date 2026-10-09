@@ -2,6 +2,7 @@ import { Image as ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
+import ImageInput from '../components/ImageInput';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import type { Branch } from '../lib/types';
@@ -194,8 +195,8 @@ function ItemModal({ item, menu, branches, onClose, onSaved }: {
               {menu.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
-          <Field label="URL de la imagen" hint="https://… (opcional)"><input className="input" type="url" value={form.image_url} onChange={(e) => setForm({ ...form, image_url: e.target.value })} /></Field>
         </div>
+        <ImageInput label="Foto (opcional)" value={form.image_url} onChange={(image_url) => setForm({ ...form, image_url })} />
         <Field label="Descripción"><textarea className="input" rows={2} maxLength={500} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
         {menu.modifier_groups.length > 0 && (
           <div>

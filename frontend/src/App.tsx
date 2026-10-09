@@ -13,6 +13,7 @@ import KitchenPage from './pos/KitchenPage';
 import MenuAdminPage from './pos/MenuAdminPage';
 import PosGate from './pos/PosGate';
 import PosSettingsPage from './pos/PosSettingsPage';
+import ReportsPage from './pos/ReportsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
 import PlatformLogin from './platform/PlatformLogin';
@@ -97,6 +98,7 @@ export default function App() {
             <Route path="menu" element={<MenuAdminPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
+            <Route path="reportes" element={<ReportsPage />} />
           </Route>
           {/* Recursos humanos y nomina (modulo rh) */}
           <Route element={<ModuleGate code="rh" name="Recursos humanos" />}>

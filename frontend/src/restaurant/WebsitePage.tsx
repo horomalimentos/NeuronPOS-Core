@@ -1,6 +1,7 @@
 import { ExternalLink, Globe, Lock, Plus, Save, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
+import ImageInput from '../components/ImageInput';
 import { Alert, Button, Field, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import type { GalleryImage, SiteContent } from '../site/types';
@@ -10,14 +11,14 @@ interface WebsiteData { content: SiteContent; gallery: GalleryImage[] }
 
 type TextKey = Exclude<keyof SiteContent, 'show_menu' | 'show_gallery'>;
 
-const SECTIONS: { title: string; hint?: string; fields: { key: TextKey; label: string; long?: boolean; placeholder?: string; max?: number }[] }[] = [
+const SECTIONS: { title: string; hint?: string; fields: { key: TextKey; label: string; long?: boolean; image?: boolean; placeholder?: string; max?: number }[] }[] = [
   {
     title: 'Portada',
     hint: 'Lo primero que ve el cliente. El botón "Ordenar en línea" aparece solo si tienes pedidos en línea activos.',
     fields: [
       { key: 'hero_title', label: 'Título', placeholder: 'Ej. Los mejores tacos de la ciudad', max: 120 },
       { key: 'hero_subtitle', label: 'Subtítulo', long: true, max: 300 },
-      { key: 'hero_image_url', label: 'Imagen de portada (URL)', placeholder: 'https://…' },
+      { key: 'hero_image_url', label: 'Imagen de portada', image: true },
       { key: 'announcement', label: 'Aviso en la parte superior (opcional)', placeholder: 'Ej. ¡Nueva sucursal en el centro!', max: 200 },
     ],
   },
@@ -26,7 +27,7 @@ const SECTIONS: { title: string; hint?: string; fields: { key: TextKey; label: s
     fields: [
       { key: 'about_title', label: 'Título', placeholder: 'Nuestra historia', max: 120 },
       { key: 'about_text', label: 'Texto', long: true, max: 3000 },
-      { key: 'about_image_url', label: 'Imagen (URL)', placeholder: 'https://…' },
+      { key: 'about_image_url', label: 'Imagen', image: true },
     ],
   },
   {
@@ -125,6 +126,9 @@ export default function WebsitePage() {
             <div className="grid gap-4 sm:grid-cols-2">
               {s.fields.map((f) => (
                 <div key={f.key} className={f.long ? 'sm:col-span-2' : ''}>
+                  {f.image ? (
+                    <ImageInput label={f.label} value={form[f.key] || ''} onChange={(url) => setForm({ ...form, [f.key]: url })} />
+                  ) : (
                   <Field label={f.label}>
                     {f.long ? (
                       <textarea className="input" rows={f.key === 'about_text' ? 6 : 2} maxLength={f.max} placeholder={f.placeholder}
@@ -134,6 +138,7 @@ export default function WebsitePage() {
                         value={form[f.key] || ''} onChange={(e) => setForm({ ...form, [f.key]: e.target.value })} />
                     )}
                   </Field>
+                  )}
                 </div>
               ))}
             </div>
@@ -161,11 +166,11 @@ export default function WebsitePage() {
       </form>
 
       <div className="mt-8">
-        <Section title="Galería" hint="Imágenes por URL (por ahora no se suben archivos).">
-          <form onSubmit={addImage} className="mb-4 grid gap-3 sm:grid-cols-[1fr_14rem_auto]">
-            <input className="input" required placeholder="https://… imagen" value={newImage.image_url} onChange={(e) => setNewImage({ ...newImage, image_url: e.target.value })} />
+        <Section title="Galería" hint="Sube fotos de tus platillos y del lugar.">
+          <form onSubmit={addImage} className="mb-4 grid items-end gap-3 sm:grid-cols-[1fr_14rem_auto]">
+            <ImageInput label="Nueva foto" value={newImage.image_url} onChange={(image_url) => setNewImage({ ...newImage, image_url })} />
             <input className="input" placeholder="Descripción (opcional)" maxLength={200} value={newImage.caption} onChange={(e) => setNewImage({ ...newImage, caption: e.target.value })} />
-            <Button type="submit" variant="secondary"><Plus className="h-4 w-4" /> Agregar</Button>
+            <Button type="submit" variant="secondary" disabled={!newImage.image_url}><Plus className="h-4 w-4" /> Agregar</Button>
           </form>
           {data.gallery.length === 0 ? <p className="text-sm text-gray-500">La galería está vacía.</p> : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

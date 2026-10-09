@@ -1,5 +1,5 @@
 import {
-  Award, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
+  Award, BarChart3, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
   Settings, ShoppingBag, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -54,6 +54,7 @@ export default function AdminLayout() {
     { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
+    { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },

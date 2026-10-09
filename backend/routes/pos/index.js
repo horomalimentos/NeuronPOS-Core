@@ -7,6 +7,7 @@ import cashRouter from './cash.js';
 import menuRouter from './menu.js';
 import onlineRouter from './online.js';
 import ordersRouter from './orders.js';
+import reportsRouter from './reports.js';
 import settingsRouter from './settings.js';
 import tablesRouter from './tables.js';
 
@@ -23,5 +24,6 @@ router.use(settingsRouter);
 router.use(ordersRouter);
 router.use(onlineRouter);
 router.use(cashRouter);
+router.use(reportsRouter);
 
 export default router;

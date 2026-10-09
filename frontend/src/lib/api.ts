@@ -13,6 +13,8 @@ export class ApiError extends Error {
 interface Options {
   method?: string;
   body?: unknown;
+  /** Archivo que se manda tal cual (con su tipo), p. ej. una foto. */
+  file?: Blob;
   realm?: Realm;
   /** No mandar a login en 401 (p. ej. el propio formulario de login). */
   noRedirect?: boolean;
@@ -25,9 +27,10 @@ const LOGIN_PATH: Record<Realm, string> = {
 /** La app del repartidor tiene su propio login (personal del restaurante o flota). */
 const loginPath = (realm: Realm) => (window.location.pathname.startsWith('/repartidor') ? '/repartidor' : LOGIN_PATH[realm]);
 
-export async function api<T>(path: string, { method = 'GET', body, realm = 'restaurant', noRedirect }: Options = {}): Promise<T> {
+export async function api<T>(path: string, { method = 'GET', body, file, realm = 'restaurant', noRedirect }: Options = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  if (file) headers['Content-Type'] = file.type || 'application/octet-stream';
+  else if (body !== undefined) headers['Content-Type'] = 'application/json';
   const token = session.getToken(realm);
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
@@ -35,7 +38,7 @@ export async function api<T>(path: string, { method = 'GET', body, realm = 'rest
 
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(`/api${path}`, { method, headers, body: file ?? (body === undefined ? undefined : JSON.stringify(body)) });
   } catch {
     throw new ApiError(0, 'No se pudo conectar con el servidor');
   }

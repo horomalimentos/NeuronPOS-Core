@@ -55,6 +55,9 @@ export const env = {
   // Instaladores de las apps (deploy/instaladores.sh) servidos en /api/descargas.
   downloadsDir: process.env.DOWNLOADS_DIR
     || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'descargas'),
+  // Fotos subidas por los restaurantes (una carpeta por restaurante), servidas en /api/uploads.
+  uploadsDir: process.env.UPLOADS_DIR
+    || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'uploads'),
 };
 
 if (!env.jwtSecret) {

@@ -4,6 +4,7 @@ import { PageHeader, StatusBadge } from '../components/ui';
 import { formatDate } from '../lib/format';
 import { moduleIcon } from '../lib/modules';
 import { canManage, useAdmin } from './context';
+import TodaySales from './TodaySales';
 
 export default function DashboardPage() {
   const { me } = useAdmin();
@@ -31,6 +32,8 @@ export default function DashboardPage() {
         subtitle={<span className="flex flex-wrap items-center gap-2"><StatusBadge status={r.status} />
           {r.status === 'trial' && r.trial_ends_at && <>Tu prueba termina el {formatDate(r.trial_ends_at)}.</>}</span>}
       />
+
+      {manager && enabled.some((m) => m.code === 'pos') && <TodaySales me={me} />}
 
       <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-500">Tus módulos</h2>
       {enabled.length === 0 && <p className="mb-6 text-sm text-gray-500">Todavía no tienes módulos contratados.</p>}
