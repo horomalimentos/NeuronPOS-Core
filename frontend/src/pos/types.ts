@@ -61,6 +61,20 @@ export interface Menu {
   stations: KitchenStation[];
 }
 
+/** Plataforma de delivery (Rappi, Uber Eats...) con su comision. */
+export interface SalesChannel {
+  id: string;
+  name: string;
+  color: string | null;
+  commission_pct: Money;
+  /** Metodos con los que se cobra (vacio = cualquiera). */
+  payment_method_ids: string[];
+  requires_order_number: boolean;
+  requires_address: boolean;
+  sort_order: number;
+  active: boolean;
+}
+
 export interface Zone {
   id: string;
   branch_id: string;
@@ -180,6 +194,12 @@ export interface Order {
   // Pago en linea con Clip: pendiente (no llega aqui), pagado o cancelado.
   payment_provider?: string | null;
   online_payment_status?: 'pendiente' | 'pagado' | 'cancelado' | null;
+  // Plataforma de delivery (Rappi, Uber Eats...) y su comision al momento.
+  channel_id?: string | null;
+  channel_name?: string | null;
+  channel_color?: string | null;
+  channel_order_number?: string | null;
+  channel_commission_pct?: Money;
 }
 
 export type OnlineStatus = 'pendiente' | 'aceptada' | 'rechazada';

@@ -61,7 +61,9 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     .filter(Boolean).map(esc).join('<br>');
   const web = order.source === 'web'
     ? `<div class="center"><b>PEDIDO EN LÍNEA</b>${order.payment_preference ? `<br>Paga con ${order.payment_preference}${num(order.pay_with) ? ` (${formatMXN(order.pay_with)})` : ''}` : ''}</div>`
-    : '';
+    : order.channel_name
+      ? `<div class="center"><b>${esc(order.channel_name.toUpperCase())}</b>${order.channel_order_number ? `<br>Pedido ${esc(order.channel_order_number)}` : ''}</div>`
+      : '';
   const taxLabel = `IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' (incluido)' : ''}`;
   const payments = (order.payments || []).map((p) => row(
     esc(p.method_name) + (p.reference ? ` <span class="muted">${esc(p.reference)}</span>` : ''),
@@ -138,6 +140,7 @@ export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | n
     : `${stations[0] ? `<div class="st">${esc(stations[0])}</div>` : ''}${items.map(line).join('')}`;
   const body = `<div class="center"><h1>${who}</h1>
       <div>Folio ${order.folio}${order.source === 'web' ? ' · EN LÍNEA' : ''}</div>
+      ${order.channel_name ? `<div><b>${esc(order.channel_name.toUpperCase())}${order.channel_order_number ? ` #${esc(order.channel_order_number)}` : ''}</b></div>` : ''}
       <div class="muted">${formatDateTime(items[0]?.sent_at || order.sent_at || order.created_at)}${branch ? ` · ${esc(branch.name)}` : ''}</div></div><hr>
     ${order.customer_name ? `<div>${esc(order.customer_name)}</div>` : ''}
     ${lines}

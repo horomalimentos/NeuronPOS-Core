@@ -5,6 +5,7 @@ import { api, errorMessage } from '../lib/api';
 import { nativeInfo } from '../lib/native';
 import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
+import ChannelBadge from './ChannelBadge';
 import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan, posPrefs } from './lib';
 import { comandaHtml, printHtml } from './ticket';
 import type { KitchenStation, Order } from './types';
@@ -114,6 +115,7 @@ export default function KitchenPage() {
                       {o.source === 'web' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">En línea</span>}
                     </h3>
                     <p className="text-xs text-gray-400">Folio {o.folio}{o.customer_name && ` · ${o.customer_name}`}</p>
+                    {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
                   </div>
                   <div className="text-right">
                     <p className={`text-lg font-semibold ${mins >= 20 ? 'text-red-400' : mins >= 10 ? 'text-amber-300' : 'text-gray-200'}`}>{mins} min</p>

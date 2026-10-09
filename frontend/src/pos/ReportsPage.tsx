@@ -32,6 +32,7 @@ export interface Report {
   by_payment_method: { id: string; name: string; kind: MethodKind; orders: number; amount: number; tips: number }[];
   by_order_type: { order_type: OrderType; source: 'pos' | 'web'; orders: number; total: number }[];
   by_branch: { branch_id: string; branch_name: string; orders: number; total: number; tips: number }[];
+  by_channel: { channel_id: string | null; name: string; orders: number; total: number; commission: number; net: number }[];
   items: { menu_item_id: string; name: string; category: string | null; quantity: number; total: number; orders: number }[];
   categories: { category: string; quantity: number; total: number }[];
   modifiers: { group_name: string; name: string; quantity: number; total: number }[];
@@ -312,6 +313,15 @@ export default function ReportsPage() {
                 rows={report.by_order_type.map((t) => [typeLabel(t), t.orders, formatMXN(t.total), pct(t.total, s.total)])} />
             </Section>
           </div>
+
+          {report.by_channel.some((c) => c.channel_id) && (
+            <Section title="Plataformas de delivery"
+              onCsv={() => downloadCsv(file('plataformas'), ['Plataforma', 'Órdenes', 'Ventas', 'Comisión', 'Neto'],
+                report.by_channel.map((c) => [c.name, c.orders, c.total, c.commission, c.net]))}>
+              <Table head={['Plataforma', 'Órdenes', 'Ventas', 'Comisión', 'Neto']}
+                rows={report.by_channel.map((c) => [c.name, c.orders, formatMXN(c.total), formatMXN(c.commission), formatMXN(c.net)])} />
+            </Section>
+          )}
 
           <Section title="Productos más vendidos"
             onCsv={() => downloadCsv(file('productos'), ['Producto', 'Categoría', 'Cantidad', 'Órdenes', 'Venta'],

@@ -4,10 +4,11 @@ import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { useAdmin } from '../restaurant/context';
+import ChannelsCard from './ChannelsCard';
 import { EDITABLE_METHOD_KINDS, METHOD_KIND_LABEL, num, posCan } from './lib';
 import type { MethodKind, PaymentMethod, PosSettings } from './types';
 
-/** Configuracion del POS: impuesto, descuentos, ticket y metodos de pago. */
+/** Configuracion del POS: impuesto, descuentos, ticket, metodos de pago y plataformas de delivery. */
 export default function PosSettingsPage() {
   const { me } = useAdmin();
   const [settings, setSettings] = useState<PosSettings | null>(null);
@@ -103,6 +104,7 @@ export default function PosSettingsPage() {
             </ul>
             <p className="mt-3 text-xs text-gray-500">El tipo “Efectivo” permite dar cambio y cuenta para el efectivo esperado en el corte.</p>
           </section>
+          <ChannelsCard methods={methods} />
         </div>
       )}
       {editing && (

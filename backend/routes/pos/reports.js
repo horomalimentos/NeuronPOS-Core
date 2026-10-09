@@ -141,6 +141,15 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       SELECT branch_id, branch_name, count(*)::int AS orders, sum(total) AS total, sum(tip_amount) AS tips
         FROM paid GROUP BY 1, 2 ORDER BY sum(total) DESC`);
 
+    // Plataformas de delivery (Rappi, Uber Eats...): comision guardada en cada orden.
+    const byChannel = await q(`
+      WITH ${PAID}
+      SELECT paid.channel_id, coalesce(ch.name, 'Directo') AS name, count(*)::int AS orders, sum(paid.total) AS total,
+             sum(round(paid.total * paid.channel_commission_pct / 100, 2)) AS commission,
+             sum(paid.total - round(paid.total * paid.channel_commission_pct / 100, 2)) AS net
+        FROM paid LEFT JOIN sales_channels ch ON ch.id = paid.channel_id AND ch.restaurant_id = paid.restaurant_id
+       GROUP BY 1, 2 ORDER BY sum(paid.total) DESC`);
+
     // Productos (sin articulos cancelados). line_total es antes del descuento de la orden.
     const items = await q(`
       WITH ${PAID}
@@ -203,6 +212,7 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       by_payment_method: money(byPayment, 'amount', 'tips'),
       by_order_type: money(byType, 'total'),
       by_branch: money(byBranch, 'total', 'tips'),
+      by_channel: money(byChannel, 'total', 'commission', 'net'),
       items: money(items, 'total'),
       categories: money(categories, 'total'),
       modifiers: money(modifiers, 'total'),

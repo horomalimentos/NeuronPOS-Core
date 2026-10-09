@@ -18,9 +18,10 @@ import {
 } from './lib';
 import { comandaHtml, lastSentItems, orderTicketHtml, printHtml } from './ticket';
 import type {
-  CashSession, DiningTable, Menu, MenuItem, Order, OrderType, PaymentMethod, PosSettings, Zone,
+  CashSession, DiningTable, Menu, MenuItem, Order, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone,
 } from './types';
 import { usePosBranch } from './usePosBranch';
+import ChannelBadge from './ChannelBadge';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -30,11 +31,15 @@ interface Draft {
   customer_phone: string;
   customer_address: string;
   guests: string;
+  /** Plataforma de delivery (null = venta propia). */
+  channel: SalesChannel | null;
+  channel_order_number: string;
 }
 
 let cartKey = 1;
 const emptyDraft = (order_type: OrderType, table: DiningTable | null = null): Draft => ({
   order_type, table, customer_name: '', customer_phone: '', customer_address: '', guests: '',
+  channel: null, channel_order_number: '',
 });
 
 /**
@@ -53,6 +58,7 @@ export default function RegisterPage() {
   const [tables, setTables] = useState<DiningTable[]>([]);
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [channels, setChannels] = useState<SalesChannel[]>([]);
   const [settings, setSettings] = useState<PosSettings | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
@@ -90,6 +96,7 @@ export default function RegisterPage() {
     setMenu(null);
     api<Menu>(`/pos/menu?branch_id=${branchId}`).then(setMenu).catch((e) => setError(errorMessage(e)));
     api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => setMethods(r.payment_methods)).catch(() => {});
+    api<{ channels: SalesChannel[] }>('/pos/channels').then((r) => setChannels(r.channels)).catch(() => {});
     api<{ settings: PosSettings }>('/pos/settings').then((r) => setSettings(r.settings)).catch(() => {});
     if (posCan.cashier(role)) {
       api<{ sessions: CashSession[] }>(`/pos/cash-sessions?branch_id=${branchId}&status=abierta`)
@@ -182,6 +189,8 @@ export default function RegisterPage() {
           customer_name: draft.customer_name || null,
           customer_phone: draft.customer_phone || null,
           customer_address: draft.customer_address || null,
+          channel_id: draft.channel?.id,
+          channel_order_number: draft.channel_order_number || null,
           items,
         },
       });
@@ -279,7 +288,7 @@ export default function RegisterPage() {
             ))}
         </div>
         {tab === 'mesas' && <TableGrid zones={zones} tables={tables} onPick={openTable} canManage={posCan.manage(role)} />}
-        {tab === 'nueva' && <NewOrderForm onStart={(d) => setDraft(d)} />}
+        {tab === 'nueva' && <NewOrderForm channels={channels} onStart={(d) => setDraft(d)} />}
         {tab === 'abiertas' && <OpenOrdersList orders={openOrders} onPick={openOrder} />}
         {tab === 'linea' && <OnlineOrdersPanel branchId={branchId} role={role} onOpen={openOrder} onChanged={setPendingOnline} />}
       </>
@@ -287,11 +296,18 @@ export default function RegisterPage() {
   }
 
   const items = order?.items || [];
-  const title = order
+  const channelName = order ? order.channel_name : draft!.channel?.name;
+  const title = (order
     ? `${order.order_type === 'comedor' ? `Mesa ${order.table_name}` : ORDER_TYPE_LABEL[order.order_type]} · Folio ${order.folio}`
-    : draft!.order_type === 'comedor' ? `Mesa ${draft!.table?.name} · nueva` : `${ORDER_TYPE_LABEL[draft!.order_type]} · nueva`;
-  const customer = order ? [order.customer_name, order.customer_phone, order.customer_address].filter(Boolean).join(' · ')
-    : [draft!.customer_name, draft!.customer_phone, draft!.customer_address].filter(Boolean).join(' · ');
+    : draft!.order_type === 'comedor' ? `Mesa ${draft!.table?.name} · nueva` : `${ORDER_TYPE_LABEL[draft!.order_type]} · nueva`)
+    + (channelName ? ` · ${channelName}` : '');
+  const orderNumber = order ? order.channel_order_number : draft!.channel_order_number;
+  const customer = [orderNumber && `Pedido ${orderNumber}`, ...(order
+    ? [order.customer_name, order.customer_phone, order.customer_address]
+    : [draft!.customer_name, draft!.customer_phone, draft!.customer_address])].filter(Boolean).join(' · ');
+  // Una plataforma puede limitar con que se cobra.
+  const allowedIds = channels.find((c) => c.id === order?.channel_id)?.payment_method_ids || [];
+  const payMethods = allowedIds.length ? methods.filter((m) => allowedIds.includes(m.id)) : methods;
   const unsentCount = items.filter((i) => !i.sent_at && !i.voided_at).length;
   const remaining = order ? round2(num(order.total) - num(order.paid_amount)) : 0;
   const maxPct = posCan.manage(role) ? null : num(settings?.cashier_max_discount_pct);
@@ -436,7 +452,7 @@ export default function RegisterPage() {
           groups={pickItem.modifier_group_ids.map((id) => groupsById.get(id)).filter((g) => g !== undefined)} />
       )}
       {showPay && order && session && (
-        <PaymentModal order={order} methods={methods} sessionId={session.id} onClose={() => setShowPay(false)}
+        <PaymentModal order={order} methods={payMethods} sessionId={session.id} onClose={() => setShowPay(false)}
           loyalty={me.modules.some((m) => m.code === 'lealtad' && m.enabled)}
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}
@@ -496,13 +512,23 @@ function TableGrid({ zones, tables, onPick, canManage }: {
   );
 }
 
-function NewOrderForm({ onStart }: { onStart: (d: Draft) => void }) {
+function NewOrderForm({ channels, onStart }: { channels: SalesChannel[]; onStart: (d: Draft) => void }) {
   const [d, setD] = useState<Draft>(emptyDraft('para_llevar'));
   const [error, setError] = useState('');
+  const ch = d.channel;
+  const needsAddress = d.order_type === 'domicilio' && (!ch || ch.requires_address);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (d.order_type === 'domicilio' && (!d.customer_name.trim() || !d.customer_address.trim())) {
+    if (ch?.requires_order_number && !d.channel_order_number.trim()) {
+      setError(`Escribe el número de pedido de ${ch.name}.`);
+      return;
+    }
+    if (d.order_type === 'domicilio' && !ch && (!d.customer_name.trim() || !d.customer_address.trim())) {
       setError('Para domicilio escribe el nombre y la dirección del cliente.');
+      return;
+    }
+    if (needsAddress && !d.customer_address.trim()) {
+      setError('Escribe la dirección de entrega.');
       return;
     }
     onStart(d);
@@ -519,12 +545,34 @@ function NewOrderForm({ onStart }: { onStart: (d: Draft) => void }) {
           </button>
         ))}
       </div>
-      <Field label={d.order_type === 'domicilio' ? 'Nombre del cliente' : 'Nombre del cliente (opcional)'}>
+      {channels.length > 0 && (
+        <div>
+          <span className="label">¿De dónde viene?</span>
+          <div className="flex flex-wrap gap-2">
+            {[null, ...channels].map((c) => {
+              const on = (d.channel?.id || null) === (c?.id || null);
+              return (
+                <button key={c?.id || 'local'} type="button" onClick={() => setD({ ...d, channel: c })}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium ${on ? 'border-brand bg-brand/15 text-white' : 'border-gray-700 bg-gray-800 text-gray-300'}`}>
+                  {c && <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color || '#6b7280' }} />}
+                  {c ? c.name : 'Local'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {ch && (
+        <Field label={`Número de pedido de ${ch.name}${ch.requires_order_number ? '' : ' (opcional)'}`}>
+          <input className="input" value={d.channel_order_number} maxLength={60} onChange={(e) => setD({ ...d, channel_order_number: e.target.value })} />
+        </Field>
+      )}
+      <Field label={d.order_type === 'domicilio' && !ch ? 'Nombre del cliente' : 'Nombre del cliente (opcional)'}>
         <input className="input" value={d.customer_name} maxLength={120} onChange={(e) => setD({ ...d, customer_name: e.target.value })} />
       </Field>
       <Field label="Teléfono"><input className="input" type="tel" value={d.customer_phone} maxLength={40} onChange={(e) => setD({ ...d, customer_phone: e.target.value })} /></Field>
       {d.order_type === 'domicilio' && (
-        <Field label="Dirección de entrega">
+        <Field label={needsAddress ? 'Dirección de entrega' : 'Dirección de entrega (opcional)'}>
           <textarea className="input" rows={2} value={d.customer_address} maxLength={400} onChange={(e) => setD({ ...d, customer_address: e.target.value })} />
         </Field>
       )}
@@ -547,9 +595,11 @@ function OpenOrdersList({ orders, onPick }: { orders: Order[]; onPick: (id: stri
             {o.source === 'web' && <Globe className="mr-1 inline h-3.5 w-3.5 text-brand" aria-label="En línea" />}
             {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}
           </p>
+          {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
           <div className="mt-2 flex justify-between text-sm text-gray-400"><span>{formatTime(o.created_at)}</span><span className="font-semibold text-white">{formatMXN(o.total)}</span></div>
         </button>
       ))}
     </div>
   );
 }
+

@@ -1,14 +1,16 @@
-// Configuracion del POS (impuesto, descuentos, ticket) y metodos de pago.
+// Configuracion del POS (impuesto, descuentos, ticket), metodos de pago y
+// canales de venta (plataformas de delivery con su comision).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
-import { ROLES, insertSql, int } from './common.js';
+import { ROLES, insertSql, int, uuidList } from './common.js';
 
 const router = Router();
 
 const SETTINGS_COLS = 'tax_rate_pct, prices_include_tax, cashier_max_discount_pct, ticket_header, ticket_footer';
 const METHOD_COLS = 'id, name, kind, active, sort_order';
+const CHANNEL_COLS = 'id, name, color, commission_pct, payment_method_ids, requires_order_number, requires_address, sort_order, active';
 export const METHOD_KINDS = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
 
 export async function getSettings(db, restaurantId) {
@@ -123,6 +125,99 @@ router.delete('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (re
     }
     const { rowCount } = await db.query('DELETE FROM payment_methods WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
     if (!rowCount) throw notFound('Metodo de pago no encontrado', 'PAYMENT_METHOD_NOT_FOUND');
+    return null;
+  });
+  if (result) return res.json(result);
+  res.status(204).end();
+}));
+
+// ---------------------------------------------------------------------------
+// Canales de venta (Rappi, Uber Eats, Didi...)
+// ---------------------------------------------------------------------------
+
+router.get('/channels', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+  const all = req.query.all === '1';
+  const channels = await withTenant(req.tenant.id, async (db) => (await db.query(
+    `SELECT ${CHANNEL_COLS} FROM sales_channels WHERE restaurant_id = $1 ${all ? '' : 'AND active'}
+      ORDER BY sort_order, name`,
+    [req.tenant.id],
+  )).rows);
+  res.json({ channels });
+}));
+
+function channelFields(body, creating) {
+  const color = body.color === undefined ? undefined : (body.color || null);
+  if (color && !/^#[0-9a-f]{6}$/i.test(color)) throw badRequest('El color debe ser como #22AA66', 'INVALID_FIELD');
+  const f = {
+    name: str(body.name, { field: 'name', required: creating, max: 60 }),
+    color,
+    commission_pct: percent(body.commission_pct, 'commission_pct'),
+    payment_method_ids: uuidList(body.payment_method_ids, 'payment_method_ids'),
+    requires_order_number: bool(body.requires_order_number, 'requires_order_number'),
+    requires_address: bool(body.requires_address, 'requires_address'),
+    sort_order: int(body.sort_order, { field: 'sort_order', max: 100000 }),
+    active: bool(body.active, 'active'),
+  };
+  if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
+  return f;
+}
+
+async function assertMethods(db, restaurantId, ids) {
+  if (!ids?.length) return;
+  const { rowCount } = await db.query(
+    'SELECT 1 FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
+    [restaurantId, ids],
+  );
+  if (rowCount !== ids.length) throw badRequest('Algun metodo de pago no existe', 'PAYMENT_METHOD_NOT_FOUND');
+}
+
+const duplicateChannel = (err) => {
+  if (err.code === '23505') throw badRequest('Ya existe un canal con ese nombre', 'CHANNEL_EXISTS');
+  throw err;
+};
+
+router.post('/channels', requireRole(...ROLES.manage), ah(async (req, res) => {
+  const f = channelFields(req.body || {}, true);
+  const q = insertSql('sales_channels', req.tenant.id, f, CHANNEL_COLS);
+  const channel = await withTenant(req.tenant.id, async (db) => {
+    await assertMethods(db, req.tenant.id, f.payment_method_ids);
+    return (await db.query(q.text, q.values)).rows[0];
+  }).catch(duplicateChannel);
+  res.status(201).json({ channel });
+}));
+
+router.patch('/channels/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const f = channelFields(req.body || {}, false);
+  const set = buildSet(f, 3);
+  if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
+  const channel = await withTenant(req.tenant.id, async (db) => {
+    await assertMethods(db, req.tenant.id, f.payment_method_ids);
+    return (await db.query(
+      `UPDATE sales_channels SET ${set.sql}, updated_at = now()
+        WHERE id = $1 AND restaurant_id = $2 RETURNING ${CHANNEL_COLS}`,
+      [req.params.id, req.tenant.id, ...set.values],
+    )).rows[0];
+  }).catch(duplicateChannel);
+  if (!channel) throw notFound('Canal no encontrado', 'CHANNEL_NOT_FOUND');
+  res.json({ channel });
+}));
+
+// Un canal con ventas se desactiva en lugar de borrarse.
+router.delete('/channels/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const result = await withTenant(req.tenant.id, async (db) => {
+    const used = await db.query('SELECT 1 FROM orders WHERE channel_id = $1 AND restaurant_id = $2 LIMIT 1', [req.params.id, req.tenant.id]);
+    if (used.rowCount) {
+      const { rowCount } = await db.query(
+        'UPDATE sales_channels SET active = false, updated_at = now() WHERE id = $1 AND restaurant_id = $2',
+        [req.params.id, req.tenant.id],
+      );
+      if (!rowCount) throw notFound('Canal no encontrado', 'CHANNEL_NOT_FOUND');
+      return { archived: true };
+    }
+    const { rowCount } = await db.query('DELETE FROM sales_channels WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
+    if (!rowCount) throw notFound('Canal no encontrado', 'CHANNEL_NOT_FOUND');
     return null;
   });
   if (result) return res.json(result);

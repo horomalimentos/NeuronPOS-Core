@@ -44,9 +44,12 @@ const ORDER_SELECT = `
          o.source, o.online_status, o.customer_id, o.delivery_fee, o.delivery_reference,
          o.payment_provider, o.payment_preference, o.pay_with, o.accepted_at, o.estimated_ready_at,
          o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at, o.scheduled_for,
-         o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km
+         o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
+         o.channel_id, ch.name AS channel_name, ch.color AS channel_color, o.channel_order_number,
+         o.channel_commission_pct
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
+    LEFT JOIN sales_channels ch ON ch.id = o.channel_id AND ch.restaurant_id = o.restaurant_id
     LEFT JOIN users u ON u.id = o.created_by AND u.restaurant_id = o.restaurant_id`;
 
 export async function loadItems(db, restaurantId, orderIds) {
@@ -337,8 +340,12 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
     customer_phone: str(body.customer_phone, { field: 'customer_phone', max: 40 }) || null,
     customer_address: str(body.customer_address, { field: 'customer_address', max: 400 }) || null,
     notes: str(body.notes, { field: 'notes', max: 500 }) || null,
+    channel_order_number: str(body.channel_order_number, { field: 'channel_order_number', max: 60 }) || null,
   };
-  if (orderType === 'domicilio' && (!f.customer_name || !f.customer_address)) {
+  const channelId = body.channel_id ? requireUuid(body.channel_id, 'channel_id') : null;
+  if (channelId && orderType === 'comedor') throw badRequest('Las plataformas solo aplican para llevar o domicilio', 'INVALID_FIELD');
+  // Con plataforma, la entrega y los datos del cliente los lleva la plataforma.
+  if (orderType === 'domicilio' && !channelId && (!f.customer_name || !f.customer_address)) {
     throw badRequest('Para domicilio se necesita nombre y direccion del cliente', 'CUSTOMER_REQUIRED');
   }
   const items = body.items === undefined || (Array.isArray(body.items) && body.items.length === 0)
@@ -351,16 +358,33 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
       if (!branch.rows[0]) throw badRequest('La sucursal no existe', 'BRANCH_NOT_FOUND');
       if (!branch.rows[0].active) throw badRequest('La sucursal esta inactiva', 'BRANCH_INACTIVE');
       if (tableId) await checkTable(db, req.tenant.id, branchId, tableId);
+      let commission = 0;
+      if (channelId) {
+        const ch = (await db.query(
+          'SELECT name, active, commission_pct, requires_order_number, requires_address FROM sales_channels WHERE id = $1 AND restaurant_id = $2',
+          [channelId, req.tenant.id],
+        )).rows[0];
+        if (!ch || !ch.active) throw badRequest('La plataforma no existe o esta inactiva', 'CHANNEL_NOT_FOUND');
+        if (ch.requires_order_number && !f.channel_order_number) {
+          throw badRequest(`Escribe el numero de pedido de ${ch.name}`, 'CHANNEL_ORDER_NUMBER_REQUIRED');
+        }
+        if (ch.requires_address && orderType === 'domicilio' && !f.customer_address) {
+          throw badRequest('Escribe la direccion de entrega', 'CUSTOMER_REQUIRED');
+        }
+        commission = ch.commission_pct;
+      }
       const lines = items.length ? await priceItems(db, req.tenant.id, branchId, items) : [];
 
       const folio = await nextFolio(db, req.tenant.id, branchId);
 
       const { rows } = await db.query(
         `INSERT INTO orders (restaurant_id, branch_id, folio, order_type, table_id, guests, customer_name,
-                             customer_phone, customer_address, notes, tax_rate_pct, prices_include_tax, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *`,
+                             customer_phone, customer_address, notes, tax_rate_pct, prices_include_tax, created_by,
+                             channel_id, channel_order_number, channel_commission_pct)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
         [req.tenant.id, branchId, folio, orderType, tableId, f.guests, f.customer_name, f.customer_phone,
-          f.customer_address, f.notes, settings.tax_rate_pct, settings.prices_include_tax, req.user.id],
+          f.customer_address, f.notes, settings.tax_rate_pct, settings.prices_include_tax, req.user.id,
+          channelId, channelId ? f.channel_order_number : null, commission],
       );
       await insertItems(db, req.tenant.id, rows[0].id, req.user.id, lines);
       await recalcOrder(db, req.tenant.id, rows[0]);
@@ -386,6 +410,7 @@ router.patch('/orders/:id', requireRole(...ROLES.orders), ah(async (req, res) =>
         customer_phone: str(body.customer_phone, { field: 'customer_phone', max: 40 }),
         customer_address: str(body.customer_address, { field: 'customer_address', max: 400 }),
         notes: str(body.notes, { field: 'notes', max: 500 }),
+        channel_order_number: o.channel_id ? str(body.channel_order_number, { field: 'channel_order_number', max: 60 }) : undefined,
       };
       if (body.table_id !== undefined) {
         if (o.order_type !== 'comedor') throw badRequest('Solo las ordenes de comedor llevan mesa', 'INVALID_FIELD');
@@ -675,6 +700,11 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       'SELECT id, kind, active FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
       [req.tenant.id, inputs.map((p) => p.payment_method_id)],
     )).rows.map((m) => [m.id, m]));
+    // Una plataforma puede limitar con que se cobra (ej. solo "Rappi pagado").
+    const allowed = o.channel_id ? (await db.query(
+      'SELECT payment_method_ids FROM sales_channels WHERE id = $1 AND restaurant_id = $2',
+      [o.channel_id, req.tenant.id],
+    )).rows[0]?.payment_method_ids || [] : [];
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
       if (p.redemption || p.walletPay) return { ...p, kind: m.kind };
@@ -682,6 +712,9 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       if (m?.kind === 'monedero') throw badRequest('El monedero se cobra con el botón de monedero', 'WALLET_METHOD_NOT_ALLOWED');
       if (!m || !m.active) throw badRequest('Metodo de pago no valido', 'PAYMENT_METHOD_NOT_FOUND');
       if (m.kind === 'en_linea') throw badRequest('Los pagos en linea solo los registra Clip', 'ONLINE_METHOD_NOT_ALLOWED');
+      if (allowed.length && !allowed.includes(p.payment_method_id)) {
+        throw badRequest('Ese metodo de pago no aplica para esta plataforma', 'PAYMENT_METHOD_NOT_ALLOWED');
+      }
       return { ...p, kind: m.kind };
     });
     const remaining = (toCents(o.total) - toCents(o.paid_amount)) / 100;

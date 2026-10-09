@@ -524,6 +524,55 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal(nopay.status, 400);
     });
 
+    test('plataformas de delivery: comision, numero de pedido y metodos permitidos', async () => {
+      const rappiPagado = (await api(A, 'POST', '/api/pos/payment-methods', { name: 'Rappi (pagado)', kind: 'otro' })).body.payment_method;
+      const created = await api(A, 'POST', '/api/pos/channels', {
+        name: 'Rappi', color: '#FF441F', commission_pct: 28, payment_method_ids: [rappiPagado.id],
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const rappi = created.body.channel;
+      assert.equal(Number(rappi.commission_pct), 28);
+      assert.equal((await api(A, 'POST', '/api/pos/channels', { name: 'RAPPI' })).body.code, 'CHANNEL_EXISTS');
+      assert.equal((await api(cajero, 'POST', '/api/pos/channels', { name: 'Didi' })).status, 403);
+      assert.equal((await api(B, 'GET', '/api/pos/channels')).body.channels.length, 0);
+
+      const base = { branch_id: branchA.id, order_type: 'domicilio', channel_id: rappi.id, items: [{ menu_item_id: aguaA.id, quantity: 2 }] };
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', base)).body.code, 'CHANNEL_ORDER_NUMBER_REQUIRED');
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', { ...base, order_type: 'comedor', table_id: mesa2.id })).status, 400);
+      const ajeno = await api(B, 'POST', '/api/pos/orders', { ...base, branch_id: branchB.id, channel_order_number: 'R-1' });
+      assert.equal(ajeno.body.code, 'CHANNEL_NOT_FOUND');
+      // Con plataforma no se pide la direccion (la entrega es de Rappi).
+      const o = (await api(cajero, 'POST', '/api/pos/orders', { ...base, channel_order_number: 'R-123' })).body.order;
+      assert.equal(o.channel_name, 'Rappi');
+      assert.equal(Number(o.channel_commission_pct), 28);
+
+      // Cambiar la comision despues no reescribe la orden.
+      await api(A, 'PATCH', `/api/pos/channels/${rappi.id}`, { commission_pct: 30 });
+      assert.equal(Number((await api(A, 'GET', `/api/pos/orders/${o.id}`)).body.order.channel_commission_pct), 28);
+
+      const session = (await api(cajero, 'POST', '/api/pos/cash-sessions/open', { branch_id: branchA.id, terminal: 'Plataformas', opening_cash: 0 })).body.session;
+      const efectivo = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: session.id, payments: [{ payment_method_id: byKind('efectivo'), amount: Number(o.total) }],
+      });
+      assert.equal(efectivo.body.code, 'PAYMENT_METHOD_NOT_ALLOWED');
+      const paid = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: session.id, payments: [{ payment_method_id: rappiPagado.id, amount: Number(o.total) }],
+      });
+      assert.equal(paid.body.order.status, 'pagada', JSON.stringify(paid.body));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await api(owner, 'PUT', `/api/platform/restaurants/${A.id}/modules/reportes`, { enabled: true });
+      const rep = await api(A, 'GET', `/api/pos/reports/sales?from=${yesterday}&to=${day}`);
+      const row = rep.body.by_channel.find((c) => c.name === 'Rappi');
+      assert.equal(Number(row.total), 100);
+      assert.equal(Number(row.commission), 28);
+      assert.equal(Number(row.net), 72);
+      await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts: [] });
+      assert.deepEqual((await api(A, 'DELETE', `/api/pos/channels/${rappi.id}`)).body, { archived: true });
+      await api(A, 'PATCH', `/api/pos/payment-methods/${rappiPagado.id}`, { active: false });
+    });
+
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {
       const del = await api(A, 'DELETE', `/api/pos/items/${aguaA.id}`);
       assert.equal(del.status, 200);
