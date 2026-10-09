@@ -198,6 +198,8 @@ tiene tres capas:
 | Código | Módulo |
 |---|---|
 | `pos` | Punto de venta |
+| `reportes` | Reportes de ventas (sugerido $150) |
+| `inventario` | Inventario y compras (sugerido $250) |
 | `landing` | Sitio web |
 | `portal` | Portal de clientes y pedidos en línea |
 | `rh` | Recursos humanos y nómina |
@@ -337,6 +339,54 @@ junto con la base de datos.
 El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
 iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
 impresión nativo. La pantalla de cocina se actualiza cada 5 segundos.
+
+## Inventario y compras (módulo `inventario`)
+
+Copiado del inventario de Horom y adaptado a varios restaurantes. Pantalla
+`/admin/inventario`; admin y gerente ven todo, cajero y cocina ven
+existencias, conteos y compras (solicitan; no aprueban ni reciben).
+
+- **Insumos** con unidad base (kg, pza…) y hasta 10 unidades alternas
+  (caja = 24 pza), una marcada como unidad de compra; área de almacén,
+  proveedor, costo por unidad base, mínimo, consumo diario, días de la semana
+  en que se cuenta y foto obligatoria al contar. Se pueden pegar de Excel.
+- **Existencias por sucursal** con kardex (`inv_movements`): conteo, compra,
+  venta, cancelación, merma y ajuste. Cada movimiento guarda la cantidad, lo
+  que queda y el costo.
+- **Recetas** por producto del menú y por modificador (general, o solo para
+  un producto: la específica sustituye a la general). Al cobrar una orden (POS,
+  pedido en línea entregado o domicilio pagado) se descuenta lo que gastó, una
+  sola vez por orden; se apaga en Ajustes. Muestra costo y % sobre el precio.
+- **Conteos** por área y fecha, a ciegas (no se ve lo del sistema hasta
+  terminar), en cualquier unidad, con pausa y foto. Al terminar, la existencia
+  queda en lo contado y la diferencia va al kardex y al reporte de consumo.
+- **Mermas** (cualquiera) y **ajustes** (admin/gerente) con motivo.
+- **Compras:** pedido sugerido por proveedor (lo que falta para el mínimo o
+  para N días de consumo), solicitudes, aprobación, envío por WhatsApp al
+  proveedor y recepción con cantidad y precio real (actualiza existencia,
+  costo e historial de precios; foto de la nota opcional).
+- **Consumo** por rango de fechas: vendido por receta, mermas, compras y
+  diferencias de conteo, en cantidad y en dinero.
+
+| Método | Ruta (`/api/inventory`) | Roles |
+|---|---|---|
+| GET/PATCH | `/settings` | todos / admin, gerente |
+| GET, POST, PATCH, DELETE | `/areas`, `/suppliers`, `/products` | lectura todos; cambios admin, gerente |
+| POST | `/products/import` | admin, gerente |
+| GET | `/stock?branch_id=` | todos |
+| GET, POST | `/movements` (merma o ajuste) | todos (ajuste: admin, gerente) |
+| GET | `/usage?branch_id=&from=&to=` | admin, gerente |
+| GET, POST | `/counts`, `/counts/:id` | todos |
+| PUT, DELETE | `/counts/:id/items/:productId` | todos |
+| POST | `/counts/:id/pause` · `/cancel` · `/complete` | todos |
+| GET, PUT | `/recipes`, `/recipes/:menuItemId`, `PUT /modifier-recipes/:modifierId` | admin, gerente |
+| GET | `/purchase-suggestions?branch_id=` | todos |
+| GET, POST, PATCH | `/purchase-orders`, `/purchase-orders/:id` | todos |
+| POST | `/purchase-orders/:id/approve` · `/receive` | admin, gerente |
+| POST | `/purchase-orders/:id/cancel` | todos (aprobadas: admin, gerente) |
+| GET | `/products/:id/prices` | todos |
+
+"Todos" = admin, gerente, cajero y cocina (el mesero y el repartidor no entran).
 
 ## Sitio web y pedidos en línea (fase 2)
 
@@ -964,7 +1014,7 @@ Pruebas de la app de escritorio: `cd apps/desktop && npm test`.
 
 - POS, pendiente: estaciones de cocina e impresión por estación, socket.io
   en lugar de sondeo, mover artículos entre mesas / unir y dividir cuentas por
-  artículo, reportes de ventas, inventario y recetas, promociones.
+  artículo, promociones.
 - Domicilios, pendiente: zonas de la flota y costo de envío por distancia,
   volver a ofrecer solas las solicitudes cuya oferta venció (hoy se ofrecen
   al pedirlas y desde el Panel), marcar pagado al repartidor en el reporte,

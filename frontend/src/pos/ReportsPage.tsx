@@ -2,6 +2,7 @@ import { ArrowDownRight, ArrowUpRight, Download } from 'lucide-react';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Alert, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { formatDay, formatMXN } from '../lib/format';
 import { useAdmin } from '../restaurant/context';
 import { METHOD_KIND_LABEL, ORDER_TYPE_LABEL } from './lib';
@@ -71,20 +72,6 @@ const pct = (part: number, whole: number) => (whole ? `${((part / whole) * 100).
 const typeLabel = (t: { order_type: OrderType; source: string }) =>
   `${ORDER_TYPE_LABEL[t.order_type] || t.order_type}${t.source === 'web' ? ' (en línea)' : ''}`;
 
-function downloadCsv(name: string, header: string[], rows: (string | number | null)[][]) {
-  const cell = (v: string | number | null) => {
-    const s = v === null || v === undefined ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [header, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
-  const url = URL.createObjectURL(new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${name}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export function Delta({ now, before }: { now: number; before: number }) {
   if (!before) return <span className="text-xs text-gray-500">sin datos del periodo anterior</span>;
   const change = ((now - before) / before) * 100;
@@ -107,7 +94,7 @@ export function Stat({ label, value, extra }: { label: string; value: string; ex
   );
 }
 
-function Section({ title, onCsv, children }: { title: string; onCsv?: () => void; children: ReactNode }) {
+export function Section({ title, onCsv, children }: { title: string; onCsv?: () => void; children: ReactNode }) {
   return (
     <section className="card overflow-hidden">
       <div className="flex items-center justify-between gap-2 border-b border-gray-800 px-4 py-3">
@@ -123,7 +110,7 @@ function Section({ title, onCsv, children }: { title: string; onCsv?: () => void
   );
 }
 
-function Table({ head, rows, empty = 'Sin ventas en este periodo.' }: { head: string[]; rows: ReactNode[][]; empty?: string }) {
+export function Table({ head, rows, empty = 'Sin ventas en este periodo.' }: { head: string[]; rows: ReactNode[][]; empty?: string }) {
   if (!rows.length) return <p className="px-4 py-6 text-sm text-gray-500">{empty}</p>;
   return (
     <div className="overflow-x-auto">

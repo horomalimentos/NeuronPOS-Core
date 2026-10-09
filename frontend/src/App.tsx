@@ -3,6 +3,15 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import CountPage from './inventory/CountPage';
+import CountsPage from './inventory/CountsPage';
+import InventoryLayout from './inventory/InventoryLayout';
+import ProductsPage from './inventory/ProductsPage';
+import PurchasesPage from './inventory/PurchasesPage';
+import RecipesPage from './inventory/RecipesPage';
+import StockPage from './inventory/StockPage';
+import SuppliersPage from './inventory/SuppliersPage';
+import UsagePage from './inventory/UsagePage';
 import DownloadsPage from './home/DownloadsPage';
 import FleetPage from './platform/FleetPage';
 import InvoicesPage from './platform/InvoicesPage';
@@ -100,6 +109,19 @@ export default function App() {
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
             <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
               <Route path="reportes" element={<ReportsPage />} />
+            </Route>
+          </Route>
+          {/* Inventario y compras (modulo inventario) */}
+          <Route element={<ModuleGate code="inventario" name="Inventario y compras" />}>
+            <Route path="inventario" element={<InventoryLayout />}>
+              <Route index element={<StockPage />} />
+              <Route path="conteos" element={<CountsPage />} />
+              <Route path="conteos/:id" element={<CountPage />} />
+              <Route path="compras" element={<PurchasesPage />} />
+              <Route path="insumos" element={<ProductsPage />} />
+              <Route path="recetas" element={<RecipesPage />} />
+              <Route path="proveedores" element={<SuppliersPage />} />
+              <Route path="consumo" element={<UsagePage />} />
             </Route>
           </Route>
           {/* Recursos humanos y nomina (modulo rh) */}
