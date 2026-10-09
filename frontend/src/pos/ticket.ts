@@ -81,6 +81,7 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     <hr><table>${items}</table><hr>
     <table>
       ${row('Subtotal', formatMXN(order.subtotal))}
+      ${(order.promotions || []).map((p) => row(`Promo ${esc(p.name)}`, `-${formatMXN(p.amount)}`)).join('')}
       ${num(order.discount_amount) ? row(`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`, `-${formatMXN(order.discount_amount)}`) : ''}
       ${row(taxLabel, formatMXN(order.tax_amount))}
       ${num(order.delivery_fee) ? row('Envío', formatMXN(order.delivery_fee)) : ''}

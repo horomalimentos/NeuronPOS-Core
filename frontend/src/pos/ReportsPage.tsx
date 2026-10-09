@@ -16,7 +16,7 @@ import type { MethodKind, OrderType } from './types';
  */
 
 interface Totals {
-  orders: number; subtotal: number; discounts: number; tax: number; delivery_fees: number;
+  orders: number; subtotal: number; discounts: number; promotions?: number; tax: number; delivery_fees: number;
   total: number; tips: number; guests: number; average_ticket: number;
 }
 export interface Report {
@@ -274,7 +274,7 @@ export default function ReportsPage() {
             <Stat label="Propinas" value={formatMXN(s.tips)} extra={<span className="text-xs text-gray-500">aparte de las ventas</span>} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Descuentos" value={formatMXN(s.discounts)} extra={<span className="text-xs text-gray-500">{pct(s.discounts, s.subtotal)} del subtotal</span>} />
+            <Stat label="Descuentos" value={formatMXN(s.discounts)} extra={<span className="text-xs text-gray-500">{pct(s.discounts, s.subtotal)} del subtotal{s.promotions ? ` · promociones ${formatMXN(s.promotions)}` : ''}</span>} />
             <Stat label="IVA" value={formatMXN(s.tax)} />
             <Stat label="Canceladas" value={String(report.cancelled.orders)} extra={<span className="text-xs text-gray-500">{formatMXN(report.cancelled.total)}</span>} />
             <Stat label="Artículos cancelados" value={String(report.voided.items)} extra={<span className="text-xs text-gray-500">{formatMXN(report.voided.total)} ya enviados a cocina</span>} />

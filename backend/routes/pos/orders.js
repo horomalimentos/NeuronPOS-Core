@@ -17,6 +17,7 @@ import { commitWalletPayment, prepareWalletPayment } from '../../services/wallet
 import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
+import { promotionsFor } from '../../services/promotions.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
 } from '../../utils/http.js';
@@ -46,7 +47,7 @@ const ORDER_SELECT = `
          o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at, o.scheduled_for,
          o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.channel_id, ch.name AS channel_name, ch.color AS channel_color, o.channel_order_number,
-         o.channel_commission_pct
+         o.channel_commission_pct, o.promo_discount
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN sales_channels ch ON ch.id = o.channel_id AND ch.restaurant_id = o.restaurant_id
@@ -81,6 +82,10 @@ export async function loadOrder(db, restaurantId, id) {
   const order = rows[0];
   if (!order) return null;
   order.items = await loadItems(db, restaurantId, [id]);
+  order.promotions = (await db.query(
+    'SELECT promotion_id, name, amount FROM order_promotions WHERE restaurant_id = $1 AND order_id = $2 ORDER BY amount DESC',
+    [restaurantId, id],
+  )).rows;
   order.payments = (await db.query(
     `SELECT p.id, p.payment_method_id, pm.name AS method_name, pm.kind AS method_kind, p.cash_session_id,
             p.amount, p.tip, p.received, p.change_given, p.reference, p.created_at
@@ -123,23 +128,38 @@ function assertAccepted(order) {
  */
 export async function recalcOrder(db, restaurantId, order) {
   const items = (await db.query(
-    `SELECT unit_price, modifiers_total, quantity, voided_at IS NOT NULL AS voided
-       FROM order_items WHERE restaurant_id = $1 AND order_id = $2`,
+    `SELECT i.menu_item_id, i.unit_price, i.modifiers_total, i.quantity, i.voided_at IS NOT NULL AS voided,
+            coalesce((SELECT array_agg(m.modifier_id) FROM order_item_modifiers m
+                       WHERE m.order_item_id = i.id AND m.restaurant_id = i.restaurant_id), '{}') AS modifier_ids
+       FROM order_items i WHERE i.restaurant_id = $1 AND i.order_id = $2`,
     [restaurantId, order.id],
   )).rows;
+  // Promociones automaticas: se recalculan con cada cambio mientras no se pague.
+  const promos = await promotionsFor(db, restaurantId, {
+    branchId: order.branch_id, source: order.source || 'pos', lines: items,
+  });
   const totals = calculateOrderTotals(items, {
     discount: order.discount_type ? { type: order.discount_type, value: order.discount_value } : null,
     taxRatePct: order.tax_rate_pct,
     pricesIncludeTax: order.prices_include_tax,
     deliveryFee: order.delivery_fee,
+    promoDiscount: promos.reduce((s, p) => s + p.cents, 0) / 100,
   });
   if (toCents(totals.total) < toCents(order.paid_amount)) {
     throw badRequest('El total no puede quedar por debajo de lo ya pagado', 'TOTAL_BELOW_PAID');
   }
+  await db.query('DELETE FROM order_promotions WHERE order_id = $1 AND restaurant_id = $2', [order.id, restaurantId]);
+  for (const p of promos) {
+    await db.query(
+      'INSERT INTO order_promotions (restaurant_id, order_id, promotion_id, name, amount) VALUES ($1, $2, $3, $4, $5)',
+      [restaurantId, order.id, p.promotion_id, p.name, p.cents / 100],
+    );
+  }
   await db.query(
-    `UPDATE orders SET subtotal = $3, discount_amount = $4, tax_amount = $5, total = $6, updated_at = now()
+    `UPDATE orders SET subtotal = $3, discount_amount = $4, tax_amount = $5, total = $6, promo_discount = $7,
+            updated_at = now()
       WHERE id = $1 AND restaurant_id = $2`,
-    [order.id, restaurantId, totals.subtotal, totals.discount_amount, totals.tax_amount, totals.total],
+    [order.id, restaurantId, totals.subtotal, totals.discount_amount, totals.tax_amount, totals.total, totals.promo_discount],
   );
   return totals;
 }

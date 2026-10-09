@@ -573,6 +573,50 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       await api(A, 'PATCH', `/api/pos/payment-methods/${rappiPagado.id}`, { active: false });
     });
 
+    test('promociones automaticas: 2x1 y descuento a la cuenta se recalculan solos', async () => {
+      const bad = await api(A, 'POST', '/api/pos/promotions', { name: 'Mal', kind: 'nxm', buy_quantity: 2, pay_quantity: 2 });
+      assert.equal(bad.body.code, 'INVALID_PROMOTION');
+      assert.equal((await api(cajero, 'POST', '/api/pos/promotions', { name: 'X', kind: 'monto', amount: 5 })).status, 403);
+      const ajena = await api(B, 'POST', '/api/pos/promotions', { name: 'X', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id] });
+      assert.equal(ajena.body.code, 'ITEM_NOT_FOUND');
+
+      const dosx1 = (await api(A, 'POST', '/api/pos/promotions', {
+        name: 'Agua 2x1', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id], priority: 1,
+      })).body.promotion;
+      assert.equal(dosx1.kind, 'nxm');
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 3 }],
+      })).body.order;
+      assert.equal(Number(o.subtotal), 150);
+      assert.equal(Number(o.promo_discount), 50);
+      assert.equal(Number(o.total), 100);
+      assert.deepEqual(o.promotions.map((x) => [x.name, Number(x.amount)]), [['Agua 2x1', 50]]);
+
+      // Una promocion a la cuenta (con minimo) entra al agregar mas; el descuento manual va despues.
+      await api(A, 'POST', '/api/pos/promotions', { name: '10% arriba de $200', kind: 'porcentaje', percent: 10, min_amount: 200, priority: 5 });
+      const more = (await api(cajero, 'POST', `/api/pos/orders/${o.id}/items`, { items: [{ menu_item_id: aguaA.id, quantity: 1 }] })).body.order;
+      // 4 aguas = 200; 2x1 -> 100 de descuento; 10% de 100 = 10.
+      assert.equal(Number(more.promo_discount), 110);
+      assert.equal(Number(more.total), 90);
+      const manual = (await api(A, 'PUT', `/api/pos/orders/${o.id}/discount`, { type: 'percent', value: 10, reason: 'Cliente frecuente' })).body.order;
+      assert.equal(Number(manual.discount_amount), 9);
+      assert.equal(Number(manual.total), 81);
+
+      // Solo en linea: no aplica en caja. Fuera de horario tampoco.
+      await api(A, 'PATCH', `/api/pos/promotions/${dosx1.id}`, { applies_pos: false });
+      const q = (await api(cajero, 'POST', `/api/pos/orders/${o.id}/items`, { items: [{ menu_item_id: aguaA.id, quantity: 1 }] })).body.order;
+      assert.ok(!q.promotions.some((x) => x.name === 'Agua 2x1'));
+      const list = await api(cajero, 'GET', `/api/pos/promotions?branch_id=${branchA.id}`);
+      assert.equal(list.body.promotions.length, 2);
+
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de promociones' })).status, 200);
+      for (const p of list.body.promotions) {
+        const del = await api(A, 'DELETE', `/api/pos/promotions/${p.id}`);
+        assert.ok([200, 204].includes(del.status));
+      }
+      assert.equal((await api(B, 'GET', '/api/pos/promotions')).body.promotions.length, 0);
+    });
+
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {
       const del = await api(A, 'DELETE', `/api/pos/items/${aguaA.id}`);
       assert.equal(del.status, 200);

@@ -200,6 +200,41 @@ export interface Order {
   channel_color?: string | null;
   channel_order_number?: string | null;
   channel_commission_pct?: Money;
+  // Promociones automaticas aplicadas (se recalculan con cada cambio).
+  promo_discount?: Money;
+  promotions?: { promotion_id: string; name: string; amount: Money }[];
+}
+
+export type PromotionKind = 'nxm' | 'paquete' | 'porcentaje' | 'monto' | 'regalo';
+
+export interface Promotion {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: PromotionKind;
+  item_ids: string[];
+  category_ids: string[];
+  buy_quantity: number | null;
+  pay_quantity: number | null;
+  percent: Money | null;
+  amount: Money | null;
+  bundle_price: Money | null;
+  reward_item_id: string | null;
+  reward_quantity: number | null;
+  same_modifiers: boolean;
+  min_amount: Money;
+  applies_pos: boolean;
+  applies_web: boolean;
+  branch_ids: string[];
+  starts_on: string | null;
+  ends_on: string | null;
+  days_of_week: number[];
+  start_time: string | null;
+  end_time: string | null;
+  priority: number;
+  active: boolean;
+  /** Aplica en este momento (segun fechas, dias y horario). */
+  active_now?: boolean;
 }
 
 export type OnlineStatus = 'pendiente' | 'aceptada' | 'rechazada';

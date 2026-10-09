@@ -17,6 +17,7 @@ import { acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches }
 import { DEFAULT_PROVIDER, getPaymentProvider } from './onlinePayments.js';
 import { calculateOrderTotals, toCents } from './posMath.js';
 import { getPaymentSettings, loadRestaurantClipCredentials, onlinePaymentAvailable } from './restaurantPayments.js';
+import { promotionsFor } from './promotions.js';
 import { readScheduledFor } from './scheduling.js';
 import { activeWallet } from './wallet.js';
 
@@ -162,8 +163,11 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
   }
 
   const pos = await getSettings(db, rid);
+  // Las mismas promociones que se guardaran en la orden (recalcOrder).
+  const promotions = await promotionsFor(db, rid, { branchId: branch.id, source: 'web', lines });
   const totals = calculateOrderTotals(lines, {
     taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee,
+    promoDiscount: promotions.reduce((s, p) => s + p.cents, 0) / 100,
   });
   const clipAvailable = onlinePaymentAvailable(await getPaymentSettings(db, rid));
   const walletAvailable = input.payment.provider === 'monedero' && await walletPayAvailable(db, rid);
@@ -172,7 +176,7 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
     throw badRequest('Inicia sesión para pagar con tu monedero', 'LOGIN_REQUIRED');
   }
   const payment = provider.validate(input.payment, { total: totals.total });
-  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone, scheduledFor };
+  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone, scheduledFor, promotions };
 }
 
 export async function readMods(tenant, input) {

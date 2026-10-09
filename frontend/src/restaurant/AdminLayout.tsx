@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -66,6 +66,7 @@ export default function AdminLayout() {
     { to: '/admin/delivery', label: 'Delivery', icon: Store, end: false, show: has('marketplace') && posCan.manage(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: (hasPos || has('marketplace')) && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
+    { to: '/admin/promociones', label: 'Promociones', icon: Gift, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/reparto', label: 'Reparto', icon: Bike, end: false, show: has('domicilios') && posCan.cashier(role) },
     { to: '/repartidor', label: 'Mis entregas', icon: Bike, end: false, show: has('domicilios') && role === 'repartidor' },
@@ -108,7 +109,7 @@ export default function AdminLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="text-right text-xs leading-tight text-gray-400">
+          <div className="ml-auto text-right text-xs leading-tight text-gray-400">
             <div className="text-sm text-gray-200">{me.user.name}</div>
             {ROLE_LABEL[me.user.role]}
           </div>

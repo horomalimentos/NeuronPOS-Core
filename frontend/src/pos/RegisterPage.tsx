@@ -412,6 +412,7 @@ export default function RegisterPage() {
             {order && (
               <>
                 <Row label="Subtotal" value={formatMXN(order.subtotal)} />
+                {(order.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promo: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
                 {num(order.discount_amount) > 0 && <Row label={`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`} value={`-${formatMXN(order.discount_amount)}`} />}
                 <Row label={`IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' incl.' : ''}`} value={formatMXN(order.tax_amount)} />
                 {num(order.delivery_fee) > 0 && <Row label="Envío" value={formatMXN(order.delivery_fee)} />}

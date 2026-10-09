@@ -220,6 +220,8 @@ export interface CustomerDelivery {
 export interface Quote {
   subtotal: number;
   discount_amount: number;
+  promo_discount?: number;
+  promotions?: { promotion_id: string; name: string; amount: number }[];
   tax_amount: number;
   delivery_fee: number;
   total: number;

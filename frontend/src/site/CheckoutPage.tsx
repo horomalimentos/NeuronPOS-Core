@@ -409,6 +409,7 @@ export default function CheckoutPage() {
               {quote ? (
                 <>
                   <Row label="Subtotal" value={formatMXN(quote.subtotal)} />
+                  {(quote.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promoción: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
                   {quote.delivery_fee > 0 && <Row label="Envío" value={formatMXN(quote.delivery_fee)} />}
                   <Row label={`IVA ${Number(quote.tax_rate_pct)}%${quote.prices_include_tax ? ' (incluido)' : ''}`} value={formatMXN(quote.tax_amount)} muted />
                   <Row label="Total" value={formatMXN(quote.total)} strong />

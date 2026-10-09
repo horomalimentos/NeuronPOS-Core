@@ -8,6 +8,7 @@ import cashRouter from './cash.js';
 import menuRouter from './menu.js';
 import onlineRouter from './online.js';
 import ordersRouter from './orders.js';
+import promotionsRouter from './promotions.js';
 import reportsRouter from './reports.js';
 import settingsRouter from './settings.js';
 import tablesRouter from './tables.js';
@@ -28,5 +29,6 @@ router.use(ordersRouter);
 router.use(onlineRouter);
 router.use(cashRouter);
 router.use(reportsRouter);
+router.use(promotionsRouter);
 
 export default router;
