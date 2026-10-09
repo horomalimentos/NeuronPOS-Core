@@ -5,8 +5,11 @@
 //                            horario y SEO basico (siempre disponible).
 //   GET /api/public/landing  contenido del sitio web (modulo "landing"):
 //                            portada, acerca de, galeria, menu de muestra.
+//   GET /api/public/plans    pagina principal de NeuronPOS: modulos activos
+//                            con su precio mensual de catalogo y dias de
+//                            prueba (no requiere restaurante).
 import { Router } from 'express';
-import { withTenant } from '../config/database.js';
+import pool, { withTenant } from '../config/database.js';
 import { publicLimiter } from '../middleware/rateLimits.js';
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
@@ -23,6 +26,16 @@ async function readContent(db, restaurantId) {
   const { rows } = await db.query('SELECT content FROM site_content WHERE restaurant_id = $1', [restaurantId]);
   return withDefaults(rows[0]?.content);
 }
+
+const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS, 10) || 14;
+
+router.get('/plans', ah(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT code, name, description, monthly_price_mxn
+       FROM modules WHERE active ORDER BY sort_order, code`,
+  );
+  res.json({ modules: rows, trial_days: TRIAL_DAYS });
+}));
 
 router.get('/site', requireTenant, ah(async (req, res) => {
   const t = req.tenant;

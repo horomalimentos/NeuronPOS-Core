@@ -20,6 +20,18 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
     assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'landing', 'portal', 'rh', 'empleado_mes', 'domicilios']);
   });
 
+  test('la pagina principal lee los planes sin restaurante y oculta los inactivos', async () => {
+    await ctx.request('PUT', '/api/platform/modules/empleado_mes', { token: owner, body: { monthly_price_mxn: 199, active: false } });
+    await ctx.request('PUT', '/api/platform/modules/pos', { token: owner, body: { monthly_price_mxn: 499 } });
+    const res = await ctx.request('GET', '/api/public/plans');
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'landing', 'portal', 'rh', 'domicilios']);
+    assert.equal(Number(res.body.modules[0].monthly_price_mxn), 499);
+    assert.equal(res.body.modules[0].enabled_restaurants, undefined);
+    assert.ok(res.body.trial_days > 0);
+    await ctx.request('PUT', '/api/platform/modules/empleado_mes', { token: owner, body: { active: true } });
+  });
+
   test('requireModule: 200 con modulo, 402 sin modulo', async () => {
     assert.equal((await ctx.request('GET', '/api/pos/status', { token: A.token })).status, 200);
     const res = await ctx.request('GET', '/api/pos/status', { token: B.token });
