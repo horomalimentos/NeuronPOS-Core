@@ -1,5 +1,5 @@
 import {
-  ArrowRight, Award, BrainCircuit, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone,
+  ArrowRight, Award, BarChart3, BrainCircuit, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone,
   Truck, Users,
 } from 'lucide-react';
 import { useEffect, useState, type ComponentType } from 'react';
@@ -29,6 +29,7 @@ const contactHref = WHATSAPP
 
 const MODULE_INFO: Record<string, { Icon: ComponentType<{ className?: string }>; points: string[] }> = {
   pos: { Icon: Monitor, points: ['Mesas, barra y para llevar', 'Pantalla de cocina en tiempo real', 'Cortes de caja y tickets'] },
+  reportes: { Icon: BarChart3, points: ['Ventas por día, hora y producto', 'Comparativo contra el periodo anterior', 'Descarga a Excel'] },
   landing: { Icon: Globe, points: ['Tu propia dirección web', 'Menú, horarios y sucursales', 'Tus colores y tu logo'] },
   portal: { Icon: Smartphone, points: ['Tus clientes piden desde el celular', 'Pago en línea con tarjeta o al recibir', 'Seguimiento del pedido'] },
   rh: { Icon: Users, points: ['Checador de asistencia', 'Prenómina semanal', 'Expedientes de empleados'] },

@@ -14,6 +14,7 @@ export default function DashboardPage() {
   const manager = canManage(me.user.role);
   const links: Record<string, { to: string; label: string }> = {
     pos: { to: '/admin/pos', label: 'Abrir punto de venta' },
+    reportes: { to: '/admin/reportes', label: 'Ver reportes' },
     rh: manager ? { to: '/admin/rh', label: 'Abrir recursos humanos' } : { to: '/admin/mi-nomina', label: 'Ver mi nómina' },
     empleado_mes: manager ? { to: '/admin/empleado-del-mes', label: 'Ver ranking del mes' } : { to: '/admin/muro', label: 'Ver el muro' },
   };
@@ -33,7 +34,7 @@ export default function DashboardPage() {
           {r.status === 'trial' && r.trial_ends_at && <>Tu prueba termina el {formatDate(r.trial_ends_at)}.</>}</span>}
       />
 
-      {manager && enabled.some((m) => m.code === 'pos') && <TodaySales me={me} />}
+      {manager && !r.access_error && ['pos', 'reportes'].every((c) => enabled.some((m) => m.code === c)) && <TodaySales me={me} />}
 
       <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-500">Tus módulos</h2>
       {enabled.length === 0 && <p className="mb-6 text-sm text-gray-500">Todavía no tienes módulos contratados.</p>}

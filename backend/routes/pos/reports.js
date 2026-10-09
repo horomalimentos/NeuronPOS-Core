@@ -2,9 +2,11 @@
 // resumen, por dia y hora, metodos de pago, tipos de orden, sucursales,
 // productos, categorias, modificadores y personal. Cuenta las ordenes pagadas
 // cuyo pago cae en el rango de fechas, en la zona horaria de cada sucursal.
+// Modulo 'reportes' (ademas de 'pos', que exige el router padre).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
+import { requireModule } from '../../middleware/requireModule.js';
 import { ah, badRequest } from '../../utils/http.js';
 import { ROLES, requireBranch } from './common.js';
 
@@ -77,7 +79,7 @@ async function totals(db, params) {
   return out;
 }
 
-router.get('/reports/sales', manager, ah(async (req, res) => {
+router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, res) => {
   const range = parseRange(req.query.from, req.query.to);
   const branchId = req.query.branch_id ? requireBranch(req, req.query.branch_id) : null;
   const rid = req.tenant.id;
