@@ -32,7 +32,7 @@ function cleanPrinter(p) {
   const d = emptyPrinter();
   if (!p || typeof p !== 'object') return d;
   return {
-    type: ['none', 'system', 'network'].includes(p.type) ? p.type : 'none',
+    type: ['none', 'system', 'network', 'usb'].includes(p.type) ? p.type : 'none',
     name: String(p.name || '').slice(0, 200),
     host: String(p.host || '').trim().slice(0, 100),
     port: Number.parseInt(p.port, 10) > 0 && Number.parseInt(p.port, 10) < 65536 ? Number.parseInt(p.port, 10) : 9100,

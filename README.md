@@ -910,11 +910,13 @@ ventana de impresión y abrir el cajón de dinero. Siempre trabajan en línea.
   vuelve a esa pantalla con el ícono de impresora del encabezado (o Ctrl+, en
   escritorio).
 - **Impresoras:** térmicas de 58 u 80 mm por red (IP:9100) o USB. En
-  escritorio la USB es la impresora instalada en Windows (sin diálogo; el cajón
-  se abre mandando el pulso en RAW con winspool). En Android: red, USB (cable
-  OTG) o Bluetooth. Por red, USB de Android y Bluetooth el HTML del ticket se
-  dibuja como imagen y se manda en ESC/POS (`GS v 0`), así salen acentos y logo
-  sin depender del driver.
+  escritorio hay tres tipos: red, "USB directa" (la térmica instalada en
+  Windows recibe el ESC/POS en RAW por winspool: corta y abre el cajón) y "con
+  el driver de Windows" (impresión silenciosa normal, de respaldo; el cajón se
+  abre mandando el pulso en RAW). En Android: red, USB (cable OTG) o
+  Bluetooth. Salvo con el driver, el HTML del ticket se dibuja como imagen y
+  se manda en ESC/POS (`GS v 0`), así salen acentos y logo sin depender del
+  driver.
 - **Qué se imprime:** el ticket al cobrar (y el cajón si hubo efectivo), la
   comanda al enviar a cocina desde el POS, y en Neuron KDS la comanda de lo que
   va llegando (incluye pedidos en línea). Los recibos de nómina usan el diálogo
