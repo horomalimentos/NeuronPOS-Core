@@ -56,12 +56,13 @@ export async function setupDb() {
       await db.default.end();
     },
     /** request HTTP con control total de headers (incluido Host). */
-    request(method, path, { body, token, slug, host, headers = {} } = {}) {
+    /** raw: Buffer que se manda tal cual (pon su content-type en headers). */
+    request(method, path, { body, raw, token, slug, host, headers = {} } = {}) {
       return new Promise((resolve, reject) => {
-        const payload = body === undefined ? undefined : JSON.stringify(body);
+        const payload = raw ?? (body === undefined ? undefined : JSON.stringify(body));
         const h = { ...headers };
         if (payload) {
-          h['content-type'] = 'application/json';
+          if (!raw) h['content-type'] = 'application/json';
           // Node no usa chunked en DELETE: sin content-length el cuerpo se pierde.
           h['content-length'] = Buffer.byteLength(payload);
         }
@@ -74,7 +75,7 @@ export async function setupDb() {
           res.on('end', () => {
             let json = null;
             try { json = data ? JSON.parse(data) : null; } catch { json = data; }
-            resolve({ status: res.statusCode, body: json });
+            resolve({ status: res.statusCode, body: json, headers: res.headers });
           });
         });
         req.on('error', reject);

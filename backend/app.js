@@ -20,6 +20,7 @@ import publicRouter from './routes/public.js';
 import recognitionRouter from './routes/recognition.js';
 import rhRouter from './routes/rh/index.js';
 import subscriptionRouter from './routes/subscription.js';
+import uploadsRouter from './routes/uploads.js';
 import usersRouter from './routes/users.js';
 import webhooksRouter from './routes/webhooks.js';
 import websiteRouter from './routes/website.js';
@@ -66,6 +67,15 @@ export function createApp() {
     },
   }));
   app.use('/api/descargas', (req, res, next) => next(notFound('Archivo no encontrado', 'FILE_NOT_FOUND')));
+  // Fotos subidas por los restaurantes: publicas (las ve el sitio) y con
+  // nombre aleatorio, asi que se pueden cachear para siempre.
+  app.use('/api/uploads', express.static(env.uploadsDir, {
+    index: false,
+    dotfiles: 'ignore',
+    immutable: true,
+    maxAge: '365d',
+    setHeaders(res) { res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin'); },
+  }));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
 
@@ -76,6 +86,7 @@ export function createApp() {
   app.use('/api/branches', branchesRouter);
   app.use('/api/users', usersRouter);
   app.use('/api/public', publicRouter);
+  app.use('/api/uploads', uploadsRouter);
   app.use('/api/pos', posRouter);
   // Fase 2: sitio web y portal de clientes.
   app.use('/api/website', websiteRouter);

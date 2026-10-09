@@ -139,6 +139,8 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `BILLING_TIMEZONE` | Zona horaria de día de cobro, vencimiento y gracia | `America/Mexico_City` |
 | `BILLING_AUTO` | `true` = generar facturas, marcar vencidas y suspender solas (cada hora) | `true` |
 | `JOBS_ENABLED` | Jobs en segundo plano (cobro, conciliación con Clip, pedidos sin pagar) | `true` (`false` en pruebas) |
+| `UPLOADS_DIR` | Carpeta de las fotos que suben los restaurantes (una subcarpeta por restaurante), servidas en `/api/uploads` | `./uploads` |
+| `DOWNLOADS_DIR` | Carpeta de los instaladores de las apps, servidos en `/api/descargas` | `./descargas` |
 
 ## Aislamiento entre restaurantes
 
@@ -317,6 +319,20 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 | POST | `/api/pos/orders/:id/payments` | admin, gerente, cajero |
 | GET | `/api/pos/kitchen?branch_id=` | todos menos repartidor |
 | GET/POST | `/api/pos/cash-sessions` · `/open` · `/:id` · `/:id/movements` · `/:id/close` | admin, gerente, cajero |
+| GET | `/api/pos/reports/sales?from=&to=[&branch_id=]` | admin, gerente |
+| POST | `/api/uploads/image` (cuerpo: la imagen, `Content-Type: image/*`, máx. 5 MB) | admin, gerente |
+
+**Reportes de ventas** (`/admin/reportes` y el resumen del día en Inicio):
+órdenes pagadas por fecha de cobro en la zona horaria de cada sucursal, con
+comparación contra el periodo anterior de la misma duración; por día, hora y
+día de la semana; métodos de pago, tipo de orden, sucursal, productos,
+categorías, modificadores y persona que abrió la orden; canceladas y
+artículos cancelados. Cada tabla se descarga en CSV. Rango máximo: 366 días.
+
+**Fotos:** el menú y el sitio web suben fotos (el navegador las achica a
+1600 px). Se guardan en `UPLOADS_DIR/<restaurante>/<uuid>.<ext>`; se valida el
+tipo real por los primeros bytes (JPG, PNG, WebP, GIF). Respalda esa carpeta
+junto con la base de datos.
 
 El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
 iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
