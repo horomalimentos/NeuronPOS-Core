@@ -1,5 +1,5 @@
 import {
-  Award, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Receipt,
+  Award, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
   Settings, ShoppingBag, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -7,6 +7,7 @@ import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { applyBranding } from '../lib/branding';
+import { getNative } from '../lib/native';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { posCan } from '../pos/lib';
@@ -98,6 +99,11 @@ export default function AdminLayout() {
             <div className="text-sm text-gray-200">{me.user.name}</div>
             {ROLE_LABEL[me.user.role]}
           </div>
+          {getNative() && (
+            <button onClick={() => { void getNative()?.openSettings(); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Impresoras de la app" title="Impresoras de la app">
+              <Printer className="h-4 w-4" />
+            </button>
+          )}
           <button onClick={logout} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Cerrar sesión">
             <LogOut className="h-4 w-4" />
           </button>

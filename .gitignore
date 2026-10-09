@@ -6,3 +6,9 @@ uploads/
 *.tsbuildinfo
 .env.*
 !.env.example
+# Instaladores generados por deploy/instaladores.sh
+/descargas/
+apps/android/.gradle/
+apps/android/app/build/
+apps/android/build/
+apps/android/local.properties

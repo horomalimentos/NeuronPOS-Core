@@ -1,10 +1,12 @@
-// Ticket imprimible: HTML sencillo de 80 mm con la marca del restaurante que
-// se imprime con el dialogo del navegador (iframe oculto + window.print()).
-// No usa ningun servicio de impresion nativo.
+// Ticket imprimible: HTML sencillo de 80 mm con la marca del restaurante. En
+// el navegador se imprime con el dialogo de impresion (iframe oculto +
+// window.print()); dentro de la app NeuronPOS se manda directo a la
+// impresora configurada en la app (ver lib/native.ts).
 import { formatMXN } from '../lib/format';
+import { nativePrint, type PrintRole } from '../lib/native';
 import type { Branch, Restaurant } from '../lib/types';
 import { ORDER_TYPE_LABEL, formatDateTime, num } from './lib';
-import type { CashSessionDetail, Order, PosSettings } from './types';
+import type { CashSessionDetail, Order, OrderItem, PosSettings } from './types';
 
 const esc = (v: unknown) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -121,8 +123,53 @@ export function cashCutHtml(detail: CashSessionDetail, restaurant: Restaurant) {
   return page('Corte de caja', safeColor(restaurant.primary_color)!, body);
 }
 
+/** HTML de la comanda para cocina: solo lo que se acaba de enviar, en grande. */
+export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | null) {
+  const who = order.order_type === 'comedor'
+    ? `Mesa ${esc(order.table_name)}`
+    : ORDER_TYPE_LABEL[order.order_type];
+  const lines = items.map((it) => `<div class="it"><b>${it.quantity} x ${esc(it.name)}</b>
+    ${it.modifiers.map((m) => `<div class="mod">+ ${esc(m.name)}</div>`).join('')}
+    ${it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : ''}</div>`).join('');
+  const body = `<div class="center"><h1>${who}</h1>
+      <div>Folio ${order.folio}${order.source === 'web' ? ' · EN LÍNEA' : ''}</div>
+      <div class="muted">${formatDateTime(items[0]?.sent_at || order.sent_at || order.created_at)}${branch ? ` · ${esc(branch.name)}` : ''}</div></div><hr>
+    ${order.customer_name ? `<div>${esc(order.customer_name)}</div>` : ''}
+    ${lines}
+    ${order.notes ? `<hr><div class="pre">Notas: ${esc(order.notes)}</div>` : ''}
+    ${order.created_by_name ? `<hr><div class="muted">Mesero: ${esc(order.created_by_name)}</div>` : ''}`;
+  return page(`Comanda ${order.folio}`, '#000000', body).replace('</style>', `
+  h1 { font-size: 22px; }
+  .it { font-size: 16px; margin: 6px 0; }
+  .it .mod { font-size: 14px; color: #000; }
+</style>`);
+}
+
+/** Articulos del ultimo envio a cocina (todos comparten la misma hora de envio). */
+export function lastSentItems(order: Order): OrderItem[] {
+  const live = (order.items || []).filter((it) => it.sent_at && !it.voided_at);
+  const last = live.map((it) => it.sent_at!).sort().pop();
+  return last ? live.filter((it) => it.sent_at === last) : [];
+}
+
+/**
+ * Imprime un HTML. En la app NeuronPOS va directo a su impresora; si no hay
+ * app (o no tiene impresora para ese uso) se usa el dialogo del navegador.
+ * Las comandas solo se imprimen en la app: en el navegador no se abre nada.
+ */
+export async function printHtml(html: string, role: PrintRole = 'ticket', opts: { openDrawer?: boolean } = {}) {
+  try {
+    if (await nativePrint(role, html, opts)) return;
+  } catch (err) {
+    window.alert(`No se pudo imprimir: ${err instanceof Error ? err.message : err}`);
+    return;
+  }
+  if (role === 'comanda') return;
+  printInBrowser(html);
+}
+
 /** Imprime un HTML con el dialogo del navegador usando un iframe oculto. */
-export function printHtml(html: string) {
+function printInBrowser(html: string) {
   const frame = document.createElement('iframe');
   frame.setAttribute('aria-hidden', 'true');
   Object.assign(frame.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });

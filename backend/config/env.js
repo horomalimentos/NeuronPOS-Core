@@ -1,3 +1,5 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from 'dotenv';
 
 config();
@@ -49,6 +51,10 @@ export const env = {
   billingAuto: bool(process.env.BILLING_AUTO, true),
   // Jobs en segundo plano (cobro, conciliacion con Clip, pedidos sin pagar).
   jobsEnabled: bool(process.env.JOBS_ENABLED, process.env.NODE_ENV !== 'test'),
+
+  // Instaladores de las apps (deploy/instaladores.sh) servidos en /api/descargas.
+  downloadsDir: process.env.DOWNLOADS_DIR
+    || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'descargas'),
 };
 
 if (!env.jwtSecret) {

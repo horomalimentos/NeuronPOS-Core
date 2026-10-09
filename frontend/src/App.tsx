@@ -3,6 +3,7 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import DownloadsPage from './home/DownloadsPage';
 import FleetPage from './platform/FleetPage';
 import InvoicesPage from './platform/InvoicesPage';
 import ModulesCatalogPage from './platform/ModulesCatalogPage';
@@ -61,6 +62,9 @@ export default function App() {
           <Route path="/cuenta/registro" element={<CustomerRegisterPage />} />
           <Route path="/cuenta/pedidos" element={<OrdersPage />} />
         </Route>
+
+        {/* Instaladores de NeuronPOS y Neuron KDS */}
+        <Route path="/descargas" element={<DownloadsPage />} />
 
         {/* App del repartidor (propio del restaurante o de la flota) */}
         <Route path="/repartidor" element={<DriverApp />} />

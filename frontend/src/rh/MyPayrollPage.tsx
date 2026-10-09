@@ -133,7 +133,7 @@ function MyReceiptModal({ id, onClose, onSigned }: { id: string; onClose: () => 
       {!data ? <Spinner /> : (
         <div className="space-y-4">
           <p className="text-sm text-gray-400">{formatDay(data.period.start_date)} al {formatDay(data.period.end_date)}</p>
-          <ReceiptView item={data.item} onPrint={() => printHtml(receiptHtml(data.item, data.period, me.restaurant))} />
+          <ReceiptView item={data.item} onPrint={() => printHtml(receiptHtml(data.item, data.period, me.restaurant), 'documento')} />
           {data.item.signed_at ? (
             <Alert kind="success">Aceptaste este recibo el {formatDateTime(data.item.signed_at)} por {formatMXN(data.item.net_at_signing)}.</Alert>
           ) : (

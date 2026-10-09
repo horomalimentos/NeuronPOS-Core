@@ -1,0 +1,63 @@
+apply plugin: 'com.android.application'
+
+// Version y firma vienen de deploy/instaladores.sh:
+//   -PneuronVersionName=1.0.0 -PneuronVersionCode=1
+//   -PneuronKeystore=/ruta/neuronpos.jks -PneuronKeystorePassword=... -PneuronKeyAlias=neuronpos
+def prop = { String name, def fallback -> project.hasProperty(name) ? project.property(name) : fallback }
+
+android {
+    namespace = 'app.neuronpos.android'
+    compileSdk = 36
+
+    defaultConfig {
+        minSdk = 24
+        targetSdk = 36
+        versionCode = (prop('neuronVersionCode', '1') as String).toInteger()
+        versionName = prop('neuronVersionName', '1.0.0')
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+
+    // Dos apps instalables por separado: NeuronPOS (punto de venta) y Neuron
+    // KDS (pantalla de cocina). Mismo codigo; cambia el modo y el nombre.
+    flavorDimensions 'product'
+    productFlavors {
+        pos {
+            dimension 'product'
+            applicationId 'app.neuronpos.pos'
+            resValue 'string', 'app_name', 'NeuronPOS'
+            buildConfigField 'String', 'NEURON_MODE', '"pos"'
+        }
+        kds {
+            dimension 'product'
+            applicationId 'app.neuronpos.kds'
+            resValue 'string', 'app_name', 'Neuron KDS'
+            buildConfigField 'String', 'NEURON_MODE', '"kds"'
+        }
+    }
+
+    signingConfigs {
+        release {
+            if (project.hasProperty('neuronKeystore')) {
+                storeFile file(project.property('neuronKeystore'))
+                storePassword project.property('neuronKeystorePassword')
+                keyAlias prop('neuronKeyAlias', 'neuronpos')
+                keyPassword project.property('neuronKeystorePassword')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (project.hasProperty('neuronKeystore')) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}

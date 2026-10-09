@@ -49,6 +49,9 @@ frontend/           React 18 + Vite + TS + Tailwind
   src/site/         Sitio público, menú en línea, checkout, seguimiento y cuenta del cliente
   src/delivery/     Reparto en caja, cortes de repartidores, ajustes de domicilios, mapa (Leaflet)
   src/driver/       App del repartidor (/repartidor), propio o de la flota
+  src/home/         Página principal de neuronpos.app y /descargas
+apps/desktop/       App de escritorio NeuronPOS / Neuron KDS (Electron, impresión directa)
+apps/android/       App de Android NeuronPOS / Neuron KDS (WebView + impresión directa)
 ```
 
 ## Requisitos
@@ -895,6 +898,49 @@ cd /opt/neuronpos-core && bash deploy/actualizar.sh
 
 Trae `main`, corre migraciones nuevas, compila y recarga pm2. Se detiene si
 hay cambios locales sin commit.
+
+## Apps instalables e impresión directa
+
+`apps/desktop` (Windows y Linux) y `apps/android` abren el sistema del
+restaurante (`https://<slug>.neuronpos.app/admin/pos`, o `/admin/cocina` en
+Neuron KDS) y le dan a la página lo que el navegador no puede: imprimir sin
+ventana de impresión y abrir el cajón de dinero. Siempre trabajan en línea.
+
+- **Primera vez:** piden la dirección del restaurante y las impresoras. Se
+  vuelve a esa pantalla con el ícono de impresora del encabezado (o Ctrl+, en
+  escritorio).
+- **Impresoras:** térmicas de 58 u 80 mm por red (IP:9100) o USB. En
+  escritorio la USB es la impresora instalada en Windows (sin diálogo; el cajón
+  se abre mandando el pulso en RAW con winspool). En Android: red, USB (cable
+  OTG) o Bluetooth. Por red, USB de Android y Bluetooth el HTML del ticket se
+  dibuja como imagen y se manda en ESC/POS (`GS v 0`), así salen acentos y logo
+  sin depender del driver.
+- **Qué se imprime:** el ticket al cobrar (y el cajón si hubo efectivo), la
+  comanda al enviar a cocina desde el POS, y en Neuron KDS la comanda de lo que
+  va llegando (incluye pedidos en línea). Los recibos de nómina usan el diálogo
+  normal. En el navegador todo sigue como antes.
+- **Puente:** `frontend/src/lib/native.ts` (`window.neuronNative` en
+  escritorio, `window.NeuronAndroid` en Android). La app solo lo expone a las
+  páginas del restaurante configurado.
+
+### Compilar y publicar
+
+```bash
+cd /opt/neuronpos-core && bash deploy/instaladores.sh        # todo
+bash deploy/instaladores.sh escritorio                         # o solo una parte
+bash deploy/instaladores.sh android
+```
+
+La versión es `1.0.<número de commits>`. Los archivos quedan en `descargas/`
+y el backend los sirve en `/api/descargas` (sin tocar nginx); la página es
+https://neuronpos.app/descargas. El escritorio se actualiza solo
+(electron-updater); Android avisa cuando hay versión nueva.
+
+Requiere wine para el `.exe`, Java 17 y el SDK de Android. La llave de firma de
+Android se crea la primera vez en `/opt/neuronpos-core-secrets` (fuera del
+repo): **respáldala**, sin ella no se pueden publicar actualizaciones.
+
+Pruebas de la app de escritorio: `cd apps/desktop && npm test`.
 
 ## Siguientes fases
 

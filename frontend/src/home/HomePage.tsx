@@ -63,6 +63,7 @@ export default function HomePage() {
             <a href="#funciones" className="hover:text-white">Funciones</a>
             <a href="#demo" className="hover:text-white">Demo</a>
             <a href="#precios" className="hover:text-white">Precios</a>
+            <Link to="/descargas" className="hover:text-white">Descargas</Link>
           </nav>
           <Link to="/admin/login" className="ml-auto rounded-full border border-gray-700 px-4 py-2 text-sm text-gray-200 hover:border-gray-500 md:ml-0">
             Entrar
@@ -168,6 +169,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-gray-500">
           <span className="inline-flex items-center gap-1.5"><BrainCircuit className="h-4 w-4" /> © {new Date().getFullYear()} NeuronPOS</span>
           <span className="flex gap-4">
+            <Link to="/descargas" className="hover:text-gray-300">Descargar apps</Link>
             <Link to="/admin/login" className="hover:text-gray-300">Entrar a mi restaurante</Link>
             <Link to="/panel" className="hover:text-gray-300">Panel</Link>
           </span>

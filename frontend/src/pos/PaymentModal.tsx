@@ -1,6 +1,7 @@
 import { CheckCircle2, Plus, Printer, Trash2 } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Alert, Button, Modal } from '../components/ui';
+import { getNative, nativeInfo } from '../lib/native';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { num, round2 } from './lib';
@@ -28,7 +29,7 @@ export default function PaymentModal({ order, methods, sessionId, onClose, onPai
   sessionId: string;
   onClose: () => void;
   onPaid: (order: Order, change: number) => void;
-  onPrint: (order: Order, change: number) => void;
+  onPrint: (order: Order, change: number, opts?: { openDrawer?: boolean }) => void;
 }) {
   // Los pagos en línea (Clip) los registra el portal, no la caja.
   const active = methods.filter((m) => m.active && m.kind !== 'en_linea');
@@ -77,7 +78,16 @@ export default function PaymentModal({ order, methods, sessionId, onClose, onPai
           })),
         },
       });
-      if (r.order.status === 'pagada') setDone({ order: r.order, change: r.change });
+      if (r.order.status === 'pagada') {
+        setDone({ order: r.order, change: r.change });
+        // En la app con impresora de tickets: sale el ticket solo y, si hubo
+        // efectivo, se abre el cajon.
+        const cash = lines.some((l) => kindOf(l.methodId) === 'efectivo' && num(l.amount) > 0);
+        nativeInfo().then((info) => {
+          if (info?.printers.ticket) onPrint(r.order, r.change, { openDrawer: cash });
+          else if (cash && info?.drawer) void getNative()?.openDrawer();
+        });
+      }
       else onPaid(r.order, r.change);
     } catch (err) {
       setError(errorMessage(err));
