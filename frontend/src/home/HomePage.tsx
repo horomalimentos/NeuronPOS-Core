@@ -19,9 +19,9 @@ import Demo from './Demo';
 type Plan = { code: string; name: string; description: string; monthly_price_mxn: string };
 type PlansResponse = { modules: Plan[]; trial_days: number };
 
-// Contacto de ventas, fijado al compilar (frontend/.env). Si no hay
-// ninguno, los botones de "Quiero NeuronPOS" llevan al demo.
-const WHATSAPP = (import.meta.env.VITE_CONTACT_WHATSAPP || '').replace(/\D/g, '');
+// Contacto de ventas. Se puede cambiar al compilar (frontend/.env); por
+// omision es el WhatsApp de ventas de NeuronPOS.
+const WHATSAPP = (import.meta.env.VITE_CONTACT_WHATSAPP || '526566970990').replace(/\D/g, '');
 const EMAIL = import.meta.env.VITE_CONTACT_EMAIL || '';
 const contactHref = WHATSAPP
   ? `https://wa.me/${WHATSAPP}?text=${encodeURIComponent('Hola, quiero información de NeuronPOS para mi restaurante')}`
