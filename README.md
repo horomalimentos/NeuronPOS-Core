@@ -813,14 +813,14 @@ base de datos `neuronpos_core` con rol propio, proceso pm2 `neuronpos-core`
 en el puerto 8100, carpeta `/opt/neuronpos-core` y su propio bloque de nginx.
 No toca nada de Horom.
 
-### 1. DNS de neuronpos.mx
+### 1. DNS de neuronpos.app
 
 Apunta a la IP pública del servidor dos registros A:
 
 | Nombre | Tipo | Valor |
 |---|---|---|
-| `neuronpos.mx` (`@`) | A | IP del servidor |
-| `*.neuronpos.mx` (`*`) | A | IP del servidor |
+| `neuronpos.app` (`@`) | A | IP del servidor |
+| `*.neuronpos.app` (`*`) | A | IP del servidor |
 
 `www` queda cubierto por el comodín y nginx lo redirige al dominio raíz.
 
@@ -840,7 +840,7 @@ peligro: no recrea la base ni pisa un `.env` existente.
 
 ### 3. Certificado comodín y nginx
 
-Un certificado para `*.neuronpos.mx` solo se puede emitir con reto DNS. Lo
+Un certificado para `*.neuronpos.app` solo se puede emitir con reto DNS. Lo
 más simple es manejar el DNS del dominio en Cloudflare (gratis, registros en
 "DNS only") y usar su plugin de certbot:
 
@@ -849,11 +849,11 @@ sudo apt install python3-certbot-dns-cloudflare
 # /root/.secrets/cloudflare.ini con: dns_cloudflare_api_token = <token con permiso DNS:Edit>
 sudo chmod 600 /root/.secrets/cloudflare.ini
 sudo certbot certonly --dns-cloudflare --dns-cloudflare-credentials /root/.secrets/cloudflare.ini \
-  -d neuronpos.mx -d '*.neuronpos.mx'
+  -d neuronpos.app -d '*.neuronpos.app'
 ```
 
 Si el DNS se queda en el proveedor del dominio, se puede emitir a mano con
-`certbot certonly --manual --preferred-challenges dns -d neuronpos.mx -d '*.neuronpos.mx'`,
+`certbot certonly --manual --preferred-challenges dns -d neuronpos.app -d '*.neuronpos.app'`,
 pero hay que repetir el registro TXT cada 90 días.
 
 Luego:
@@ -876,14 +876,14 @@ Panel en el campo de dominio propio del restaurante.
 cd /opt/neuronpos-core/backend && npm run create-owner -- --email tu@correo.com --name "Alex"
 ```
 
-El Panel NeuronPOS queda en `https://neuronpos.mx/panel`. Cada restaurante
-que des de alta vive en `https://<slug>.neuronpos.mx`.
+El Panel NeuronPOS queda en `https://neuronpos.app/panel`. Cada restaurante
+que des de alta vive en `https://<slug>.neuronpos.app`.
 
 ### 5. Clip
 
 En `backend/.env` llena `CLIP_API_KEY`, `CLIP_SECRET_KEY` y
 `CLIP_WEBHOOK_SECRET` de tu cuenta de Clip, y en el dashboard de Clip
-registra el webhook `https://neuronpos.mx/api/webhooks/clip/plataforma`.
+registra el webhook `https://neuronpos.app/api/webhooks/clip/plataforma`.
 Después: `pm2 reload neuronpos-core --update-env`. Cada restaurante registra
 en su propia cuenta de Clip la URL que le muestra su pantalla de ajustes.
 

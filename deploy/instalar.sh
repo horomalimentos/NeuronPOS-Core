@@ -10,12 +10,12 @@
 # backend/.env que ya exista.
 #
 # Variables opcionales:
-#   PLATFORM_DOMAIN (neuronpos.mx), DB_NAME (neuronpos_core), DB_USER (neuron_app),
+#   PLATFORM_DOMAIN (neuronpos.app), DB_NAME (neuronpos_core), DB_USER (neuron_app),
 #   APP_PORT (8100), BILLING_TIMEZONE (America/Ciudad_Juarez)
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PLATFORM_DOMAIN="${PLATFORM_DOMAIN:-neuronpos.mx}"
+PLATFORM_DOMAIN="${PLATFORM_DOMAIN:-neuronpos.app}"
 DB_NAME="${DB_NAME:-neuronpos_core}"
 DB_USER="${DB_USER:-neuron_app}"
 APP_PORT="${APP_PORT:-8100}"
