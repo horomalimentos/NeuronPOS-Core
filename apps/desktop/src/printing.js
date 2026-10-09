@@ -134,6 +134,13 @@ public class NeuronRaw {
 [NeuronRaw]::Send($env:NEURON_PRINTER, [Convert]::FromBase64String($env:NEURON_RAW))
 `;
 
+/** Termica USB instalada en Windows: el mismo ESC/POS que por red, en RAW. */
+export async function printUsb(html, { name = '', paper = 80, openDrawer = false, cut = true } = {}) {
+  if (process.platform !== 'win32') throw new Error('La impresión USB directa solo funciona en Windows; usa "Con el driver"');
+  const { mono, height } = await renderRaster(html, paper);
+  await sendWindowsRaw(name, rasterJob(mono, height, { cut, openDrawer }));
+}
+
 async function defaultPrinterName() {
   const wc = webContents.getAllWebContents()[0];
   const list = wc ? await wc.getPrintersAsync() : [];
@@ -141,7 +148,7 @@ async function defaultPrinterName() {
 }
 
 export async function sendWindowsRaw(name, data) {
-  if (process.platform !== 'win32') throw new Error('El cajón por USB solo funciona en Windows');
+  if (process.platform !== 'win32') throw new Error('La impresión USB directa solo funciona en Windows');
   const printer = name || await defaultPrinterName();
   if (!printer) throw new Error('No hay impresora predeterminada');
   await new Promise((resolve, reject) => {
@@ -158,13 +165,15 @@ export async function sendWindowsRaw(name, data) {
 
 /** El cajon se puede abrir con esta impresora (red, o USB en Windows). */
 export const drawerCapable = (printer) => Boolean(printer?.drawer)
-  && (printer.type === 'network' || (printer.type === 'system' && process.platform === 'win32'));
+  && (printer.type === 'network' || (['system', 'usb'].includes(printer.type) && process.platform === 'win32'));
 
 /** Imprime con la impresora configurada para el rol (ticket o comanda). */
 export async function printWith(printer, html, { openDrawer: drawer = false } = {}) {
   if (!printer || printer.type === 'none') return { printed: false };
   if (printer.type === 'network') {
     await printNetwork(html, { host: printer.host, port: printer.port, paper: printer.paper, openDrawer: drawer && printer.drawer });
+  } else if (printer.type === 'usb') {
+    await printUsb(html, { name: printer.name, paper: printer.paper, openDrawer: drawer && printer.drawer });
   } else {
     await printSystem(html, { name: printer.name });
     if (drawer && drawerCapable(printer)) await sendWindowsRaw(printer.name, drawerPulse());
@@ -189,7 +198,7 @@ export function testPageHtml(role, printer) {
     <h1>NeuronPOS</h1>
     <div class="c">Prueba de impresora</div><hr>
     <div>Uso: <b>${role === 'comanda' ? 'Comandas de cocina' : 'Tickets y cortes'}</b></div>
-    <div>Tipo: ${printer.type === 'network' ? `Red ${printer.host}:${printer.port}` : `Sistema ${printer.name || '(predeterminada)'}`}</div>
+    <div>Tipo: ${printer.type === 'network' ? `Red ${printer.host}:${printer.port}` : `${printer.type === 'usb' ? 'USB directa' : 'Driver'} ${printer.name || '(predeterminada)'}`}</div>
     <div>Papel: ${printer.paper} mm</div>
     <div>Acentos: áéíóú ñ Ñ ¿? ¡!</div><hr>
     <div class="c">${now}</div>

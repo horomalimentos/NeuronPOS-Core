@@ -66,27 +66,30 @@
     <label>Tipo de impresora</label>
     <select data-f="type">
       <option value="none">Ninguna</option>
-      <option value="system">Instalada en esta computadora (USB o Windows)</option>
+      <option value="usb">Térmica por USB (directa)</option>
       <option value="network">Térmica por red (IP)</option>
+      <option value="system">Con el driver de Windows (cualquier impresora)</option>
     </select>
-    <div data-show="system">
+    <div data-show="system usb">
       <label>Impresora</label>
       <select data-f="name"></select>
-      <p class="hint">Para térmicas USB instala primero el driver del fabricante en Windows.</p>
+      <p class="hint" data-show="usb">Elige la térmica instalada en Windows. La app le manda los comandos directo: corta el papel y abre el cajón.</p>
+      <p class="hint" data-show="system">Usa el driver de Windows. Sirve para cualquier impresora; úsala si "USB directa" no imprime.</p>
     </div>
     <div data-show="network">
       <div class="row">
         <div><label>Dirección IP</label><input data-f="host" placeholder="192.168.1.100" spellcheck="false"></div>
         <div style="flex:0 0 110px"><label>Puerto</label><input data-f="port" type="number" min="1" max="65535"></div>
-        <div style="flex:0 0 120px"><label>Papel</label>
-          <select data-f="paper"><option value="80">80 mm</option><option value="58">58 mm</option></select>
-        </div>
       </div>
     </div>
-    <div data-show="system network">
+    <div data-show="network usb">
+      <label>Papel</label>
+      <select data-f="paper"><option value="80">80 mm</option><option value="58">58 mm</option></select>
+    </div>
+    <div data-show="system network usb">
       <label class="check" data-drawer><input type="checkbox" data-f="drawer"> Abrir el cajón de dinero al cobrar en efectivo</label>
     </div>
-    <div class="actions" data-show="system network">
+    <div class="actions" data-show="system network usb">
       <button type="button" class="secondary" data-test>Imprimir prueba</button>
     </div>
     <div class="msg" data-msg></div>
