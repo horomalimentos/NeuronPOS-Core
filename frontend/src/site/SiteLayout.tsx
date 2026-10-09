@@ -1,6 +1,7 @@
 import { BrainCircuit, ClipboardList, Loader2, ShoppingBag, Store, User } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import HomePage from '../home/HomePage';
 import { ApiError, portalApi } from '../lib/api';
 import { applyBranding } from '../lib/branding';
 import { session } from '../lib/session';
@@ -53,7 +54,7 @@ export default function SiteLayout() {
     return <div className="site-light flex items-center justify-center text-gray-500"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   }
   if (state === 'not_found' || !site) {
-    return location.pathname === '/' && state === 'not_found' ? <PlatformHome /> : (
+    return location.pathname === '/' && state === 'not_found' ? <HomePage /> : (
       <div className="site-light flex flex-col items-center justify-center gap-3 p-6 text-center">
         <Store className="h-10 w-10 text-gray-400" />
         <h1 className="text-xl font-semibold">{state === 'not_found' ? 'Restaurante no encontrado' : 'No se pudo conectar con el servidor'}</h1>
@@ -122,21 +123,6 @@ export default function SiteLayout() {
           </span>
         </div>
       </footer>
-    </div>
-  );
-}
-
-/** Raiz del dominio de la plataforma (sin restaurante): portada de NeuronPOS. */
-function PlatformHome() {
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 p-6 text-center">
-      <BrainCircuit className="h-14 w-14 text-brand" />
-      <h1 className="text-3xl font-semibold text-white">NeuronPOS</h1>
-      <p className="max-w-md text-gray-400">Punto de venta, sitio web, pedidos en línea, recursos humanos y domicilios para tu restaurante.</p>
-      <div className="flex gap-3">
-        <Link to="/admin/login" className="rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast">Entrar a mi restaurante</Link>
-        <Link to="/panel" className="rounded-xl border border-gray-700 px-4 py-2.5 text-sm text-gray-300">Panel NeuronPOS</Link>
-      </div>
     </div>
   );
 }
