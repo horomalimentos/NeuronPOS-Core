@@ -6,7 +6,6 @@
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { env } from '../../config/env.js';
-import { requireRole } from '../../middleware/auth.js';
 import { requireModule } from '../../middleware/requireModule.js';
 import { createClipClient, hasCheckoutCredentials } from '../../services/clip/client.js';
 import { publicCobro, refreshCobro } from '../../services/clip/pinpad.js';
@@ -14,6 +13,7 @@ import { toCents } from '../../services/posMath.js';
 import { loadRestaurantClipCredentials } from '../../services/restaurantPayments.js';
 import { HttpError, ah, badRequest, money, notFound, requireUuid, str } from '../../utils/http.js';
 import { ROLES, canAccessBranch, requireBranch } from './common.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 router.use('/clip', requireModule('terminal_clip'));
@@ -29,7 +29,7 @@ async function credentials(restaurantId) {
 }
 
 // Numero de serie de la terminal de una caja.
-router.get('/clip/terminal', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.get('/clip/terminal', can('cashier'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const terminal = str(req.query.terminal, { field: 'terminal', required: true, max: 40 });
   const row = await withTenant(req.tenant.id, async (db) => (await db.query(
@@ -39,7 +39,7 @@ router.get('/clip/terminal', requireRole(...ROLES.cashier), ah(async (req, res) 
   res.json({ serial_number: row?.serial_number || null, enabled: Boolean(row) });
 }));
 
-router.put('/clip/terminal', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.put('/clip/terminal', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
   const terminal = str(body.terminal, { field: 'terminal', required: true, max: 40 });
@@ -58,7 +58,7 @@ router.put('/clip/terminal', requireRole(...ROLES.manage), ah(async (req, res) =
 }));
 
 // Pedir un cobro en la terminal: { order_id, amount, terminal }.
-router.post('/clip/cobros', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/clip/cobros', can('cashier'), ah(async (req, res) => {
   const body = req.body || {};
   const orderId = requireUuid(body.order_id, 'order_id');
   const amount = money(body.amount, { field: 'amount' });
@@ -141,14 +141,14 @@ async function loadCobro(db, req) {
 }
 
 // Estado (consulta a Clip si sigue pendiente). La caja lo pregunta cada pocos segundos.
-router.get('/clip/cobros/:id', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.get('/clip/cobros/:id', can('cashier'), ah(async (req, res) => {
   const creds = await credentials(req.tenant.id);
   const cobro = await withTenant(req.tenant.id, async (db) => publicCobro(await refreshCobro(db, await loadCobro(db, req), creds)));
   res.json({ cobro });
 }));
 
 // Cancelar mientras la terminal no lo tome.
-router.delete('/clip/cobros/:id', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.delete('/clip/cobros/:id', can('cashier'), ah(async (req, res) => {
   const creds = await credentials(req.tenant.id);
   const cobro = await withTenant(req.tenant.id, async (db) => {
     const row = await loadCobro(db, req);

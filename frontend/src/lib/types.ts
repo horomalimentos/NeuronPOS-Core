@@ -181,6 +181,8 @@ export interface Me {
   branches: Branch[];
   /** Solo admin y gerente (null para el resto). */
   billing: BillingSummary | null;
+  /** Capacidades del POS de su rol (con los permisos que el restaurante cambio). */
+  capabilities?: string[];
 }
 
 export interface BranchHours {

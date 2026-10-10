@@ -2,12 +2,12 @@
 // grupos de modificadores y estaciones de cocina. Escritura: admin y gerente.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, money, notFound, requireUuid, str } from '../../utils/http.js';
 import {
   ROLES, assertBranchExists, assertModule, imageUrl, insertSql, int, isManager, requireBranch, signedMoney, uuidList,
 } from './common.js';
 import { requireModule } from '../../middleware/requireModule.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
@@ -75,7 +75,7 @@ async function assertStation(db, restaurantId, stationId) {
   if (!rowCount) throw badRequest('La estacion de cocina no existe', 'STATION_NOT_FOUND');
 }
 
-router.get('/menu', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/menu', can('kitchen'), ah(async (req, res) => {
   const branchId = req.query.branch_id ? requireBranch(req, req.query.branch_id) : null;
   const includeInactive = req.query.all === '1' && isManager(req.user);
   const menu = await withTenant(req.tenant.id, (db) => loadMenu(db, req.tenant.id, { branchId, includeInactive }));
@@ -98,7 +98,7 @@ function categoryFields(body, creating) {
   return f;
 }
 
-router.post('/categories', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/categories', can('manage'), ah(async (req, res) => {
   const f = categoryFields(req.body || {}, true);
   const q = insertSql('menu_categories', req.tenant.id, f, CATEGORY_COLS);
   const row = await withTenant(req.tenant.id, async (db) => {
@@ -108,7 +108,7 @@ router.post('/categories', requireRole(...ROLES.manage), ah(async (req, res) => 
   res.status(201).json({ category: row });
 }));
 
-router.patch('/categories/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/categories/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const f = categoryFields(req.body || {}, false);
   const set = buildSet(f, 3);
@@ -125,7 +125,7 @@ router.patch('/categories/:id', requireRole(...ROLES.manage), ah(async (req, res
   res.json({ category: row });
 }));
 
-router.delete('/categories/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/categories/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   await withTenant(req.tenant.id, async (db) => {
     const items = await db.query(
@@ -215,7 +215,7 @@ async function getItem(db, restaurantId, id) {
   return menu.rows[0] || null;
 }
 
-router.post('/items', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/items', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const f = itemFields(body, true);
   const groupIds = uuidList(body.modifier_group_ids, 'modifier_group_ids') || [];
@@ -231,7 +231,7 @@ router.post('/items', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ item });
 }));
 
-router.patch('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/items/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const f = itemFields(body, false);
@@ -256,7 +256,7 @@ router.patch('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => 
 }));
 
 // Agotado / disponible en una sucursal (cajero tambien puede).
-router.put('/items/:id/availability', requireRole(...ROLES.availability), ah(async (req, res) => {
+router.put('/items/:id/availability', can('availability'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
@@ -277,7 +277,7 @@ router.put('/items/:id/availability', requireRole(...ROLES.availability), ah(asy
 
 // Si el producto ya se vendio no se puede borrar (las ventas lo referencian):
 // se desactiva y se responde archived = true.
-router.delete('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/items/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const sold = await db.query(
@@ -367,7 +367,7 @@ async function getGroup(db, restaurantId, id) {
   return rows[0];
 }
 
-router.post('/modifier-groups', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/modifier-groups', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const f = groupFields(body, true);
   const modifiers = readModifiers(body.modifiers) || [];
@@ -380,7 +380,7 @@ router.post('/modifier-groups', requireRole(...ROLES.manage), ah(async (req, res
   res.status(201).json({ group });
 }));
 
-router.patch('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/modifier-groups/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const set = buildSet(groupFields(body, false), 3);
@@ -400,7 +400,7 @@ router.patch('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req
   res.json({ group });
 }));
 
-router.delete('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/modifier-groups/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const deleted = await withTenant(req.tenant.id, async (db) => (await db.query(
     'DELETE FROM modifier_groups WHERE id = $1 AND restaurant_id = $2',
@@ -429,14 +429,14 @@ const duplicateStation = (err) => {
   throw err;
 };
 
-router.post('/stations', requireModule('estaciones'), requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/stations', requireModule('estaciones'), can('manage'), ah(async (req, res) => {
   const q = insertSql('kitchen_stations', req.tenant.id, stationFields(req.body || {}, true), STATION_COLS);
   const row = await withTenant(req.tenant.id, async (db) => (await db.query(q.text, q.values)).rows[0])
     .catch(duplicateStation);
   res.status(201).json({ station: row });
 }));
 
-router.patch('/stations/:id', requireModule('estaciones'), requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/stations/:id', requireModule('estaciones'), can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const set = buildSet(stationFields(req.body || {}, false), 3);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
@@ -451,7 +451,7 @@ router.patch('/stations/:id', requireModule('estaciones'), requireRole(...ROLES.
 
 // Borrar: el menu que la usaba pasa a cocina general. Si ya hay ordenes con
 // esa estacion solo se desactiva, para no perder el historial.
-router.delete('/stations/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/stations/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const { rows } = await db.query(

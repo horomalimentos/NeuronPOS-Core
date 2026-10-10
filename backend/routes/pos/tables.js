@@ -2,16 +2,16 @@
 // activa (abierta, enviada o lista); no se guarda un estado aparte.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, notFound, requireUuid, str } from '../../utils/http.js';
 import { ROLES, assertBranchExists, insertSql, int, requireBranch } from './common.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
 const ZONE_COLS = 'id, branch_id, name, sort_order, active';
 const TABLE_COLS = 'id, branch_id, zone_id, name, capacity, sort_order, active';
 
-router.get('/tables', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.get('/tables', can('orders'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const data = await withTenant(req.tenant.id, async (db) => {
     const zones = (await db.query(
@@ -40,7 +40,7 @@ router.get('/tables', requireRole(...ROLES.orders), ah(async (req, res) => {
 // Zonas
 // ---------------------------------------------------------------------------
 
-router.post('/zones', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/zones', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
   const f = {
@@ -57,7 +57,7 @@ router.post('/zones', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ zone });
 }));
 
-router.patch('/zones/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/zones/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const f = {
@@ -78,7 +78,7 @@ router.patch('/zones/:id', requireRole(...ROLES.manage), ah(async (req, res) => 
 }));
 
 // Borrar una zona deja sus mesas sin zona.
-router.delete('/zones/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/zones/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   await withTenant(req.tenant.id, async (db) => {
     await db.query(
@@ -107,7 +107,7 @@ function tableFields(body, creating) {
   return f;
 }
 
-router.post('/tables', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/tables', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
   const f = { branch_id: branchId, ...tableFields(body, true) };
@@ -120,7 +120,7 @@ router.post('/tables', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ table });
 }));
 
-router.patch('/tables/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/tables/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const set = buildSet(tableFields(req.body || {}, false), 3);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
@@ -134,7 +134,7 @@ router.patch('/tables/:id', requireRole(...ROLES.manage), ah(async (req, res) =>
 }));
 
 // Una mesa con ordenes en su historial no se borra: se desactiva.
-router.delete('/tables/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/tables/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const used = await db.query(

@@ -5,13 +5,13 @@
 // Modulo 'reportes' (ademas de 'pos', que exige el router padre).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { requireModule } from '../../middleware/requireModule.js';
+import { can } from '../../services/permissions.js';
 import { ah, badRequest } from '../../utils/http.js';
-import { ROLES, requireBranch } from './common.js';
+import { requireBranch } from './common.js';
 
 const router = Router();
-const manager = requireRole(...ROLES.manage);
+const manager = can('manage');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 366;

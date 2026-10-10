@@ -2,16 +2,16 @@
 // efectivo, y cierre con corte (esperado contra contado por metodo de pago).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { calculateCashCut } from '../../services/posMath.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
 } from '../../utils/http.js';
 import { ROLES, assertBranchExists, canAccessBranch, int, isManager, requireBranch } from './common.js';
 import { getSettings, usdRate } from './settings.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
-const cashier = requireRole(...ROLES.cashier);
+const cashier = can('cashier');
 
 const SESSION_SELECT = `
   SELECT s.id, s.branch_id, b.name AS branch_name, s.terminal, s.status, s.opening_cash,

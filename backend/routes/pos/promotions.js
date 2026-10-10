@@ -2,13 +2,13 @@
 // todos las leen). El calculo esta en services/promotions.js.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { isPromotionActive } from '../../services/promotions.js';
 import { normalizeCode } from '../../services/vouchers.js';
 import { localParts } from '../../services/hours.js';
 import { ah, badRequest, bool, buildSet, money, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
 import { requireModule } from '../../middleware/requireModule.js';
 import { ROLES, insertSql, int, uuidList } from './common.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 router.use('/promotions', requireModule('promociones'));
@@ -97,7 +97,7 @@ async function checkRefs(db, rid, f) {
 const getOne = async (db, rid, id) => (await db.query(`SELECT ${COLS} FROM promotions WHERE id = $1 AND restaurant_id = $2`, [id, rid])).rows[0];
 
 // Lista. Cada una trae active_now (aplica en este momento) para la sucursal dada.
-router.get('/promotions', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/promotions', can('kitchen'), ah(async (req, res) => {
   const branchId = req.query.branch_id ? requireUuid(req.query.branch_id, 'branch_id') : null;
   const promotions = await withTenant(req.tenant.id, async (db) => {
     const rows = (await db.query(`SELECT ${COLS} FROM promotions WHERE restaurant_id = $1 ORDER BY active DESC, priority, name`, [req.tenant.id])).rows;
@@ -114,7 +114,7 @@ router.get('/promotions', requireRole(...ROLES.kitchen), ah(async (req, res) => 
   res.json({ promotions });
 }));
 
-router.post('/promotions', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/promotions', can('manage'), ah(async (req, res) => {
   const f = fields(req.body || {}, true);
   checkKind(f);
   const promotion = await withTenant(req.tenant.id, async (db) => {
@@ -126,7 +126,7 @@ router.post('/promotions', requireRole(...ROLES.manage), ah(async (req, res) => 
   res.status(201).json({ promotion });
 }));
 
-router.patch('/promotions/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/promotions/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const f = fields(req.body || {}, false);
   const set = buildSet(f, 3);
@@ -143,7 +143,7 @@ router.patch('/promotions/:id', requireRole(...ROLES.manage), ah(async (req, res
 }));
 
 // Una promocion que ya se aplico en ventas se desactiva en lugar de borrarse.
-router.delete('/promotions/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/promotions/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const used = await db.query('SELECT 1 FROM order_promotions WHERE promotion_id = $1 AND restaurant_id = $2 LIMIT 1', [req.params.id, req.tenant.id]);
@@ -207,7 +207,7 @@ const getVoucher = async (db, rid, id) => (await db.query(
   [id, rid],
 )).rows[0];
 
-router.get('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.get('/vouchers', can('manage'), ah(async (req, res) => {
   const vouchers = await withTenant(req.tenant.id, async (db) => (await db.query(
     `SELECT ${VOUCHER_COLS}, (SELECT count(*)::int FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS uses,
             (SELECT coalesce(sum(r.amount), 0) FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS discounted
@@ -217,7 +217,7 @@ router.get('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.json({ vouchers });
 }));
 
-router.post('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/vouchers', can('manage'), ah(async (req, res) => {
   const f = voucherFields(req.body || {}, true);
   checkVoucher(f);
   const voucher = await withTenant(req.tenant.id, async (db) => {
@@ -235,7 +235,7 @@ router.post('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ voucher });
 }));
 
-router.patch('/vouchers/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/vouchers/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const f = voucherFields(req.body || {}, false);
   const set = buildSet(f, 3);

@@ -14,7 +14,6 @@ import { withTenant } from '../../config/database.js';
 import { deductOrder } from '../../services/inventory.js';
 import { commitRedemption, countingCodeFailures, earnForOrder, prepareRedemption } from '../../services/loyalty.js';
 import { commitWalletPayment, prepareWalletPayment } from '../../services/wallet.js';
-import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { verifyApprovalPin, pinExpiresAt, pinFor, pinLocked } from '../../services/approvalPin.js';
 import { calculateOrderTotals, discountCents, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
@@ -25,6 +24,7 @@ import {
 } from '../../utils/http.js';
 import { ROLES, assertModule, canAccessBranch, int, isManager, moduleActive, requireBranch, uuidList } from './common.js';
 import { getSettings } from './settings.js';
+import { can, hasCapability } from '../../services/permissions.js';
 
 const router = Router();
 
@@ -351,7 +351,7 @@ async function afterRegisterPayment(db, restaurantId, orderId, paid) {
 // Rutas
 // ---------------------------------------------------------------------------
 
-router.get('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.get('/orders', can('orders'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const status = oneOf(req.query.status || 'activas', ['activas', 'pagada', 'cancelada', 'todas'], 'status');
   const date = req.query.date ? String(req.query.date) : null;
@@ -374,14 +374,14 @@ router.get('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
   res.json({ orders });
 }));
 
-router.get('/orders/:id', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/orders/:id', can('kitchen'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const order = await withTenant(req.tenant.id, (db) => loadOrder(db, req.tenant.id, req.params.id));
   if (!order || !canAccessBranch(req.user, order.branch_id)) throw notFound('Orden no encontrada', 'ORDER_NOT_FOUND');
   res.json({ order });
 }));
 
-router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.post('/orders', can('orders'), ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
   const orderType = oneOf(body.order_type, ORDER_TYPES, 'order_type');
@@ -460,7 +460,7 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
 }));
 
 // Datos del cliente, notas, comensales o cambio de mesa.
-router.patch('/orders/:id', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.patch('/orders/:id', can('orders'), ah(async (req, res) => {
   const body = req.body || {};
   try {
     const order = await withTenant(req.tenant.id, async (db) => {
@@ -495,7 +495,7 @@ router.patch('/orders/:id', requireRole(...ROLES.orders), ah(async (req, res) =>
   }
 }));
 
-router.post('/orders/:id/items', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.post('/orders/:id/items', can('orders'), ah(async (req, res) => {
   const inputs = readItemInputs((req.body || {}).items);
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -509,7 +509,7 @@ router.post('/orders/:id/items', requireRole(...ROLES.orders), ah(async (req, re
 }));
 
 // Cambiar cantidad o notas de un articulo que todavia no se envia a cocina.
-router.patch('/orders/:id/items/:itemId', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.patch('/orders/:id/items/:itemId', can('orders'), ah(async (req, res) => {
   requireUuid(req.params.itemId);
   const body = req.body || {};
   const quantity = int(body.quantity, { field: 'quantity', min: 1, max: 999 });
@@ -539,7 +539,7 @@ router.patch('/orders/:id/items/:itemId', requireRole(...ROLES.orders), ah(async
 
 // Quitar un articulo. Si no se ha enviado se borra; si ya se envio a cocina
 // solo admin/gerente lo pueden cancelar, con motivo.
-router.delete('/orders/:id/items/:itemId', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.delete('/orders/:id/items/:itemId', can('orders'), ah(async (req, res) => {
   requireUuid(req.params.itemId);
   const reason = str((req.body || {}).reason ?? req.query.reason, { field: 'reason', max: 300 });
   const order = await withTenant(req.tenant.id, async (db) => {
@@ -554,7 +554,7 @@ router.delete('/orders/:id/items/:itemId', requireRole(...ROLES.orders), ah(asyn
     if (!item.sent_at) {
       await db.query('DELETE FROM order_items WHERE id = $1 AND restaurant_id = $2', [item.id, req.tenant.id]);
     } else {
-      if (!isManager(req.user)) throw forbidden('Solo un gerente puede cancelar articulos ya enviados a cocina', 'ROLE_REQUIRED');
+      if (!(await hasCapability(req, 'voidSent'))) throw forbidden('Tu rol no puede quitar articulos ya enviados a cocina', 'ROLE_REQUIRED');
       if (!reason) throw badRequest('Escribe el motivo de la cancelacion', 'REASON_REQUIRED');
       await db.query(
         `UPDATE order_items SET voided_at = now(), voided_by = $3, void_reason = $4 WHERE id = $1 AND restaurant_id = $2`,
@@ -567,7 +567,7 @@ router.delete('/orders/:id/items/:itemId', requireRole(...ROLES.orders), ah(asyn
   res.json({ order });
 }));
 
-router.post('/orders/:id/send', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.post('/orders/:id/send', can('orders'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
@@ -591,7 +591,7 @@ router.post('/orders/:id/send', requireRole(...ROLES.orders), ah(async (req, res
 // Cocina marca como listo lo enviado hasta ahora. Con station_id solo lo de
 // esa estacion ("general" = lo que no tiene estacion); la orden queda lista
 // cuando ya no le queda nada pendiente.
-router.post('/orders/:id/ready', requireRole(...ROLES.kitchenReady), ah(async (req, res) => {
+router.post('/orders/:id/ready', can('kitchenReady'), ah(async (req, res) => {
   const raw = req.body?.station_id;
   const general = raw === 'general';
   const stationId = raw && !general ? requireUuid(raw, 'station_id') : null;
@@ -650,7 +650,7 @@ async function authorizeDiscount(db, req, pct, pin, what) {
 }
 
 // Aplicar un vale por su codigo ({ code }; null lo quita). Modulo "promociones".
-router.put('/orders/:id/voucher', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.put('/orders/:id/voucher', can('orders'), ah(async (req, res) => {
   const code = req.body?.code ? String(req.body.code) : null;
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -680,12 +680,12 @@ router.put('/orders/:id/voucher', requireRole(...ROLES.orders), ah(async (req, r
 }));
 
 // PIN vigente del gerente para dictarlo al cajero (cambia cada 10 minutos).
-router.get('/approval-pin', requireRole(...ROLES.manage), (req, res) => {
+router.get('/approval-pin', can('manage'), (req, res) => {
   res.json({ pin: pinFor(req.user.id), expires_at: pinExpiresAt() });
 });
 
 // Descuento a un articulo (en % o $ sobre su importe).
-router.put('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.put('/orders/:id/items/:itemId/discount', can('cashier'), ah(async (req, res) => {
   requireUuid(req.params.itemId, 'itemId');
   const body = req.body || {};
   const type = oneOf(body.type, ['amount', 'percent'], 'type');
@@ -715,7 +715,7 @@ router.put('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier), 
   res.json({ order });
 }));
 
-router.delete('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.delete('/orders/:id/items/:itemId/discount', can('cashier'), ah(async (req, res) => {
   requireUuid(req.params.itemId, 'itemId');
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -733,7 +733,7 @@ router.delete('/orders/:id/items/:itemId/discount', requireRole(...ROLES.cashier
 
 // Descuento a la cuenta: admin/gerente sin limite; cajero hasta el % de la
 // configuracion; meseros no.
-router.put('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.put('/orders/:id/discount', can('cashier'), ah(async (req, res) => {
   const body = req.body || {};
   const type = oneOf(body.type, ['amount', 'percent'], 'type');
   if (!type) throw badRequest('El tipo de descuento es obligatorio', 'MISSING_FIELD');
@@ -760,7 +760,7 @@ router.put('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (req,
   res.json({ order });
 }));
 
-router.delete('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.delete('/orders/:id/discount', can('cashier'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
@@ -778,7 +778,7 @@ router.delete('/orders/:id/discount', requireRole(...ROLES.cashier), ah(async (r
 }));
 
 // Cancelar con motivo. Un mesero solo cancela ordenes que no han ido a cocina.
-router.post('/orders/:id/cancel', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.post('/orders/:id/cancel', can('orders'), ah(async (req, res) => {
   const reason = str((req.body || {}).reason, { field: 'reason', required: true, max: 300 });
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -788,7 +788,7 @@ router.post('/orders/:id/cancel', requireRole(...ROLES.orders), ah(async (req, r
     if (await activeDeliveryOf(db, req.tenant.id, o.id)) {
       throw conflict('El pedido tiene un reparto en curso: cancela o termina el reparto primero', 'DELIVERY_IN_PROGRESS');
     }
-    if (!ROLES.cashier.includes(req.user.role) && o.sent_at) {
+    if (o.sent_at && !(await hasCapability(req, 'cancelSent'))) {
       throw forbidden('La orden ya se envio a cocina: pide a un cajero o gerente que la cancele', 'ROLE_REQUIRED');
     }
     // Cancelar un pedido en linea sin aceptar equivale a rechazarlo.
@@ -806,7 +806,7 @@ router.post('/orders/:id/cancel', requireRole(...ROLES.orders), ah(async (req, r
 // Cobro: uno o varios pagos (dividir cuenta). Se registran en el turno de
 // caja indicado (abierto y de la misma sucursal). Cuando el saldo llega a 0
 // la orden queda pagada.
-router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/orders/:id/payments', can('cashier'), ah(async (req, res) => {
   const body = req.body || {};
   const sessionId = requireUuid(body.cash_session_id, 'cash_session_id');
   if (!Array.isArray(body.payments)) throw badRequest('payments debe ser una lista', 'INVALID_FIELD');
@@ -973,7 +973,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
 // Pantalla de cocina: ordenes con algo enviado y pendiente. Con station_id
 // solo lo de esa estacion ("general" = articulos sin estacion). Cada orden
 // trae sus articulos enviados; is_new marca los pendientes.
-router.get('/kitchen', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/kitchen', can('kitchen'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const raw = req.query.station_id;
   const general = raw === 'general';

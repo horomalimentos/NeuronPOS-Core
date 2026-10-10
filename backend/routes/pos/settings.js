@@ -2,10 +2,10 @@
 // canales de venta (plataformas de delivery con su comision).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
 import { ROLES, assertModule, insertSql, int, moduleActive, uuidList } from './common.js';
 import { requireModule } from '../../middleware/requireModule.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
@@ -41,12 +41,12 @@ function percent(value, field) {
   return Math.round(n * 100) / 100;
 }
 
-router.get('/settings', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/settings', can('kitchen'), ah(async (req, res) => {
   const settings = await withTenant(req.tenant.id, (db) => getSettings(db, req.tenant.id));
   res.json({ settings });
 }));
 
-router.patch('/settings', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/settings', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const set = buildSet({
     tax_rate_pct: percent(body.tax_rate_pct, 'tax_rate_pct'),
@@ -71,7 +71,7 @@ router.patch('/settings', requireRole(...ROLES.manage), ah(async (req, res) => {
 // Metodos de pago
 // ---------------------------------------------------------------------------
 
-router.get('/payment-methods', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/payment-methods', can('kitchen'), ah(async (req, res) => {
   const methods = await withTenant(req.tenant.id, async (db) => (await db.query(
     `SELECT ${METHOD_COLS} FROM payment_methods WHERE restaurant_id = $1 ORDER BY sort_order, name`,
     [req.tenant.id],
@@ -92,7 +92,7 @@ function methodFields(body, creating) {
   return f;
 }
 
-router.post('/payment-methods', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/payment-methods', can('manage'), ah(async (req, res) => {
   const f = methodFields(req.body || {}, true);
   const q = insertSql('payment_methods', req.tenant.id, f, METHOD_COLS);
   const method = await withTenant(req.tenant.id, async (db) => {
@@ -102,7 +102,7 @@ router.post('/payment-methods', requireRole(...ROLES.manage), ah(async (req, res
   res.status(201).json({ payment_method: method });
 }));
 
-router.patch('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/payment-methods/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const fields = methodFields(req.body || {}, false);
   const set = buildSet(fields, 3);
@@ -126,7 +126,7 @@ router.patch('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req
 }));
 
 // Si ya tiene pagos registrados se desactiva en lugar de borrarse.
-router.delete('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/payment-methods/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const used = await db.query(
@@ -154,7 +154,7 @@ router.delete('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (re
 // Canales de venta (Rappi, Uber Eats, Didi...)
 // ---------------------------------------------------------------------------
 
-router.get('/channels', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+router.get('/channels', can('kitchen'), ah(async (req, res) => {
   const all = req.query.all === '1';
   // Sin el modulo no hay plataformas que elegir en la caja.
   const channels = await withTenant(req.tenant.id, async (db) => (!(await moduleActive(db, req.tenant.id, 'plataformas')) ? [] : (await db.query(
@@ -196,7 +196,7 @@ const duplicateChannel = (err) => {
   throw err;
 };
 
-router.post('/channels', requireModule('plataformas'), requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/channels', requireModule('plataformas'), can('manage'), ah(async (req, res) => {
   const f = channelFields(req.body || {}, true);
   const q = insertSql('sales_channels', req.tenant.id, f, CHANNEL_COLS);
   const channel = await withTenant(req.tenant.id, async (db) => {
@@ -206,7 +206,7 @@ router.post('/channels', requireModule('plataformas'), requireRole(...ROLES.mana
   res.status(201).json({ channel });
 }));
 
-router.patch('/channels/:id', requireModule('plataformas'), requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/channels/:id', requireModule('plataformas'), can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const f = channelFields(req.body || {}, false);
   const set = buildSet(f, 3);
@@ -224,7 +224,7 @@ router.patch('/channels/:id', requireModule('plataformas'), requireRole(...ROLES
 }));
 
 // Un canal con ventas se desactiva en lugar de borrarse.
-router.delete('/channels/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/channels/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const used = await db.query('SELECT 1 FROM orders WHERE channel_id = $1 AND restaurant_id = $2 LIMIT 1', [req.params.id, req.tenant.id]);

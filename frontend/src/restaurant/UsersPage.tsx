@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { ROLE_LABEL, formatDate } from '../lib/format';
 import type { Branch, Role, User } from '../lib/types';
 import { canManage, useAdmin } from './context';
+import PermissionsCard from './PermissionsCard';
 
 const ROLES = Object.keys(ROLE_LABEL) as Role[];
 
@@ -82,6 +83,7 @@ export default function UsersPage() {
           </table>
         </div>
       )}
+      <PermissionsCard isAdmin={isAdmin} />
       {editing && (
         <UserModal
           user={editing === 'new' ? null : editing}

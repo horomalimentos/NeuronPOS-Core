@@ -9,13 +9,13 @@ import { sendOrderRejected } from '../../services/emails.js';
 import { deductOrder } from '../../services/inventory.js';
 import { earnForOrder } from '../../services/loyalty.js';
 import { redeemOrderVoucher } from '../../services/vouchers.js';
-import { requireRole } from '../../middleware/auth.js';
 import { acceptOnlineOrder, getOnlineSettings } from '../../services/online.js';
 import { toCents } from '../../services/posMath.js';
 import { refundOrderWallet } from '../../services/wallet.js';
 import { HttpError, ah, badRequest, oneOf, str } from '../../utils/http.js';
 import { ROLES, int, requireBranch } from './common.js';
 import { assertActive, loadItems, loadOrder, lockOrder } from './orders.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
@@ -38,7 +38,7 @@ const LIST_SQL = `
          o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason
     FROM orders o`;
 
-router.get('/online-orders', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.get('/online-orders', can('orders'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const status = oneOf(req.query.status || 'activas', ['pendientes', 'activas', 'todas'], 'status');
   // Los que esperan el pago en linea todavia no existen para el restaurante.
@@ -68,7 +68,7 @@ router.get('/online-orders', requireRole(...ROLES.orders), ah(async (req, res) =
   res.json(data);
 }));
 
-router.post('/online-orders/:id/accept', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/accept', can('cashier'), ah(async (req, res) => {
   const prep = int((req.body || {}).prep_time_minutes, { field: 'prep_time_minutes', min: 1, max: 600 });
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -84,7 +84,7 @@ router.post('/online-orders/:id/accept', requireRole(...ROLES.cashier), ah(async
 }));
 
 // Rechazar: requiere motivo, que el cliente ve en su seguimiento.
-router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/reject', can('cashier'), ah(async (req, res) => {
   const reason = str((req.body || {}).reason, { field: 'reason', required: true, max: 300 });
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -114,7 +114,7 @@ router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async
 }));
 
 // Domicilio: el pedido salio con el repartidor (el cliente lo ve "en camino").
-router.post('/online-orders/:id/dispatch', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/dispatch', can('cashier'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     if (o.source !== 'web') throw notWeb();
@@ -132,7 +132,7 @@ router.post('/online-orders/:id/dispatch', requireRole(...ROLES.cashier), ah(asy
 
 // Pedido pagado en linea: al entregarlo (o recogerlo) se cierra sin pasar por
 // caja, porque el dinero ya esta en la cuenta de Clip del restaurante.
-router.post('/online-orders/:id/deliver', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/deliver', can('cashier'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     if (o.source !== 'web') throw notWeb();

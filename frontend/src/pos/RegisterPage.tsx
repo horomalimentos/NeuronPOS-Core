@@ -407,7 +407,7 @@ export default function RegisterPage() {
                   {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && posCan.cashier(role) && (
                     <button onClick={() => setDiscountItem(it)} className="rounded p-1 text-gray-500 hover:text-emerald-300" aria-label="Descuento al artículo" title="Descuento al artículo"><Tag className="h-3.5 w-3.5" /></button>
                   )}
-                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && (!it.sent_at || posCan.manage(role)) && (
+                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && (!it.sent_at || posCan.voidSent(role)) && (
                     <button onClick={() => removeItem(it.id, Boolean(it.sent_at))} className="rounded p-1 text-gray-500 hover:text-red-300" aria-label="Quitar"><Trash2 className="h-3.5 w-3.5" /></button>
                   )}
                 </div>

@@ -14,7 +14,7 @@ import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { invCan } from '../inventory/lib';
 import ApprovalPinButton from '../pos/ApprovalPin';
-import { posCan } from '../pos/lib';
+import { posCan, setSessionCapabilities } from '../pos/lib';
 import type { Me } from '../lib/types';
 import { canManage, type AdminContext } from './context';
 
@@ -29,6 +29,7 @@ export default function AdminLayout() {
   const reload = useCallback(() => {
     api<Me>('/me')
       .then((m) => {
+        setSessionCapabilities(m.capabilities);
         setMe(m);
         applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
         document.title = `${m.restaurant.name} · NeuronPOS`;

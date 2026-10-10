@@ -8,6 +8,7 @@ import { env } from './config/env.js';
 import { resolveTenant } from './middleware/tenant.js';
 import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
+import permissionsRouter from './routes/permissions.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
@@ -112,6 +113,7 @@ export function createApp() {
   app.use('/api/recognition', recognitionRouter);
   // Fase 5: domicilios (reparto en caja, app del repartidor propio, cortes).
   app.use('/api/delivery', deliveryRouter);
+  app.use('/api/permissions', permissionsRouter);
   // Inventario y compras (modulo 'inventario').
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);

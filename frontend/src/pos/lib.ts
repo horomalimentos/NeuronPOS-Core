@@ -39,13 +39,21 @@ export const METHOD_KIND_LABEL: Record<MethodKind, string> = {
 /** Tipos que se pueden elegir al crear o editar un método (el de Clip lo pone el sistema). */
 export const EDITABLE_METHOD_KINDS: MethodKind[] = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
 
-const can = (roles: Role[]) => (role: Role) => roles.includes(role);
+// Capacidades de la sesion (de /api/me, con los permisos del restaurante).
+// Antes de cargarlas se usan los valores por omision de cada rol.
+let sessionCaps: Set<string> | null = null;
+export const setSessionCapabilities = (caps: string[] | undefined) => { sessionCaps = caps ? new Set(caps) : null; };
+
+const can = (key: string, roles: Role[]) => (role: Role) => (role === 'admin' || (sessionCaps ? sessionCaps.has(key) : roles.includes(role)));
 export const posCan = {
-  manage: can(['admin', 'gerente']),
-  orders: can(['admin', 'gerente', 'cajero', 'mesero']),
-  cashier: can(['admin', 'gerente', 'cajero']),
-  kitchen: can(['admin', 'gerente', 'cajero', 'mesero', 'cocina']),
-  kitchenReady: can(['admin', 'gerente', 'cocina']),
+  manage: can('manage', ['admin', 'gerente']),
+  orders: can('orders', ['admin', 'gerente', 'cajero', 'mesero']),
+  cashier: can('cashier', ['admin', 'gerente', 'cajero']),
+  kitchen: can('kitchen', ['admin', 'gerente', 'cajero', 'mesero', 'cocina']),
+  kitchenReady: can('kitchenReady', ['admin', 'gerente', 'cocina']),
+  availability: can('availability', ['admin', 'gerente', 'cajero']),
+  voidSent: can('voidSent', ['admin', 'gerente']),
+  cancelSent: can('cancelSent', ['admin', 'gerente', 'cajero']),
 };
 
 function read(key: string) {
