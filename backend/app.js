@@ -29,6 +29,8 @@ import feedbackRouter from './routes/feedback.js';
 import usersRouter from './routes/users.js';
 import webhooksRouter from './routes/webhooks.js';
 import websiteRouter from './routes/website.js';
+import whatsappRouter from './routes/whatsapp.js';
+import whatsappWebhookRouter from './routes/whatsappWebhook.js';
 import { errorHandler, notFound } from './utils/http.js';
 
 export function createApp() {
@@ -60,6 +62,8 @@ export function createApp() {
   app.use('/api/platform/auth', platformAuthRouter);
   app.use('/api/platform', platformRouter);
   // Webhooks de Clip (fase 3): el restaurante va en la ruta, no en el Host.
+  // Webhook de WhatsApp (modulo whatsapp): un URL para todos; se enruta por numero.
+  app.use('/api/webhooks/whatsapp', whatsappWebhookRouter);
   app.use('/api/webhooks', webhooksRouter);
   // Instaladores de NeuronPOS / Neuron KDS (escritorio y Android) y los
   // archivos de actualizacion automatica. Los "latest*" nunca se cachean.
@@ -111,6 +115,7 @@ export function createApp() {
   app.use('/api/wallet', walletRouter);
   app.use('/api/push', pushRouter);
   app.use('/api/feedback', feedbackRouter);
+  app.use('/api/whatsapp', whatsappRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

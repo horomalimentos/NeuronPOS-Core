@@ -65,6 +65,11 @@ export const env = {
   mailFrom: process.env.MAIL_FROM || 'NeuronPOS <no-reply@neuronpos.app>',
   // Contacto que piden los servicios de push (Apple rechaza dominios locales).
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:soporte@neuronpos.app',
+  // Bot de WhatsApp: app de Meta de la plataforma (un restaurante con app
+  // propia guarda su app secret en su configuracion).
+  whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
+  whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
+  whatsappGraphUrl: (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0').replace(/\/+$/, ''),
 
   // Instaladores de las apps (deploy/instaladores.sh) servidos en /api/descargas.
   downloadsDir: process.env.DOWNLOADS_DIR

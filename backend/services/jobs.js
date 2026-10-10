@@ -8,6 +8,7 @@
 //   - Pedidos sin pagar (cada minuto): cancela los que pasaron su tiempo.
 //   - Pedidos programados (cada minuto): entran a cocina antes de su hora.
 //   - Notificaciones push (cada 30 s): respaldo del LISTEN; limpieza cada hora.
+//   - Avisos por WhatsApp de pedidos del bot (cada 10 s); limpieza cada hora.
 //   - Empleado del mes (cada hora): desde el dia 1 cierra el mes anterior de
 //     los restaurantes con cierre automatico (idempotente).
 //
@@ -20,6 +21,7 @@ import { releaseScheduledOrders } from './scheduledOrders.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
 import { runRecognitionCycle } from './rh/recognition.js';
 import { runBillingCycle } from './subscriptions.js';
+import { cleanupWhatsApp, dispatchWhatsAppOutbox } from './whatsapp/notify.js';
 
 function every(name, ms, fn) {
   let running = false;
@@ -49,9 +51,11 @@ export function startJobs() {
     every('pedidos-programados', 60 * 1000, () => releaseScheduledOrders()),
     every('push', 30 * 1000, () => dispatchPushOutbox()),
     every('push-limpieza', 60 * 60 * 1000, () => cleanupPush()),
+    every('whatsapp', 10 * 1000, () => dispatchWhatsAppOutbox()),
+    every('whatsapp-limpieza', 60 * 60 * 1000, () => cleanupWhatsApp()),
   ];
   startPushListener();
   if (env.billingAuto) timers.push(every('cobro', 60 * 60 * 1000, () => runBillingCycle()));
-  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip, pedidos programados, notificaciones push, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
+  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip, pedidos programados, notificaciones push, avisos por WhatsApp, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
   return timers;
 }
