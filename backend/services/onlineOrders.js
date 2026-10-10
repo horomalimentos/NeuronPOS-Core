@@ -109,6 +109,9 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
   if (input.order_type === 'domicilio' && !branch.delivery_enabled) {
     throw badRequest('Esta sucursal no entrega a domicilio', 'ORDER_TYPE_UNAVAILABLE');
   }
+  if (branch.status.paused_until) {
+    throw conflict(branch.status.paused_message || `${branch.name} no esta recibiendo pedidos en linea por el momento. Intenta mas tarde.`, 'BRANCH_PAUSED');
+  }
   let scheduledFor = null;
   if (input.scheduled_for) {
     if (!mods.programados) throw badRequest('Este restaurante no recibe pedidos programados', 'SCHEDULING_UNAVAILABLE');

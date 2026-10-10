@@ -293,6 +293,12 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - Precios siempre del lado del servidor: el cliente manda producto,
   cantidad, modificadores y notas. Se validan mínimo/máximo por grupo y la
   disponibilidad en la sucursal. Nombre y precios se copian a la orden.
+- **Agotados** (botón en la pantalla de venta; admin, gerente y cajero): un
+  producto se marca agotado en la sucursal por 30 min, 1, 2 o 4 horas (vuelve
+  solo a esa hora) o hasta reactivarlo; la tarjeta muestra "Agotado hasta…".
+- **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
+  cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
+  pedidos, mientras la caja sigue vendiendo.
 - Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
   dirección del cliente; la logística de reparto llega con el módulo
   Domicilios). Folio consecutivo por sucursal.

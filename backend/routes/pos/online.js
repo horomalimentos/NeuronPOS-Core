@@ -28,6 +28,50 @@ function assertNotAwaitingPayment(o) {
   }
 }
 
+// Pausa temporal de pedidos en linea de una sucursal (cocina saturada, sin
+// repartidor...): el portal la muestra cerrada con el mensaje hasta esa hora.
+async function pauseState(db, rid, branchId) {
+  const r = (await db.query(
+    `SELECT CASE WHEN paused_until > now() THEN paused_until END AS paused_until,
+            CASE WHEN paused_until > now() THEN paused_message END AS paused_message
+       FROM branch_online_settings WHERE branch_id = $1 AND restaurant_id = $2`,
+    [branchId, rid],
+  )).rows[0];
+  return { paused_until: r?.paused_until ?? null, paused_message: r?.paused_message ?? null };
+}
+
+router.get('/online-pause', can('orders'), ah(async (req, res) => {
+  const branchId = requireBranch(req, req.query.branch_id);
+  res.json(await withTenant(req.tenant.id, (db) => pauseState(db, req.tenant.id, branchId)));
+}));
+
+router.put('/online-pause', can('availability'), ah(async (req, res) => {
+  const b = req.body || {};
+  const branchId = requireBranch(req, b.branch_id);
+  const minutes = Number(b.minutes);
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 24 * 60) throw badRequest('La pausa debe ser de 5 minutos a 24 horas', 'INVALID_FIELD');
+  const message = str(b.message, { field: 'message', max: 200 }) || null;
+  const data = await withTenant(req.tenant.id, async (db) => {
+    await db.query(
+      `INSERT INTO branch_online_settings (restaurant_id, branch_id, paused_until, paused_message)
+       VALUES ($1, $2, now() + make_interval(mins => $3::int), $4)
+       ON CONFLICT (branch_id) DO UPDATE SET paused_until = EXCLUDED.paused_until, paused_message = EXCLUDED.paused_message, updated_at = now()`,
+      [req.tenant.id, branchId, minutes, message],
+    );
+    return pauseState(db, req.tenant.id, branchId);
+  });
+  res.json(data);
+}));
+
+router.delete('/online-pause', can('availability'), ah(async (req, res) => {
+  const branchId = requireBranch(req, req.query.branch_id);
+  const data = await withTenant(req.tenant.id, async (db) => {
+    await db.query('UPDATE branch_online_settings SET paused_until = NULL, paused_message = NULL, updated_at = now() WHERE branch_id = $1 AND restaurant_id = $2', [branchId, req.tenant.id]);
+    return pauseState(db, req.tenant.id, branchId);
+  });
+  res.json(data);
+}));
+
 const LIST_SQL = `
   SELECT o.id, o.branch_id, o.folio, o.order_type, o.status, o.online_status, o.customer_id,
          o.customer_name, o.customer_phone, o.customer_address, o.delivery_reference, o.notes,

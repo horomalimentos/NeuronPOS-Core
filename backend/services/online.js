@@ -20,7 +20,9 @@ export async function loadBranches(db, restaurantId, { onlyActive = true, now = 
     `SELECT b.id, b.name, b.address, b.phone, b.timezone, b.active,
             coalesce(s.online_enabled, true) AS online_enabled,
             coalesce(s.delivery_enabled, true) AS delivery_enabled,
-            coalesce(s.delivery_fee, 0) AS delivery_fee
+            coalesce(s.delivery_fee, 0) AS delivery_fee,
+            CASE WHEN s.paused_until > now() THEN s.paused_until END AS paused_until,
+            CASE WHEN s.paused_until > now() THEN s.paused_message END AS paused_message
        FROM branches b
        LEFT JOIN branch_online_settings s ON s.branch_id = b.id AND s.restaurant_id = b.restaurant_id
       WHERE b.restaurant_id = $1 ${onlyActive ? 'AND b.active' : ''}
@@ -50,9 +52,15 @@ export async function loadBranches(db, restaurantId, { onlyActive = true, now = 
       hours: h,
       closures: c,
       maps_url: mapsUrl(b.address),
-      status: branchOpenState({ hours: h, closures: c.map((x) => x.closed_on), timezone: b.timezone }, now),
+      status: pausedState(branchOpenState({ hours: h, closures: c.map((x) => x.closed_on), timezone: b.timezone }, now), b),
     };
   });
+}
+
+/** Pausa temporal de pedidos en linea: la sucursal se ve cerrada hasta esa hora. */
+function pausedState(state, b) {
+  if (!b.paused_until) return state;
+  return { ...state, open: false, paused_until: b.paused_until, paused_message: b.paused_message };
 }
 
 export const mapsUrl = (address) => (address
@@ -71,6 +79,8 @@ export function publicBranch(b) {
     hours: b.hours.map((h) => ({ ...h, opens_at: hhmm(h.opens_at), closes_at: hhmm(h.closes_at) })),
     closures: b.closures,
     open_now: b.status.open,
+    paused_until: b.status.paused_until ?? null,
+    paused_message: b.status.paused_message ?? null,
     today: b.status.today,
     closed_today: b.status.closed_today,
   };

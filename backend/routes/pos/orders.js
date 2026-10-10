@@ -223,7 +223,7 @@ export async function priceItems(db, restaurantId, branchId, inputs) {
   const itemIds = [...new Set(inputs.map((i) => i.menu_item_id))];
   const menuItems = new Map((await db.query(
     `SELECT i.id, i.name, i.price, i.active,
-            coalesce(b.available, true) AS available,
+            coalesce(b.available OR coalesce(b.unavailable_until <= now(), false), true) AS available,
             coalesce(i.station_id, c.station_id) AS station_id
        FROM menu_items i
        LEFT JOIN menu_categories c ON c.id = i.category_id AND c.restaurant_id = i.restaurant_id

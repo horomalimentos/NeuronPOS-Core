@@ -50,6 +50,8 @@ export interface MenuItem {
   modifier_group_ids: string[];
   unavailable_branch_ids: string[];
   available: boolean;
+  /** Agotado con hora de regreso en la sucursal consultada. */
+  available_at?: string | null;
   /** null = la de su categoria. */
   station_id: string | null;
 }

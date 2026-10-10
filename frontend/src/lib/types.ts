@@ -211,6 +211,9 @@ export interface PublicBranch {
   hours: BranchHours[];
   closures: BranchClosure[];
   open_now: boolean;
+  /** Pausa temporal de pedidos en linea (cocina saturada...). */
+  paused_until?: string | null;
+  paused_message?: string | null;
   today: { opens_at: string; closes_at: string } | null;
   closed_today: boolean;
 }

@@ -24,6 +24,7 @@ import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
 import VoucherModal from './VoucherModal';
 import DeviceBanner from './DeviceBanner';
+import SoldOutModal from './SoldOutModal';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -86,6 +87,7 @@ export default function RegisterPage() {
   const [discountItem, setDiscountItem] = useState<OrderItem | null>(null);
   const [voucherOpen, setVoucherOpen] = useState(false);
   const doVoucher = () => run(async () => { if (await save()) setVoucherOpen(true); });
+  const [soldOut, setSoldOut] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const inOrder = Boolean(draft || order);
@@ -341,6 +343,7 @@ export default function RegisterPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               <input className="input pl-9" placeholder="Buscar producto" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+            {posCan.availability(role) && <Button variant="secondary" onClick={() => setSoldOut(true)}><Ban className="h-4 w-4" /> Agotados</Button>}
           </div>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             {[{ id: '', name: 'Todo' }, ...menu.categories].map((c) => (
@@ -361,9 +364,9 @@ export default function RegisterPage() {
                     {it.image_url
                       ? <img src={it.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
                       : <ImageIcon className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 text-gray-600" />}
-                    {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
+                    {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado{it.available_at ? ` hasta ${formatTime(it.available_at)}` : ''}</span>}
                   </div>
-                ) : !it.available && <span className="bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
+                ) : !it.available && <span className="bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado{it.available_at ? ` hasta ${formatTime(it.available_at)}` : ''}</span>}
                 <div className="flex flex-1 flex-col p-2">
                   <span className="line-clamp-2 text-sm font-medium leading-tight text-white">{it.name}</span>
                   <span className="mt-auto pt-1 text-sm text-gray-400">{formatMXN(it.price)}</span>
@@ -499,6 +502,10 @@ export default function RegisterPage() {
         </button>
       )}
       {voucherOpen && order && <VoucherModal order={order} onClose={() => setVoucherOpen(false)} onSaved={(o) => { setVoucherOpen(false); setOrder(o); }} />}
+      {soldOut && menu && (
+        <SoldOutModal menu={menu} branchId={branchId} onClose={() => setSoldOut(false)}
+          onChanged={(it) => setMenu((m) => (m ? { ...m, items: m.items.map((x) => (x.id === it.id ? it : x)) } : m))} />
+      )}
       {discountItem && order && (
         <DiscountModal order={order} item={discountItem} maxPct={maxPct} onClose={() => setDiscountItem(null)}
           onSaved={(o) => { setDiscountItem(null); setOrder(o); }} />

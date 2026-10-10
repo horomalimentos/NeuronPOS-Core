@@ -93,7 +93,10 @@ export default function OrderPage() {
         </div>
       )}
       {branch && config.ordering_available && !branch.accepts_orders && <Notice>Esta sucursal no recibe pedidos en línea.</Notice>}
-      {branch && canOrder && !branch.open_now && (
+      {branch && canOrder && branch.paused_until && (
+        <Notice>{branch.paused_message || `${branch.name} no está recibiendo pedidos en línea por el momento.`} Vuelve después de las {new Date(branch.paused_until).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}.</Notice>
+      )}
+      {branch && canOrder && !branch.open_now && !branch.paused_until && (
         <Notice>{branch.name} está cerrada en este momento: puedes armar tu pedido y enviarlo cuando abra.</Notice>
       )}
 

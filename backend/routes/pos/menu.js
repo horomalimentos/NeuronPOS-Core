@@ -32,7 +32,10 @@ export async function loadMenu(db, restaurantId, { branchId = null, includeInact
             coalesce((SELECT array_agg(g.modifier_group_id ORDER BY g.sort_order)
                         FROM menu_item_modifier_groups g WHERE g.menu_item_id = i.id), '{}') AS modifier_group_ids,
             coalesce((SELECT array_agg(b.branch_id) FROM menu_item_branches b
-                       WHERE b.menu_item_id = i.id AND NOT b.available), '{}') AS unavailable_branch_ids
+                       WHERE b.menu_item_id = i.id AND NOT b.available
+                         AND (b.unavailable_until IS NULL OR b.unavailable_until > now())), '{}') AS unavailable_branch_ids,
+            (SELECT jsonb_object_agg(b.branch_id, b.unavailable_until) FROM menu_item_branches b
+              WHERE b.menu_item_id = i.id AND NOT b.available AND b.unavailable_until > now()) AS unavailable_until
        FROM menu_items i
       WHERE i.restaurant_id = $1 ${includeInactive ? '' : 'AND i.active'}
       ORDER BY i.sort_order, i.name`,
@@ -40,6 +43,8 @@ export async function loadMenu(db, restaurantId, { branchId = null, includeInact
   )).rows.map((it) => ({
     ...it,
     available: branchId ? !it.unavailable_branch_ids.includes(branchId) : true,
+    // Agotado con hora de regreso en esta sucursal (o null).
+    available_at: branchId ? it.unavailable_until?.[branchId] ?? null : null,
   }));
   const groups = (await db.query(
     `SELECT ${GROUP_COLS} FROM modifier_groups WHERE restaurant_id = $1 ${onlyActive} ORDER BY sort_order, name`,
@@ -208,7 +213,10 @@ async function getItem(db, restaurantId, id) {
             coalesce((SELECT array_agg(g.modifier_group_id ORDER BY g.sort_order)
                         FROM menu_item_modifier_groups g WHERE g.menu_item_id = i.id), '{}') AS modifier_group_ids,
             coalesce((SELECT array_agg(b.branch_id) FROM menu_item_branches b
-                       WHERE b.menu_item_id = i.id AND NOT b.available), '{}') AS unavailable_branch_ids
+                       WHERE b.menu_item_id = i.id AND NOT b.available
+                         AND (b.unavailable_until IS NULL OR b.unavailable_until > now())), '{}') AS unavailable_branch_ids,
+            (SELECT jsonb_object_agg(b.branch_id, b.unavailable_until) FROM menu_item_branches b
+              WHERE b.menu_item_id = i.id AND NOT b.available AND b.unavailable_until > now()) AS unavailable_until
        FROM menu_items i WHERE id = $1 AND restaurant_id = $2`,
     [id, restaurantId],
   );
@@ -262,17 +270,25 @@ router.put('/items/:id/availability', can('availability'), ah(async (req, res) =
   const branchId = requireBranch(req, body.branch_id);
   const available = bool(body.available, 'available');
   if (available === undefined) throw badRequest('El campo "available" es obligatorio', 'MISSING_FIELD');
+  // Agotado por un rato: { minutes } (1 a 7 dias). Sin minutos = hasta reactivarlo.
+  let until = null;
+  if (!available && body.minutes !== undefined && body.minutes !== null) {
+    const m = Number(body.minutes);
+    if (!Number.isInteger(m) || m < 1 || m > 7 * 24 * 60) throw badRequest('Los minutos deben ser de 1 a 10080', 'INVALID_FIELD');
+    until = new Date(Date.now() + m * 60000);
+  }
   await withTenant(req.tenant.id, async (db) => {
     if (!(await getItem(db, req.tenant.id, req.params.id))) throw notFound('Producto no encontrado', 'ITEM_NOT_FOUND');
     await assertBranchExists(db, req.tenant.id, branchId);
     await db.query(
-      `INSERT INTO menu_item_branches (restaurant_id, menu_item_id, branch_id, available)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (menu_item_id, branch_id) DO UPDATE SET available = EXCLUDED.available, updated_at = now()`,
-      [req.tenant.id, req.params.id, branchId, available],
+      `INSERT INTO menu_item_branches (restaurant_id, menu_item_id, branch_id, available, unavailable_until)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (menu_item_id, branch_id) DO UPDATE SET available = EXCLUDED.available,
+         unavailable_until = EXCLUDED.unavailable_until, updated_at = now()`,
+      [req.tenant.id, req.params.id, branchId, available, until],
     );
   });
-  res.json({ ok: true, available });
+  res.json({ ok: true, available, available_at: until });
 }));
 
 // Si el producto ya se vendio no se puede borrar (las ventas lo referencian):

@@ -133,7 +133,7 @@ router.get('/menu', ah(async (req, res) => {
   const categoryIds = new Set(menu.categories.map((c) => c.id));
   const items = menu.items
     .filter((i) => categoryIds.has(i.category_id))
-    .map(({ unavailable_branch_ids, active, sort_order, ...i }) => i);
+    .map(({ unavailable_branch_ids, unavailable_until, active, sort_order, ...i }) => i);
   const usedGroups = new Set(items.flatMap((i) => i.modifier_group_ids));
   res.json({
     categories: menu.categories.map(({ id, name, description }) => ({ id, name, description })),
