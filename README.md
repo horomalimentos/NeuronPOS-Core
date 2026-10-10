@@ -654,6 +654,23 @@ la base:
   (`coveringDrivers`, Haversine en SQL). Lo usa la fase 2 para no dejar pedir
   si nadie cubre.
 
+**Fase 2 (el cliente pide):** en `/delivery` el cliente elige dónde le
+entregan (GPS, búsqueda o mapa) y ve los restaurantes cercanos con su envío,
+distancia y tiempo. Solo se puede pedir si la ficha está visible, la sucursal
+abierta, la distancia cabe en la tabla y **hay un repartidor aprobado, en
+turno, cuyo radio cubre al restaurante**; si no, aparece como "Sin
+repartidores cerca" y el servidor rechaza el pedido (`NO_DRIVERS`). El menú
+(`/delivery/r/:branchId`) usa el modal de productos del portal; el carrito
+vive en el navegador y el servidor revalúa todo (precios, modificadores,
+mínimo, efectivo suficiente). El pedido se guarda en el restaurante como
+pedido en línea a domicilio (`orders.channel = 'marketplace'`, lo ve también
+su POS) y en `marketplace_orders` con el envío y su reparto (80/20 copiado al
+pedir). El cliente sigue su pedido en `/delivery/pedido/:token`. El
+restaurante lo acepta, rechaza con motivo o marca listo en `/admin/delivery`
+(o desde su POS: un trigger sincroniza aceptar, rechazar, cancelar y listo).
+Por ahora solo efectivo; la tarjeta con Clip entra con los ajustes del
+repartidor (fase 3).
+
 Dinero (fases 2 y 3): en efectivo el repartidor cobra al cliente, paga la
 comida en el restaurante y se queda el envío; el 20 % de NeuronPOS se le suma
 como adeudo. En tarjeta (Clip de NeuronPOS) el repartidor también paga la
@@ -670,6 +687,12 @@ API:
 | GET | `/api/marketplace/listings` | restaurante |
 | PUT | `/api/marketplace/listings/:branchId` | admin/gerente |
 | POST | `/api/marketplace/listings/:branchId/pause` | admin/gerente/cajero |
+| GET | `/api/marketplace/restaurants?lat&lng` | público (cercanos) |
+| GET | `/api/marketplace/restaurants/:branchId` | público (ficha y menú) |
+| POST | `/api/marketplace/quote`, `/api/marketplace/orders` | público (cotizar y pedir) |
+| GET | `/api/marketplace/orders/:token` | público (seguimiento) |
+| GET | `/api/marketplace/orders` | restaurante (pedidos de Delivery) |
+| POST | `/api/marketplace/orders/:id/accept`, `/reject`, `/ready` | admin/gerente/cajero |
 | PUT | `/api/fleet/zone` | repartidor (epicentro y radio) |
 | GET/PUT | `/api/platform/marketplace/settings` | Panel |
 | PUT | `/api/platform/marketplace/fee-tiers` | Panel |

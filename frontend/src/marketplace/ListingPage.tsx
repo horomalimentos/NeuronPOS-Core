@@ -6,6 +6,7 @@ import { Alert, Button, Field, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
+import DeliveryOrders from './DeliveryOrders';
 import type { Listing } from './lib';
 
 /**
@@ -26,6 +27,7 @@ export default function ListingPage() {
     <>
       <PageHeader title="NeuronPOS Delivery" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
       {error && <Alert>{error}</Alert>}
+      {listings?.some((l) => l.published) && <DeliveryOrders />}
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
           {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
