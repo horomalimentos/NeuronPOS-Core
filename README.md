@@ -880,7 +880,9 @@ calculado en la zona horaria de la sucursal), redes y pie. `<title>` y meta
 description/og se fijan por restaurante al cargar (`seo_title`,
 `seo_description`). Sin el módulo, `/` muestra solo el nombre y el enlace para
 ordenar (si tiene portal) o "Sitio no disponible". Se edita en
-**Admin → Sitio web**; las imágenes son URLs por ahora.
+**Admin → Sitio web**; las imágenes son URLs por ahora. Opcional: **portada en
+carrusel** (rota entre las fotos de la galería cada 5 s) y **platillos destacados**
+(hasta 8 productos del menú, en el orden elegido; los desactivados no salen).
 
 **Portal de clientes (módulo `portal`)**: registro, inicio de sesión,
 perfil, direcciones, historial y seguimiento con estado en vivo (sondeo cada
