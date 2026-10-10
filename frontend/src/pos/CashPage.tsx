@@ -1,7 +1,7 @@
 import { ArrowDownCircle, ArrowUpCircle, Lock, Printer, Unlock } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Modal, PageHeader, Spinner } from '../components/ui';
-import { api, errorMessage } from '../lib/api';
+import { ApiError, api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
@@ -202,19 +202,31 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
     if (!window.confirm('¿Cerrar la caja con este corte?')) return;
     setBusy(true);
     setError('');
+    const send = (force: boolean) => api<CashSessionDetail>(`/pos/cash-sessions/${session.id}/close`, {
+      method: 'POST',
+      body: {
+        counts: cut.methods.filter((m) => counts[m.payment_method_id] !== undefined && counts[m.payment_method_id] !== '')
+          .map((m) => ({ payment_method_id: m.payment_method_id, counted: num(counts[m.payment_method_id]) })),
+        notes: notes || null,
+        count_detail: Object.keys(countDetail).length ? countDetail : undefined,
+        force: force || undefined,
+      },
+    });
     try {
-      const r = await api<CashSessionDetail>(`/pos/cash-sessions/${session.id}/close`, {
-        method: 'POST',
-        body: {
-          counts: cut.methods.filter((m) => counts[m.payment_method_id] !== undefined && counts[m.payment_method_id] !== '')
-            .map((m) => ({ payment_method_id: m.payment_method_id, counted: num(counts[m.payment_method_id]) })),
-          notes: notes || null,
-          count_detail: Object.keys(countDetail).length ? countDetail : undefined,
-        },
-      });
-      onClosed(r);
+      onClosed(await send(false));
     } catch (err) {
-      setError(errorMessage(err));
+      // Ultima caja de la sucursal con cuentas sin cobrar: se avisa cuales.
+      const open = err instanceof ApiError && err.code === 'OPEN_ORDERS' ? (err.data?.orders as { folio: number; table_name: string | null; customer_name: string | null; total: string }[]) : null;
+      if (open && window.confirm(`${err instanceof Error ? err.message : ''}:\n\n${open.map((o) => `• Folio ${o.folio}${o.table_name ? ` · Mesa ${o.table_name}` : ''}${o.customer_name ? ` · ${o.customer_name}` : ''} · ${formatMXN(o.total)}`).join('\n')}\n\n¿Cerrar la caja de todos modos?`)) {
+        try {
+          onClosed(await send(true));
+          return;
+        } catch (err2) {
+          setError(errorMessage(err2));
+        }
+      } else if (!open) {
+        setError(errorMessage(err));
+      }
       setBusy(false);
     }
   }

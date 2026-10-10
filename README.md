@@ -302,6 +302,8 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - **Cocina**: los minutos para amarillo y rojo se configuran en Ajustes del POS. La
   pestaña **Listas** muestra lo preparado en las últimas 12 horas con **Regresar a
   cocina** (por estación; una orden "lista" vuelve a "enviada").
+- **Cierre de caja**: si es la última caja abierta de la sucursal y quedan órdenes
+  sin cobrar, el corte avisa cuáles (`OPEN_ORDERS`) y pide confirmar (`force`).
 - Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
   dirección del cliente; la logística de reparto llega con el módulo
   Domicilios). Folio consecutivo por sucursal.

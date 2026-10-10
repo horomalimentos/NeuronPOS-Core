@@ -184,6 +184,27 @@ router.post('/cash-sessions/:id/close', cashier, requireDevice, ah(async (req, r
     if (missing.length) {
       throw badRequest(`Captura lo contado en: ${missing.map((m) => m.name).join(', ')}`, 'MISSING_COUNTS');
     }
+    // Ultima caja abierta de la sucursal con ordenes sin cobrar: se avisa y se
+    // pide confirmar (force) para no dejar cuentas olvidadas.
+    if (body.force !== true) {
+      const others = await db.query(
+        "SELECT 1 FROM cash_sessions WHERE restaurant_id = $1 AND branch_id = $2 AND status = 'abierta' AND id <> $3 LIMIT 1",
+        [req.tenant.id, s.branch_id, s.id],
+      );
+      if (!others.rowCount) {
+        const open = (await db.query(
+          `SELECT o.id, o.folio, o.order_type, t.name AS table_name, o.customer_name, o.total, o.paid_amount
+             FROM orders o LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
+            WHERE o.restaurant_id = $1 AND o.branch_id = $2 AND o.status IN ('abierta', 'enviada', 'lista')
+              AND (o.source <> 'web' OR o.online_status = 'aceptada')
+            ORDER BY o.created_at`,
+          [req.tenant.id, s.branch_id],
+        )).rows;
+        if (open.length) {
+          throw new HttpError(409, `Quedan ${open.length} orden(es) sin cobrar en la sucursal`, 'OPEN_ORDERS', { orders: open });
+        }
+      }
+    }
     const cut = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash, counts, usdRate: s.usd_rate });
     cut.orders_count = new Set(payments.map((p) => p.order_id)).size;
     for (const m of cut.methods) {

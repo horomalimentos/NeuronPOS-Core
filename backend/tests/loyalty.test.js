@@ -154,7 +154,7 @@ describe('clientes y lealtad', { skip: SKIP_DB }, () => {
     assert.ok(line, JSON.stringify(Object.keys(preview)));
     assert.equal(line.sales, 5); // $4 + $1
     const counts = cut.methods.filter((m) => m.kind !== 'puntos').map((m) => ({ payment_method_id: m.payment_method_id, counted: m.expected }));
-    const close = await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts });
+    const close = await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts, force: true }); // queda una orden sin cobrar
     assert.equal(close.status, 200, JSON.stringify(close.body));
     assert.equal(close.body.cut.total_difference, 0);
     session = (await api(cajero, 'POST', '/api/pos/cash-sessions/open', { branch_id: branch.id })).body.session;
