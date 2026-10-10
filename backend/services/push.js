@@ -172,6 +172,13 @@ export function composeMessage(ev, o) {
         link: '/admin/pos?tab=linea',
         tag: `nuevo-${o.id}`,
       };
+    case 'queja':
+      return {
+        title: `Queja del pedido ${n}`,
+        body: `${o.customer_name || 'Un cliente'} reportó un problema (${o.branch_name}). Revísala en Calificaciones y quejas.`,
+        link: '/admin/quejas',
+        tag: `queja-${o.id}`,
+      };
     case 'asignado':
       return {
         title: `Nuevo pedido a domicilio ${n}`,
@@ -205,6 +212,14 @@ async function recipients(db, ev, o) {
                OR (u.role = 'cajero' AND EXISTS (
                  SELECT 1 FROM user_branches ub WHERE ub.user_id = u.id AND ub.branch_id = $2)))`,
       [ev.restaurant_id, o.branch_id],
+    )).rows;
+  }
+  if (ev.kind === 'queja') {
+    return (await db.query(
+      `SELECT s.id, s.endpoint, s.p256dh, s.auth FROM push_subscriptions s
+         JOIN users u ON u.id = s.user_id AND u.restaurant_id = s.restaurant_id
+        WHERE s.restaurant_id = $1 AND u.active AND u.role IN ('admin', 'gerente')`,
+      [ev.restaurant_id],
     )).rows;
   }
   if (ev.kind === 'asignado' && ev.user_id) {

@@ -550,6 +550,36 @@ puede pedir programado.
 Errores: `INVALID_SCHEDULE` (hora fuera de horario o de rango) y
 `SCHEDULING_UNAVAILABLE` (sin el módulo).
 
+## Calificaciones y quejas (módulo `quejas`)
+
+Adaptado de Horom (calificación del pedido y quejas con evidencia). Cuando el
+cliente ya recibió su pedido en línea, en el seguimiento puede, durante 15
+días:
+
+- **Calificarlo** de 1 a 5 estrellas (general, comida y servicio) con un
+  comentario. Una vez por pedido.
+- **Reportar un problema**: marca los productos, escribe qué pasó y sube hasta
+  4 fotos. Una queja por pedido. El invitado puede dejar su correo.
+
+En *Quejas* (administrador y gerente) se ven el promedio por sucursal, la
+distribución de estrellas y los comentarios, y la bandeja de quejas. Al
+**aprobar** se elige, todo opcional: empleado responsable (con RH),
+compensación al cliente (saldo al monedero o puntos, si tiene cuenta y el
+módulo) y un descuento único en la nómina del responsable. Al **rechazar** se
+escribe la respuesta. El cliente ve el resultado en su seguimiento y le llega
+por correo. Las quejas nuevas avisan por correo y push a administradores y
+gerentes.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/api/portal/track/:token/rating` `{overall, food?, service?, comment?}` | cliente |
+| POST | `/api/portal/track/:token/evidence` (imagen cruda) → `{url}` | cliente |
+| POST | `/api/portal/track/:token/complaint` `{reason, item_ids?, evidence_urls?, contact_email?}` | cliente |
+| GET | `/api/feedback/ratings?days=&branch_id=` | admin, gerente |
+| GET | `/api/feedback/complaints?status=&branch_id=` | admin, gerente |
+| POST | `/api/feedback/complaints/:id/approve` `{responsible_employee_id?, compensation?, employee_charge?, notes?}` | admin, gerente |
+| POST | `/api/feedback/complaints/:id/reject` `{notes}` | admin, gerente |
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

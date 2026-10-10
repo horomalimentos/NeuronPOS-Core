@@ -129,6 +129,7 @@ export function customerOrderView(o, branch = null) {
     online_payment_status: o.online_payment_status ?? null,
     payment_due_at: o.online_payment_status === 'pendiente' ? o.payment_due_at : null,
     items: (o.items || []).filter((i) => !i.voided_at).map((i) => ({
+      id: i.id,
       name: i.name,
       quantity: i.quantity,
       unit_price: i.unit_price,

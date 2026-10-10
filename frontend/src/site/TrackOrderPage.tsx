@@ -5,6 +5,7 @@ import LiveMap from '../delivery/LiveMap';
 import { errorMessage, portalApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { Notice } from './OrderPage';
+import FeedbackCard from './FeedbackCard';
 import PushCard from './PushCard';
 import { STATUS_STYLE, formatDateTimeShort, formatScheduled, formatTimeShort, isFinal } from './portalLib';
 import type { CustomerDelivery, CustomerOrder, CustomerStatus, PaymentStart } from './types';
@@ -143,6 +144,8 @@ export default function TrackOrderPage() {
       {!done && !failed && !awaitingPayment && <div className="mt-4"><PushCard token={token} /></div>}
 
       {order.delivery && !failed && <DeliveryCard d={order.delivery} />}
+
+      {order.feedback && <FeedbackCard order={order} token={token} onChange={setOrder} />}
 
       <div className="card-light mt-4 p-5">
         <h2 className="font-bold">{order.branch.name || 'Sucursal'}</h2>

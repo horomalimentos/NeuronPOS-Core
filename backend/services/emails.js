@@ -103,3 +103,37 @@ export async function alertNewOnlineOrder(tenant, order) {
     });
   }
 }
+
+/** Aviso a administradores y gerentes activos de una queja nueva. */
+export async function alertNewComplaint(tenant, complaint, order) {
+  const admins = await withTenant(tenant.id, async (db) => (await db.query(
+    "SELECT email FROM users WHERE restaurant_id = $1 AND role IN ('admin', 'gerente') AND active", [tenant.id],
+  )).rows);
+  const items = (complaint.items || []).map((i) => `${i.quantity} × ${i.name}`).join(', ');
+  for (const a of admins) {
+    await send(tenant, {
+      to: a.email,
+      subject: `Queja del pedido #${order.folio}`,
+      title: `Queja del pedido #${order.folio}`,
+      text: `${order.customer_name || 'Un cliente'}${order.customer_phone ? ` (${order.customer_phone})` : ''} reportó un problema${items ? ` con: ${items}` : ''}.\n\n"${complaint.reason}"\n\nRevísala en Calificaciones y quejas.`,
+      button: { label: 'Ver la queja', url: `${restaurantSiteUrl(tenant)}/admin/quejas` },
+    });
+  }
+}
+
+/** Resultado de la queja al cliente. */
+export function sendComplaintResolved(tenant, c) {
+  const approved = c.status === 'aprobada';
+  const comp = c.compensation_type === 'monedero'
+    ? `\n\nTe abonamos ${money(c.compensation_amount)} a tu monedero.`
+    : c.compensation_type === 'puntos' ? `\n\nTe regalamos ${c.compensation_points} puntos.` : '';
+  return send(tenant, {
+    to: c.contact_email,
+    subject: `Tu queja del pedido #${c.folio}`,
+    title: approved ? 'Gracias por avisarnos' : `Revisamos tu queja del pedido #${c.folio}`,
+    text: approved
+      ? `Revisamos tu queja del pedido #${c.folio} y tienes razón. Lamentamos lo que pasó y ya lo estamos corrigiendo.${comp}`
+      : `Revisamos tu queja del pedido #${c.folio}.\n\nRespuesta: ${c.review_notes}`,
+    button: { label: 'Ver mi pedido', url: `${restaurantSiteUrl(tenant)}/pedido/${c.public_token}` },
+  });
+}
