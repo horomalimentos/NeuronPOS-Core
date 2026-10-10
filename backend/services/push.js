@@ -115,6 +115,14 @@ function hourIn(date, tz) {
   }
 }
 
+function dayTime(date, tz) {
+  try {
+    return new Date(date).toLocaleString('es-MX', { weekday: 'long', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: tz });
+  } catch {
+    return new Date(date).toISOString();
+  }
+}
+
 /** Texto del aviso: { title, body, link, tag, driver } */
 export function composeMessage(ev, o) {
   const n = `#${o.folio}`;
@@ -122,9 +130,12 @@ export function composeMessage(ev, o) {
   switch (ev.kind) {
     case 'aceptado': {
       const at = o.estimated_ready_at ? hourIn(o.estimated_ready_at, o.timezone) : null;
+      const scheduled = o.scheduled_for && new Date(o.scheduled_for) > new Date(Date.now() + 60 * 60000);
       return {
         title: `${o.restaurant_name}: pedido ${n} aceptado`,
-        body: at ? `Ya lo estamos preparando. Estará listo cerca de las ${at}.` : 'Ya lo estamos preparando.',
+        body: scheduled
+          ? `Lo tendremos listo para el ${dayTime(o.scheduled_for, o.timezone)}.`
+          : at ? `Ya lo estamos preparando. Estará listo cerca de las ${at}.` : 'Ya lo estamos preparando.',
         link: track,
         tag: `pedido-${o.id}`,
       };
@@ -234,7 +245,7 @@ export async function dispatchPushOutbox({ now = new Date(), limit = 100 } = {})
       if (!r || checkRestaurantAccess(r, now) || !isModuleActive(r, now)) continue;
       const o = (await db.query(
         `SELECT o.id, o.folio, o.order_type, o.public_token, o.customer_id, o.customer_name, o.customer_address,
-                o.branch_id, o.total, o.estimated_ready_at, o.cancel_reason,
+                o.branch_id, o.total, o.estimated_ready_at, o.scheduled_for, o.cancel_reason,
                 b.name AS branch_name, b.timezone
            FROM orders o JOIN branches b ON b.id = o.branch_id AND b.restaurant_id = o.restaurant_id
           WHERE o.id = $1 AND o.restaurant_id = $2`,

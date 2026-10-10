@@ -1,4 +1,4 @@
-import { Bike, Check, ChefHat, ClipboardCheck, CreditCard, Loader2, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
+import { Bike, CalendarClock, Check, ChefHat, ClipboardCheck, CreditCard, Loader2, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import LiveMap from '../delivery/LiveMap';
@@ -6,7 +6,7 @@ import { errorMessage, portalApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { Notice } from './OrderPage';
 import PushCard from './PushCard';
-import { STATUS_STYLE, formatDateTimeShort, formatTimeShort, isFinal } from './portalLib';
+import { STATUS_STYLE, formatDateTimeShort, formatScheduled, formatTimeShort, isFinal } from './portalLib';
 import type { CustomerDelivery, CustomerOrder, CustomerStatus, PaymentStart } from './types';
 
 const POLL_MS = 8000;
@@ -74,11 +74,12 @@ export default function TrackOrderPage() {
   const delivery = order.order_type === 'domicilio';
   const steps: { key: CustomerStatus; label: string; icon: typeof Check }[] = [
     { key: 'recibido', label: 'Recibido', icon: ClipboardCheck },
+    ...(order.scheduled_for ? [{ key: 'programado' as const, label: 'Programado', icon: CalendarClock }] : []),
     { key: 'preparando', label: 'En preparación', icon: ChefHat },
     delivery ? { key: 'en_camino', label: 'En camino', icon: Bike } : { key: 'listo', label: 'Listo para recoger', icon: Store },
     { key: 'entregado', label: 'Entregado', icon: PackageCheck },
   ];
-  const order_ = ['recibido', 'preparando', 'listo', 'en_camino', 'entregado'];
+  const order_ = ['recibido', 'programado', 'preparando', 'listo', 'en_camino', 'entregado'];
   const rank = (s: CustomerStatus) => order_.indexOf(s);
   const failed = order.status === 'rechazado' || order.status === 'cancelado';
   const awaitingPayment = order.status === 'esperando_pago';
@@ -96,7 +97,9 @@ export default function TrackOrderPage() {
         <span className={`mt-2 inline-block rounded-full px-3 py-1 text-xs font-semibold ${STATUS_STYLE[order.status]}`}>
           {delivery ? 'A domicilio' : 'Para recoger'}
         </span>
-        {order.estimated_ready_at && !done && !failed && (
+        {order.scheduled_for && !done && !failed ? (
+          <p className="mt-3 text-sm text-gray-600">Programado para: <b>{formatScheduled(order.scheduled_for)}</b></p>
+        ) : order.estimated_ready_at && !done && !failed && (
           <p className="mt-3 text-sm text-gray-600">Hora estimada: <b>{formatTimeShort(order.estimated_ready_at)}</b>{delivery && ' (más el envío)'}</p>
         )}
 
@@ -115,7 +118,7 @@ export default function TrackOrderPage() {
             {order.cancel_reason && <p className="mt-1">Motivo: {order.cancel_reason}</p>}
           </div>
         ) : (
-          <ol className="mt-6 grid grid-cols-4 gap-1">
+          <ol className={`mt-6 grid gap-1 ${steps.length === 5 ? 'grid-cols-5' : 'grid-cols-4'}`}>
             {steps.map((s) => {
               const reached = rank(order.status) >= rank(s.key) || (s.key === 'en_camino' && order.status === 'entregado');
               const current = order.status === s.key || (s.key === 'en_camino' && order.status === 'listo');

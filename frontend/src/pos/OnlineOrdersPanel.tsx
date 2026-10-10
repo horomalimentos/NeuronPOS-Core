@@ -1,6 +1,4 @@
-import {
-  BadgeCheck, Bike, Check, ChefHat, Clock, CreditCard, Globe, MapPin, PackageCheck, Phone, RefreshCw, Store, X,
-} from 'lucide-react';
+import { BadgeCheck, Bike, CalendarClock, Check, ChefHat, Clock, CreditCard, Globe, MapPin, PackageCheck, Phone, RefreshCw, Store, X } from 'lucide-react';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -143,8 +141,14 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
           </div>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
             <Clock className="h-3 w-3" /> {formatTime(o.created_at)} · hace {minutesSince(o.created_at, now)} min
-            {o.estimated_ready_at && ` · listo ~${formatTime(o.estimated_ready_at)}`}
+            {!o.scheduled_for && o.estimated_ready_at && ` · listo ~${formatTime(o.estimated_ready_at)}`}
           </p>
+          {o.scheduled_for && (
+            <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-teal-500/15 px-2 py-0.5 text-xs font-semibold text-teal-300 ring-1 ring-teal-500/30">
+              <CalendarClock className="h-3 w-3" /> Programado: {new Date(o.scheduled_for).toLocaleString('es-MX', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+              {o.online_status === 'aceptada' && o.status === 'abierta' && ' · entra a cocina solo'}
+            </p>
+          )}
         </div>
         {o.online_status === 'pendiente'
           ? <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-semibold text-amber-300 ring-1 ring-amber-500/30">Nuevo</span>

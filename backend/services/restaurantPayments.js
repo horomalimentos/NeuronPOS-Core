@@ -227,6 +227,7 @@ export async function applyOrderCheckout(db, checkout, data) {
   const email = o.customer_id
     ? (await db.query('SELECT email FROM customers WHERE id = $1 AND restaurant_id = $2', [o.customer_id, rid])).rows[0]?.email
     : null;
+  const timezone = (await db.query('SELECT timezone FROM branches WHERE id = $1 AND restaurant_id = $2', [o.branch_id, rid])).rows[0]?.timezone;
   // Ya pagado: confirmacion al cliente y aviso al restaurante (despues del commit).
   return {
     late: false,
@@ -234,7 +235,7 @@ export async function applyOrderCheckout(db, checkout, data) {
       const [{ findRestaurantById }, emails] = await Promise.all([import('../middleware/tenant.js'), import('./emails.js')]);
       const tenant = await findRestaurantById(rid);
       if (!tenant) return;
-      if (email) await emails.sendOrderReceived(tenant, o, email);
+      if (email) await emails.sendOrderReceived(tenant, { ...o, timezone }, email);
       await emails.alertNewOnlineOrder(tenant, o);
     },
   };

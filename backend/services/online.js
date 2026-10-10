@@ -2,7 +2,8 @@
 // Reciben un `db` que ya viene de withTenant (contexto RLS del restaurante).
 import { branchOpenState, hhmm } from './hours.js';
 
-const ONLINE_COLS = `enabled, min_order, prep_time_minutes, auto_accept, allow_pickup, allow_delivery, order_email_alerts, updated_at`;
+const ONLINE_COLS = `enabled, min_order, prep_time_minutes, auto_accept, allow_pickup, allow_delivery, order_email_alerts,
+  schedule_max_days, schedule_min_lead_minutes, schedule_kitchen_minutes, updated_at`;
 
 /** Configuracion de pedidos en linea (se crea con valores por defecto si falta). */
 export async function getOnlineSettings(db, restaurantId) {
@@ -82,6 +83,7 @@ export function publicBranch(b) {
 export const CUSTOMER_STATUS_LABEL = {
   esperando_pago: 'Esperando tu pago en línea',
   recibido: 'Recibido, esperando confirmación',
+  programado: 'Programado',
   preparando: 'En preparación',
   listo: 'Listo para recoger',
   en_camino: 'En camino',
@@ -96,6 +98,8 @@ export function customerStatus(o) {
   if (o.status === 'pagada') return 'entregado';
   if (o.online_payment_status === 'pendiente') return 'esperando_pago';
   if (o.online_status === 'pendiente') return 'recibido';
+  // Programado y aceptado: entra a cocina sola antes de la hora.
+  if (o.scheduled_for && !o.sent_at && o.status === 'abierta') return 'programado';
   if (o.status === 'lista') return o.order_type === 'domicilio' && o.dispatched_at ? 'en_camino' : 'listo';
   if (o.order_type === 'domicilio' && o.dispatched_at) return 'en_camino';
   return 'preparando';
@@ -145,6 +149,7 @@ export function customerOrderView(o, branch = null) {
     created_at: o.created_at,
     accepted_at: o.accepted_at,
     estimated_ready_at: o.estimated_ready_at,
+    scheduled_for: o.scheduled_for ?? null,
     ready_at: o.ready_at,
     dispatched_at: o.dispatched_at,
     paid_at: o.paid_at,
@@ -156,6 +161,24 @@ export function customerOrderView(o, branch = null) {
  * userId NULL cuando se acepta solo (auto_accept).
  */
 export async function acceptOnlineOrder(db, restaurantId, orderId, { userId = null, prepMinutes }) {
+  // Programado para mas tarde: se acepta pero entra a cocina hasta su hora
+  // (services/scheduling.js releaseScheduledOrders).
+  const sched = (await db.query(
+    `SELECT o.scheduled_for,
+            o.scheduled_for - make_interval(mins => coalesce(s.schedule_kitchen_minutes, 45)) > now() AS hold
+       FROM orders o LEFT JOIN online_settings s ON s.restaurant_id = o.restaurant_id
+      WHERE o.id = $1 AND o.restaurant_id = $2`,
+    [orderId, restaurantId],
+  )).rows[0];
+  if (sched?.hold) {
+    await db.query(
+      `UPDATE orders SET online_status = 'aceptada', accepted_at = now(), accepted_by = $3,
+              estimated_ready_at = scheduled_for, updated_at = now()
+        WHERE id = $1 AND restaurant_id = $2`,
+      [orderId, restaurantId, userId],
+    );
+    return;
+  }
   await db.query(
     `UPDATE order_items SET sent_at = now()
       WHERE order_id = $1 AND restaurant_id = $2 AND sent_at IS NULL AND voided_at IS NULL`,
@@ -165,7 +188,7 @@ export async function acceptOnlineOrder(db, restaurantId, orderId, { userId = nu
     `UPDATE orders SET online_status = 'aceptada', accepted_at = now(), accepted_by = $3,
             status = CASE WHEN status = 'abierta' THEN 'enviada' ELSE status END,
             sent_at = coalesce(sent_at, now()),
-            estimated_ready_at = now() + make_interval(mins => $4::int), updated_at = now()
+            estimated_ready_at = greatest(scheduled_for, now() + make_interval(mins => $4::int)), updated_at = now()
       WHERE id = $1 AND restaurant_id = $2`,
     [orderId, restaurantId, userId, prepMinutes],
   );

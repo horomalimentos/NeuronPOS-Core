@@ -160,6 +160,7 @@ export interface Order {
   pay_with?: Money | null;
   accepted_at?: string | null;
   estimated_ready_at?: string | null;
+  scheduled_for?: string | null;
   dispatched_at?: string | null;
   // Pago en linea con Clip: pendiente (no llega aqui), pagado o cancelado.
   payment_provider?: string | null;

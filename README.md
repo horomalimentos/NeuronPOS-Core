@@ -526,6 +526,30 @@ hasta 2 km $30 y hasta 4 km $45, más un pedido mínimo a domicilio opcional.
 La búsqueda de direcciones usa Nominatim de OpenStreetMap (solo al presionar
 Buscar) y los mapas, sus mosaicos.
 
+## Pedidos programados (módulo `pedidos_programados`)
+
+Adaptado de Horom (pedido para más tarde). En el checkout el cliente elige
+"Lo antes posible" o "Programar" con día y hora en bloques de 15 minutos,
+solo dentro del horario de la sucursal, desde ahora + la anticipación mínima
+hasta N días. Con la sucursal cerrada, si el módulo está activo, todavía se
+puede pedir programado.
+
+- El personal lo acepta como cualquier pedido en línea; si falta más que el
+  tiempo de cocina, queda retenido ("entra a cocina solo") y un job lo manda
+  a cocina `schedule_kitchen_minutes` antes de la hora.
+- El cliente lo ve como *Programado* en su seguimiento, en el correo y en la
+  notificación push al aceptarlo.
+- Ajustes en *Pedidos en línea*: días máximos (0–14, def. 3), anticipación
+  mínima (15–1440 min, def. 60) y minutos de cocina (5–600, def. 45).
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/portal/schedule?branch_id=` → `{available, days: [{date, label, times}]}` | público |
+| POST | `/api/portal/orders` acepta `scheduled_for` (ISO) | cliente |
+
+Errores: `INVALID_SCHEDULE` (hora fuera de horario o de rango) y
+`SCHEDULING_UNAVAILABLE` (sin el módulo).
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

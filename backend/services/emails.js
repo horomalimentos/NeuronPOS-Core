@@ -61,12 +61,16 @@ export function sendWelcome(tenant, customer) {
 }
 
 /** Confirmacion al cliente con cuenta (los invitados no dejan correo). */
+const scheduledLabel = (d, tz) => new Date(d).toLocaleString('es-MX', {
+  weekday: 'long', day: 'numeric', month: 'long', hour: 'numeric', minute: '2-digit', timeZone: tz || 'America/Mexico_City',
+});
+
 export function sendOrderReceived(tenant, order, email) {
   return send(tenant, {
     to: email,
     subject: `Recibimos tu pedido #${order.folio}`,
     title: `Pedido #${order.folio} recibido`,
-    text: `Total: ${money(order.total)}.\n\nTe avisamos en la página de seguimiento cuando lo acepten y cuando esté listo.`,
+    text: `Total: ${money(order.total)}.${order.scheduled_for ? `\n\nProgramado para: ${scheduledLabel(order.scheduled_for, order.timezone)}.` : ''}\n\nTe avisamos en la página de seguimiento cuando lo acepten y cuando esté listo.`,
     button: { label: 'Ver mi pedido', url: `${restaurantSiteUrl(tenant)}/pedido/${order.public_token}` },
   });
 }

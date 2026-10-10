@@ -19,6 +19,7 @@ import { requireTenant } from '../middleware/tenant.js';
 import { checkModuleAccess } from '../services/access.js';
 import { customerDeliveryView } from '../services/delivery/tenant.js';
 import { loadZones, quoteZone, readPoint } from '../services/deliveryZones.js';
+import { readScheduledFor, scheduleSlots } from '../services/scheduling.js';
 import { alertNewOnlineOrder, sendCustomerReset, sendOrderReceived, sendWelcome } from '../services/emails.js';
 import { activeLoyalty, customerCode, pointsValue, resetCustomerCode } from '../services/loyalty.js';
 import {
@@ -60,11 +61,14 @@ async function walletPayAvailable(db, restaurantId) {
 
 /** Modulos que el portal necesita ademas de si mismo. */
 async function moduleState(tenant) {
-  const [pos, domicilios, zonas] = await Promise.all(['pos', 'domicilios', 'zonas_entrega'].map((c) => loadModuleRow(tenant.id, c)));
+  const [pos, domicilios, zonas, programados] = await Promise.all(
+    ['pos', 'domicilios', 'zonas_entrega', 'pedidos_programados'].map((c) => loadModuleRow(tenant.id, c)),
+  );
   return {
     pos: !checkModuleAccess(tenant, 'pos', pos),
     domicilios: checkModuleAccess(tenant, 'domicilios', domicilios),
     zonas: !checkModuleAccess(tenant, 'zonas_entrega', zonas),
+    programados: !checkModuleAccess(tenant, 'pedidos_programados', programados),
   };
 }
 
@@ -91,6 +95,8 @@ router.get('/config', ah(async (req, res) => {
       prep_time_minutes: s.prep_time_minutes,
       allow_pickup: s.allow_pickup,
       allow_delivery: delivery,
+      // Pedidos para mas tarde (modulo 'pedidos_programados').
+      scheduling: mods.programados ? { max_days: s.schedule_max_days, min_lead_minutes: s.schedule_min_lead_minutes } : null,
     },
     branches: data.branches.map((b) => ({
       ...publicBranch(b),
@@ -102,6 +108,19 @@ router.get('/config', ah(async (req, res) => {
     })),
     payment_options: publicPaymentOptions({ clipAvailable: data.clipAvailable, walletAvailable: data.walletAvailable }),
   });
+}));
+
+// Horarios para programar un pedido en una sucursal (modulo 'pedidos_programados').
+router.get('/schedule', ah(async (req, res) => {
+  const branchId = requireUuid(req.query.branch_id, 'branch_id');
+  const mods = await moduleState(req.tenant);
+  if (!mods.programados) return res.json({ available: false, days: [] });
+  const data = await withTenant(req.tenant.id, async (db) => ({
+    settings: await getOnlineSettings(db, req.tenant.id),
+    branch: (await loadBranches(db, req.tenant.id)).find((b) => b.id === branchId),
+  }));
+  if (!data.branch) throw notFound('Sucursal no encontrada', 'BRANCH_NOT_FOUND');
+  res.set('Cache-Control', 'no-store').json({ available: true, days: scheduleSlots(data.branch, data.settings) });
 }));
 
 router.get('/menu', ah(async (req, res) => {
@@ -483,6 +502,8 @@ function readOrderInput(body = {}, customer, { quote = false } = {}) {
     payment: body.payment || {},
     // Pin del domicilio en el mapa (zonas de entrega).
     location: readPoint(body.location),
+    // Para mas tarde: uno de los horarios de GET /portal/schedule (ISO).
+    scheduled_for: body.scheduled_for ? String(body.scheduled_for).slice(0, 40) : null,
   };
   // La cotizacion no necesita datos de contacto ni direccion (el envio es por sucursal).
   if (!input.name && !quote) throw badRequest('Escribe tu nombre', 'CUSTOMER_REQUIRED');
@@ -518,7 +539,11 @@ async function prepareOrder(db, req, input, mods, { quote = false } = {}) {
   if (input.order_type === 'domicilio' && !branch.delivery_enabled) {
     throw badRequest('Esta sucursal no entrega a domicilio', 'ORDER_TYPE_UNAVAILABLE');
   }
-  if (!branch.status.open) {
+  let scheduledFor = null;
+  if (input.scheduled_for) {
+    if (!mods.programados) throw badRequest('Este restaurante no recibe pedidos programados', 'SCHEDULING_UNAVAILABLE');
+    scheduledFor = readScheduledFor(input.scheduled_for, branch, settings);
+  } else if (!branch.status.open) {
     throw conflict(`${branch.name} esta cerrada en este momento. Intenta en su horario de atencion.`, 'BRANCH_CLOSED');
   }
 
@@ -582,7 +607,7 @@ async function prepareOrder(db, req, input, mods, { quote = false } = {}) {
     throw badRequest('Inicia sesión para pagar con tu monedero', 'LOGIN_REQUIRED');
   }
   const payment = provider.validate(input.payment, { total: totals.total });
-  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone };
+  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone, scheduledFor };
 }
 
 async function readMods(req, input) {
@@ -634,15 +659,15 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
                            customer_name, customer_phone, customer_address, delivery_reference, notes,
                            tax_rate_pct, prices_include_tax, delivery_fee, payment_provider,
                            payment_preference, pay_with, public_token, online_payment_status, payment_due_at,
-                           delivery_latitude, delivery_longitude, delivery_distance_km)
+                           delivery_latitude, delivery_longitude, delivery_distance_km, scheduled_for)
        VALUES ($1, $2, $3, $4, 'web', 'pendiente', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-               $18, now() + make_interval(mins => $19::int), $20, $21, $22)
+               $18, now() + make_interval(mins => $19::int), $20, $21, $22, $23)
        RETURNING *`,
       [rid, p.branch.id, folio, input.order_type, req.customer?.id ?? null, input.name, input.phone,
         input.order_type === 'domicilio' ? p.address : null, input.order_type === 'domicilio' ? p.reference : null,
         input.notes, p.pos.tax_rate_pct, p.pos.prices_include_tax, p.totals.delivery_fee, p.provider.code,
         p.payment.payment_preference, p.payment.pay_with, token, online ? 'pendiente' : null, timeout,
-        p.point?.latitude ?? null, p.point?.longitude ?? null, p.distanceKm],
+        p.point?.latitude ?? null, p.point?.longitude ?? null, p.distanceKm, p.scheduledFor],
     );
     const order = rows[0];
     await insertItems(db, rid, order.id, null, p.lines);
@@ -673,7 +698,7 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
       db, restaurantId: rid, tenant: req.tenant, order: totals, creds, customer: req.customer,
     });
     const full = await loadOrder(db, rid, order.id);
-    return { order: customerOrderView(full, p.branch), payment: next, full };
+    return { order: customerOrderView(full, p.branch), payment: next, full: { ...full, timezone: p.branch.timezone } };
   });
   // Avisos por correo (los de pago con Clip salen cuando Clip lo confirma).
   const { full, ...body } = result;

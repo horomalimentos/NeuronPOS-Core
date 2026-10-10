@@ -20,6 +20,9 @@ interface OnlineSettings {
   allow_pickup: boolean;
   allow_delivery: boolean;
   order_email_alerts: boolean;
+  schedule_max_days: number;
+  schedule_min_lead_minutes: number;
+  schedule_kitchen_minutes: number;
 }
 
 interface OnlineBranch extends PublicBranch {
@@ -32,7 +35,7 @@ interface OnlineBranch extends PublicBranch {
 interface OnlineData {
   settings: OnlineSettings;
   branches: OnlineBranch[];
-  modules?: { pos: boolean; domicilios: boolean; zonas_entrega?: boolean };
+  modules?: { pos: boolean; domicilios: boolean; zonas_entrega?: boolean; pedidos_programados?: boolean };
 }
 
 /**
@@ -83,6 +86,11 @@ export default function OnlineSettingsPage() {
           enabled: form!.enabled, min_order: Number(form!.min_order || 0), prep_time_minutes: Number(form!.prep_time_minutes),
           auto_accept: form!.auto_accept, allow_pickup: form!.allow_pickup, allow_delivery: form!.allow_delivery,
           order_email_alerts: form!.order_email_alerts,
+          ...(data!.modules?.pedidos_programados ? {
+            schedule_max_days: Number(form!.schedule_max_days),
+            schedule_min_lead_minutes: Number(form!.schedule_min_lead_minutes),
+            schedule_kitchen_minutes: Number(form!.schedule_kitchen_minutes),
+          } : {}),
         },
       }));
       setOk('Configuración guardada.');
@@ -141,6 +149,22 @@ export default function OnlineSettingsPage() {
             <span>A domicilio {mods && !mods.domicilios && <span className="block text-xs text-amber-300">Requiere el módulo "Domicilios".</span>}</span>
           </label>
         </div>
+        {mods?.pedidos_programados && (
+          <div className="rounded-xl border border-gray-800 p-4">
+            <p className="mb-3 text-sm font-medium text-white">Pedidos programados</p>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Field label="Días hacia adelante" hint="0 = solo hoy.">
+                <input className="input" type="number" min={0} max={14} value={form.schedule_max_days} onChange={(e) => setForm({ ...form, schedule_max_days: Number(e.target.value) })} />
+              </Field>
+              <Field label="Anticipación mínima (min)" hint="Desde que el cliente pide.">
+                <input className="input" type="number" min={15} max={1440} value={form.schedule_min_lead_minutes} onChange={(e) => setForm({ ...form, schedule_min_lead_minutes: Number(e.target.value) })} />
+              </Field>
+              <Field label="Entra a cocina (min antes)" hint="Ya aceptado, llega solo a cocina.">
+                <input className="input" type="number" min={5} max={600} value={form.schedule_kitchen_minutes} onChange={(e) => setForm({ ...form, schedule_kitchen_minutes: Number(e.target.value) })} />
+              </Field>
+            </div>
+          </div>
+        )}
         <p className="text-xs text-gray-500">Pago al recoger o al recibir (efectivo o tarjeta): se cobra en la caja del punto de venta. Para cobrar en línea, configura Clip abajo.</p>
         <div className="flex justify-end"><Button type="submit" loading={saving}><Save className="h-4 w-4" /> Guardar</Button></div>
       </form>
