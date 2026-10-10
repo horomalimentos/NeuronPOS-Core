@@ -24,6 +24,7 @@ import MenuAdminPage from './pos/MenuAdminPage';
 import PosGate from './pos/PosGate';
 import PosSettingsPage from './pos/PosSettingsPage';
 import PromotionsPage from './pos/PromotionsPage';
+import SelfOrderKiosk from './pos/SelfOrderKiosk';
 import ReportsPage from './pos/ReportsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
@@ -100,6 +101,8 @@ export default function App() {
         <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
         <Route path="/delivery/r/:branchId" element={<DeliveryRestaurantPage />} />
         <Route path="/delivery/pedido/:token" element={<DeliveryTrackPage />} />
+        {/* Kiosko de autoservicio (pantalla completa, sesion de caja) */}
+        <Route path="/autoservicio" element={<SelfOrderKiosk />} />
 
         {/* App del repartidor (propio del restaurante o de la flota) */}
         <Route path="/repartidor" element={<DriverApp />} />

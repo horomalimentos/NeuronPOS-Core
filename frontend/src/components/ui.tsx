@@ -96,7 +96,7 @@ export function Toggle({ checked, onChange, disabled, label }: {
 
 export function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 p-4 text-gray-100 backdrop-blur-sm sm:items-center">
       <div className={`card my-8 w-full ${wide ? 'max-w-2xl' : 'max-w-lg'} shadow-2xl`} role="dialog" aria-modal="true" aria-label={title}>
         <div className="flex items-center justify-between border-b border-gray-800 px-6 py-4">
           <h2 className="text-lg font-semibold text-white">{title}</h2>

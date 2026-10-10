@@ -50,7 +50,7 @@ const ORDER_SELECT = `
          o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.channel_id, ch.name AS channel_name, ch.color AS channel_color, o.channel_order_number,
          o.channel_commission_pct, o.promo_discount, o.item_discount,
-         o.voucher_id, o.voucher_discount, vo.code AS voucher_code
+         o.voucher_id, o.voucher_discount, vo.code AS voucher_code, o.dine_in
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN sales_channels ch ON ch.id = o.channel_id AND ch.restaurant_id = o.restaurant_id
@@ -398,6 +398,11 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
     channel_order_number: str(body.channel_order_number, { field: 'channel_order_number', max: 60 }) || null,
   };
   const channelId = body.channel_id ? requireUuid(body.channel_id, 'channel_id') : null;
+  // Kiosko de autoservicio (modulo "kiosko"): para llevar, con nombre; "comer aqui" sin mesa.
+  const kiosk = body.source === 'kiosko';
+  if (kiosk && (orderType !== 'para_llevar' || channelId || !f.customer_name)) {
+    throw badRequest('El kiosko crea ordenes para llevar con el nombre del cliente', 'INVALID_FIELD');
+  }
   if (channelId && orderType === 'comedor') throw badRequest('Las plataformas solo aplican para llevar o domicilio', 'INVALID_FIELD');
   // Con plataforma, la entrega y los datos del cliente los lleva la plataforma.
   if (orderType === 'domicilio' && !channelId && (!f.customer_name || !f.customer_address)) {
@@ -413,6 +418,7 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
       if (!branch.rows[0]) throw badRequest('La sucursal no existe', 'BRANCH_NOT_FOUND');
       if (!branch.rows[0].active) throw badRequest('La sucursal esta inactiva', 'BRANCH_INACTIVE');
       if (tableId) await checkTable(db, req.tenant.id, branchId, tableId);
+      if (kiosk) await assertModule(db, req.tenant.id, 'kiosko', 'Kiosko de autoservicio');
       let commission = 0;
       if (channelId) {
         await assertModule(db, req.tenant.id, 'plataformas', 'Plataformas de delivery');
@@ -436,11 +442,11 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
       const { rows } = await db.query(
         `INSERT INTO orders (restaurant_id, branch_id, folio, order_type, table_id, guests, customer_name,
                              customer_phone, customer_address, notes, tax_rate_pct, prices_include_tax, created_by,
-                             channel_id, channel_order_number, channel_commission_pct)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING *`,
+                             channel_id, channel_order_number, channel_commission_pct, source, dine_in)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
         [req.tenant.id, branchId, folio, orderType, tableId, f.guests, f.customer_name, f.customer_phone,
           f.customer_address, f.notes, settings.tax_rate_pct, settings.prices_include_tax, req.user.id,
-          channelId, channelId ? f.channel_order_number : null, commission],
+          channelId, channelId ? f.channel_order_number : null, commission, kiosk ? 'kiosko' : 'pos', kiosk && body.dine_in === true],
       );
       await insertItems(db, req.tenant.id, rows[0].id, req.user.id, lines);
       await recalcOrder(db, req.tenant.id, rows[0]);

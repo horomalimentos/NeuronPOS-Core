@@ -25,7 +25,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
   before(async () => {
     ctx = await setupDb();
     owner = await ownerToken(ctx);
-    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'estaciones', 'reportes', 'plataformas', 'promociones', 'multimoneda'] });
+    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'estaciones', 'reportes', 'plataformas', 'promociones', 'multimoneda', 'kiosko'] });
     B = await createRestaurant(ctx, owner, 'beta', { modules: ['pos'] });
     C = await createRestaurant(ctx, owner, 'gamma');
     branchA = (await api(A, 'GET', '/api/branches')).body.branches[0];
@@ -714,6 +714,22 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal(closed.body.cut.total_difference, -18, 'falta 1 dolar = 18 pesos');
       assert.deepEqual(closed.body.session.count_detail.USD, { 5: 1, 1: 4 });
       await api(A, 'PATCH', `/api/pos/payment-methods/${usd.id}`, { active: false });
+    });
+
+    test('kiosko: orden para llevar con nombre, marcada como kiosko y comer aqui', async () => {
+      const base = { branch_id: branchA.id, order_type: 'para_llevar', source: 'kiosko', items: [{ menu_item_id: aguaA.id, quantity: 1 }] };
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', base)).status, 400, 'sin nombre');
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', { ...base, order_type: 'comedor', table_id: mesa2.id, customer_name: 'Ana' })).status, 400);
+      const branchB = (await api(B, 'GET', '/api/branches')).body.branches[0];
+      const catB = (await api(B, 'POST', '/api/pos/categories', { name: 'K' })).body.category;
+      const itB = (await api(B, 'POST', '/api/pos/items', { category_id: catB.id, name: 'K', price: 10 })).body.item;
+      const noMod = await api(B, 'POST', '/api/pos/orders', { ...base, branch_id: branchB.id, customer_name: 'Ana', items: [{ menu_item_id: itB.id, quantity: 1 }] });
+      assert.equal(noMod.status, 402);
+      const o = (await api(cajero, 'POST', '/api/pos/orders', { ...base, customer_name: 'Ana', dine_in: true })).body.order;
+      assert.equal(o.source, 'kiosko');
+      assert.equal(o.dine_in, true);
+      assert.equal(o.status, 'abierta');
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba kiosko' })).status, 200);
     });
 
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {

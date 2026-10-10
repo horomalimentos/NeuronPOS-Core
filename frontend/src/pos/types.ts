@@ -182,7 +182,7 @@ export interface Order {
   items?: OrderItem[];
   payments?: OrderPayment[];
   // Pedidos en linea (source = 'web')
-  source?: 'pos' | 'web';
+  source?: 'pos' | 'web' | 'kiosko';
   online_status?: OnlineStatus | null;
   delivery_fee?: Money;
   delivery_reference?: string | null;
@@ -212,6 +212,7 @@ export interface Order {
   voucher_id?: string | null;
   voucher_code?: string | null;
   voucher_discount?: Money;
+  dine_in?: boolean;
 }
 
 export type PromotionKind = 'nxm' | 'paquete' | 'porcentaje' | 'monto' | 'regalo';

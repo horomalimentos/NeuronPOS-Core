@@ -30,7 +30,7 @@ export interface Report {
   by_hour: { hour: number; orders: number; total: number }[];
   by_weekday: { weekday: number; orders: number; total: number }[];
   by_payment_method: { id: string; name: string; kind: MethodKind; orders: number; amount: number; tips: number }[];
-  by_order_type: { order_type: OrderType; source: 'pos' | 'web'; orders: number; total: number }[];
+  by_order_type: { order_type: OrderType; source: 'pos' | 'web' | 'kiosko'; orders: number; total: number }[];
   by_branch: { branch_id: string; branch_name: string; orders: number; total: number; tips: number }[];
   by_channel: { channel_id: string | null; name: string; orders: number; total: number; commission: number; net: number }[];
   items: { menu_item_id: string; name: string; category: string | null; quantity: number; total: number; orders: number }[];
@@ -71,7 +71,7 @@ function presetRange(key: Preset, today: string): [string, string] {
 
 const pct = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(1)}%` : '—');
 const typeLabel = (t: { order_type: OrderType; source: string }) =>
-  `${ORDER_TYPE_LABEL[t.order_type] || t.order_type}${t.source === 'web' ? ' (en línea)' : ''}`;
+  `${ORDER_TYPE_LABEL[t.order_type] || t.order_type}${t.source === 'web' ? ' (en línea)' : t.source === 'kiosko' ? ' (kiosko)' : ''}`;
 
 export function Delta({ now, before }: { now: number; before: number }) {
   if (!before) return <span className="text-xs text-gray-500">sin datos del periodo anterior</span>;

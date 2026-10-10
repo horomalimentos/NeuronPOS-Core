@@ -113,6 +113,7 @@ export default function KitchenPage() {
                     <h3 className="text-lg font-bold text-white">
                       {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}
                       {o.source === 'web' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">En línea</span>}
+                      {o.source === 'kiosko' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">Kiosko{o.dine_in ? ' · comer aquí' : ''}</span>}
                     </h3>
                     <p className="text-xs text-gray-400">Folio {o.folio}{o.customer_name && ` · ${o.customer_name}`}</p>
                     {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}

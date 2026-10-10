@@ -623,6 +623,7 @@ function OpenOrdersList({ orders, onPick }: { orders: Order[]; onPick: (id: stri
           </div>
           <p className="mt-1 text-sm text-gray-300">
             {o.source === 'web' && <Globe className="mr-1 inline h-3.5 w-3.5 text-brand" aria-label="En línea" />}
+            {o.source === 'kiosko' && <span className="mr-1 rounded bg-brand/20 px-1.5 py-0.5 text-xs font-semibold text-brand">Kiosko{o.dine_in ? ' · aquí' : ''}</span>}
             {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}
           </p>
           {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
