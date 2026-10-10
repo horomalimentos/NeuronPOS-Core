@@ -50,6 +50,7 @@ import PayrollPeriodPage from './rh/PayrollPeriodPage';
 import RecognitionPage from './rh/RecognitionPage';
 import RhLayout from './rh/RhLayout';
 import RhSettingsPage from './rh/RhSettingsPage';
+import ShiftsPage from './rh/ShiftsPage';
 import WallPage from './rh/WallPage';
 import {
   AccountPage, ForgotPasswordPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage, ResetPasswordPage,
@@ -141,6 +142,9 @@ export default function App() {
           <Route element={<ModuleGate code="rh" name="Recursos humanos" />}>
             <Route path="rh" element={<RhLayout />}>
               <Route index element={<EmployeesPage />} />
+              <Route element={<ModuleGate code="turnos" name="Turnos y rol semanal" />}>
+                <Route path="turnos" element={<ShiftsPage />} />
+              </Route>
               <Route path="asistencia" element={<AttendancePage />} />
               <Route path="nomina" element={<PayrollPage />} />
               <Route path="nomina/:id" element={<PayrollPeriodPage />} />

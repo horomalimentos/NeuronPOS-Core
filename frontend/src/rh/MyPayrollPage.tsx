@@ -7,10 +7,10 @@ import { formatDateTime } from '../pos/lib';
 import { printHtml } from '../pos/ticket';
 import { useAdmin } from '../restaurant/context';
 import { DayTable } from './AttendancePage';
-import { DOW_LABEL, FREQUENCY_LABEL, PERIOD_STATUS_LABEL, hours, inZone, shortDay } from './lib';
+import { DOW_LABEL, FREQUENCY_LABEL, PERIOD_STATUS_LABEL, addDaysStr, hours, inZone, shortDay } from './lib';
 import { ReceiptView } from './PayrollPeriodPage';
 import { receiptHtml } from './print';
-import type { AttendanceDay, AttendanceSummary, MyEmployee, PayrollItem, PayrollPeriod } from './types';
+import type { AttendanceDay, AttendanceSummary, MyEmployee, PayrollItem, PayrollPeriod, RosterDay } from './types';
 
 interface MyAttendance {
   from: string;
@@ -23,6 +23,8 @@ interface MyAttendance {
 
 /** Autoservicio del empleado: su horario, checadas y recibos de nómina. */
 export default function MyPayrollPage() {
+  const { me } = useAdmin();
+  const hasShifts = me.modules.some((m) => m.code === 'turnos' && m.enabled);
   const [employee, setEmployee] = useState<MyEmployee | null>(null);
   const [notLinked, setNotLinked] = useState('');
   const [attendance, setAttendance] = useState<MyAttendance | null>(null);
@@ -50,16 +52,18 @@ export default function MyPayrollPage() {
       <PageHeader title="Mi nómina" subtitle={`${employee.full_name}${employee.position ? ` · ${employee.position}` : ''} · ${employee.branch_name}`} />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       <div className="grid gap-6 lg:grid-cols-3">
+        {hasShifts ? <MyShifts /> : (
         <section className="card p-5">
-          <h2 className="mb-3 font-semibold text-white">Mi horario</h2>
-          <ul className="space-y-1 text-sm">
-            {[1, 2, 3, 4, 5, 6, 0].map((d) => {
-              const s = employee.schedule.find((x) => x.day_of_week === d);
-              return <li key={d} className="flex justify-between"><span className="text-gray-400">{DOW_LABEL[d]}</span><span className={s ? 'text-white' : 'text-gray-600'}>{s ? `${s.start_time} a ${s.end_time}` : 'Descanso'}</span></li>;
-            })}
-          </ul>
-          <p className="mt-3 text-xs text-gray-500">Pago {FREQUENCY_LABEL[employee.payment_frequency].toLowerCase()} · desde {formatDay(employee.hire_date)}{!employee.has_pin && ' · pide tu NIP del checador a tu gerente'}</p>
-        </section>
+            <h2 className="mb-3 font-semibold text-white">Mi horario</h2>
+            <ul className="space-y-1 text-sm">
+              {[1, 2, 3, 4, 5, 6, 0].map((d) => {
+                const s = employee.schedule.find((x) => x.day_of_week === d);
+                return <li key={d} className="flex justify-between"><span className="text-gray-400">{DOW_LABEL[d]}</span><span className={s ? 'text-white' : 'text-gray-600'}>{s ? `${s.start_time} a ${s.end_time}` : 'Descanso'}</span></li>;
+              })}
+            </ul>
+            <p className="mt-3 text-xs text-gray-500">Pago {FREQUENCY_LABEL[employee.payment_frequency].toLowerCase()} · desde {formatDay(employee.hire_date)}{!employee.has_pin && ' · pide tu NIP del checador a tu gerente'}</p>
+          </section>
+        )}
         <section className="card p-5 lg:col-span-2">
           <h2 className="mb-1 font-semibold text-white">Mis últimas dos semanas</h2>
           {!attendance ? <Spinner /> : (
@@ -150,5 +154,43 @@ function MyReceiptModal({ id, onClose, onSigned }: { id: string; onClose: () => 
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Turnos de la semana del empleado (modulo turnos), con el horario fijo donde no hay rol. */
+function MyShifts() {
+  const [start, setStart] = useState<string | null>(null);
+  const [data, setData] = useState<{ start: string; end: string; today: string; days: RosterDay[] } | null>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    api<{ start: string; end: string; today: string; days: RosterDay[] }>(`/rh/shifts/mine${start ? `?start=${start}` : ''}`)
+      .then(setData).catch((e) => setError(errorMessage(e)));
+  }, [start]);
+  return (
+    <section className="card p-5">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h2 className="font-semibold text-white">Mis turnos</h2>
+        {data && (
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <button className="rounded px-1.5 py-0.5 hover:bg-gray-800 hover:text-white" aria-label="Semana anterior" onClick={() => setStart(addDaysStr(data.start, -7))}>‹</button>
+            {shortDay(data.start)} al {shortDay(data.end)}
+            <button className="rounded px-1.5 py-0.5 hover:bg-gray-800 hover:text-white" aria-label="Semana siguiente" onClick={() => setStart(addDaysStr(data.start, 7))}>›</button>
+          </div>
+        )}
+      </div>
+      {error ? <Alert>{error}</Alert> : !data ? <Spinner /> : (
+        <ul className="space-y-1 text-sm">
+          {data.days.map((d) => (
+            <li key={d.date} className={`flex justify-between gap-2 rounded px-1 ${d.date === data.today ? 'bg-gray-800/70' : ''}`}>
+              <span className="text-gray-400">{shortDay(d.date)}</span>
+              <span className={d.is_rest || !d.start_time ? 'text-gray-600' : 'text-white'}>
+                {d.outside ? '—' : d.is_rest || !d.start_time ? 'Descanso'
+                  : <>{d.shift_name && <span className="mr-1.5 inline-block h-2 w-2 rounded-full" style={{ backgroundColor: d.color || '#64748B' }} />}{d.shift_name ? `${d.shift_name} · ` : ''}{d.start_time} a {d.end_time}</>}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }

@@ -17,7 +17,7 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
 
   test('el catalogo trae los modulos sembrados', async () => {
     const res = await ctx.request('GET', '/api/platform/modules', { token: owner });
-    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'rh', 'empleado_mes', 'domicilios']);
+    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'rh', 'turnos', 'empleado_mes', 'domicilios']);
   });
 
   test('la pagina principal lee los planes sin restaurante y oculta los inactivos', async () => {
@@ -25,7 +25,7 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
     await ctx.request('PUT', '/api/platform/modules/pos', { token: owner, body: { monthly_price_mxn: 499 } });
     const res = await ctx.request('GET', '/api/public/plans');
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'rh', 'domicilios']);
+    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'rh', 'turnos', 'domicilios']);
     assert.equal(Number(res.body.modules[0].monthly_price_mxn), 499);
     assert.equal(res.body.modules[0].enabled_restaurants, undefined);
     assert.ok(res.body.trial_days > 0);

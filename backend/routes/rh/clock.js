@@ -9,6 +9,7 @@ import {
   DUPLICATE_SECONDS, PIN_LOCK_MINUTES, PIN_MAX_ATTEMPTS, checkClockRestriction, nextKind, normalizeIp,
 } from '../../services/rh/clock.js';
 import { importClockEvents } from '../../services/rh/clockImport.js';
+import { moduleActive } from '../../services/rh/attendance.js';
 import { localParts, timeToMinutes } from '../../services/rh/dates.js';
 import {
   HttpError, ah, badRequest, forbidden, notFound, oneOf, requireUuid, str,
@@ -117,7 +118,15 @@ router.post('/kiosk/clock', kioskLimiter, ah(async (req, res) => {
     if (kind === 'entrada') {
       const local = localParts(now, emp.timezone);
       const dow = new Date(`${local.date}T00:00:00Z`).getUTCDay();
-      const sched = (await db.query(
+      // El turno del rol de ese dia (modulo turnos) manda sobre el horario fijo.
+      const rol = await moduleActive(db, req.tenant.id, 'turnos', now)
+        ? (await db.query(
+          `SELECT is_rest, to_char(start_time, 'HH24:MI') AS start_time FROM employee_shift_days
+            WHERE restaurant_id = $1 AND employee_id = $2 AND date = $3`,
+          [req.tenant.id, emp.id, local.date],
+        )).rows[0]
+        : null;
+      const sched = rol ? (rol.is_rest ? null : rol) : (await db.query(
         `SELECT to_char(start_time, 'HH24:MI') AS start_time FROM employee_schedules
           WHERE restaurant_id = $1 AND employee_id = $2 AND day_of_week = $3`,
         [req.tenant.id, emp.id, dow],

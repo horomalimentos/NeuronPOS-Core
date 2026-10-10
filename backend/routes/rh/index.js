@@ -9,6 +9,7 @@ import clockRouter from './clock.js';
 import configRouter from './config.js';
 import meRouter from './me.js';
 import payrollRouter from './payroll.js';
+import shiftsRouter from './shifts.js';
 
 const router = Router();
 router.use(authenticateUser, requireModule('rh'));
@@ -18,5 +19,7 @@ router.use(configRouter);
 router.use(clockRouter);
 router.use(attendanceRouter);
 router.use(payrollRouter);
+// Con su propio prefijo: el modulo turnos solo aplica a estas rutas.
+router.use('/shifts', shiftsRouter);
 
 export default router;

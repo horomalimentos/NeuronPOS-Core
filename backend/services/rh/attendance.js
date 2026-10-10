@@ -77,6 +77,17 @@ export async function attendanceFor(db, restaurantId, employees, from, to, { now
       ORDER BY occurred_at`,
     [restaurantId, ids, from, to],
   )).rows;
+  // Rol por fecha (modulo turnos): manda sobre el horario fijo.
+  const shiftDays = await moduleActive(db, restaurantId, 'turnos', now)
+    ? (await db.query(
+      `SELECT d.employee_id, to_char(d.date, 'YYYY-MM-DD') AS date, d.is_rest,
+              to_char(d.start_time, 'HH24:MI') AS start_time, to_char(d.end_time, 'HH24:MI') AS end_time, t.name AS shift_name
+         FROM employee_shift_days d
+         LEFT JOIN shift_templates t ON t.id = d.shift_id AND t.restaurant_id = d.restaurant_id
+        WHERE d.restaurant_id = $1 AND d.employee_id = ANY($2::uuid[]) AND d.date BETWEEN $3 AND $4`,
+      [restaurantId, ids, from, to],
+    )).rows
+    : [];
   const justifications = (await db.query(
     `SELECT employee_id, to_char(date, 'YYYY-MM-DD') AS date, kind, with_pay, note FROM attendance_justifications
       WHERE restaurant_id = $1 AND employee_id = ANY($2::uuid[]) AND date BETWEEN $3 AND $4`,
@@ -91,6 +102,7 @@ export async function attendanceFor(db, restaurantId, employees, from, to, { now
   const sch = group(schedules);
   const ent = group(entries);
   const jus = group(justifications);
+  const rol = group(shiftDays);
 
   for (const e of employees) {
     const tz = e.timezone || 'America/Mexico_City';
@@ -98,6 +110,7 @@ export async function attendanceFor(db, restaurantId, employees, from, to, { now
     const days = analyzeAttendance({
       from, to,
       schedule: sch.get(e.id),
+      shiftDays: rol.get(e.id),
       entries: ent.get(e.id),
       justifications: jus.get(e.id),
       holidays,
