@@ -3,7 +3,7 @@ import {
   ShoppingBag, Tag, Trash2, Truck, Utensils, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
@@ -57,7 +57,9 @@ export default function RegisterPage() {
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
 
-  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea'>('mesas');
+  // ?tab=linea: viene de un aviso push de pedido en linea.
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea'>(() => (params.get('tab') === 'linea' ? 'linea' : 'mesas'));
   const [pendingOnline, setPendingOnline] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [order, setOrder] = useState<Order | null>(null);

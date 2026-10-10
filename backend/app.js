@@ -20,6 +20,7 @@ import platformRouter from './routes/platform.js';
 import portalRouter from './routes/portal.js';
 import posRouter from './routes/pos/index.js';
 import publicRouter from './routes/public.js';
+import pushRouter from './routes/push.js';
 import recognitionRouter from './routes/recognition.js';
 import rhRouter from './routes/rh/index.js';
 import subscriptionRouter from './routes/subscription.js';
@@ -107,6 +108,7 @@ export function createApp() {
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);
   app.use('/api/wallet', walletRouter);
+  app.use('/api/push', pushRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

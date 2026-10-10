@@ -7,6 +7,7 @@ import { session } from '../lib/session';
 import { recentOrders } from './cart';
 import { hasModule, useSiteCtx } from './context';
 import CodeCard from './CodeCard';
+import PushCard from './PushCard';
 import LoyaltyCard from './LoyaltyCard';
 import WalletCard from './WalletCard';
 import { Notice } from './OrderPage';
@@ -264,6 +265,7 @@ export function AccountPage() {
       <Link to="/cuenta/pedidos" className="card-light flex items-center justify-between p-4 font-semibold hover:border-brand/50">
         <span className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-brand" /> Mis pedidos</span><ChevronRight className="h-5 w-5 text-gray-400" />
       </Link>
+      <PushCard />
       <CodeCard />
       <WalletCard />
       <LoyaltyCard />
