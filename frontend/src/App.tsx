@@ -60,6 +60,11 @@ import {
 import CheckoutPage from './site/CheckoutPage';
 import OrderPage from './site/OrderPage';
 import PaymentResultPage from './site/PaymentResultPage';
+import DeliveryLanding from './marketplace/DeliveryLanding';
+import DriverSignupPage from './marketplace/DriverSignupPage';
+import ListingPage from './marketplace/ListingPage';
+import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
+import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
 import TrackOrderPage from './site/TrackOrderPage';
@@ -86,6 +91,11 @@ export default function App() {
         {/* Instaladores de NeuronPOS y Neuron KDS */}
         <Route path="/descargas" element={<DownloadsPage />} />
 
+        {/* NeuronPOS Delivery: registro gratis de restaurantes y repartidores */}
+        <Route path="/delivery" element={<DeliveryLanding />} />
+        <Route path="/delivery/restaurantes" element={<RestaurantSignupPage />} />
+        <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
+
         {/* App del repartidor (propio del restaurante o de la flota) */}
         <Route path="/repartidor" element={<DriverApp />} />
 
@@ -97,6 +107,7 @@ export default function App() {
           <Route path="modulos" element={<ModulesCatalogPage />} />
           <Route path="cobros" element={<InvoicesPage />} />
           <Route path="flota" element={<FleetPage />} />
+          <Route path="delivery" element={<MarketplacePage />} />
           <Route path="ajustes" element={<PlatformSettingsPage />} />
         </Route>
 
@@ -116,12 +127,19 @@ export default function App() {
             <Route path="pos" element={<RegisterPage />} />
             <Route path="cocina" element={<KitchenPage />} />
             <Route path="caja" element={<CashPage />} />
-            <Route path="menu" element={<MenuAdminPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
             <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
               <Route path="reportes" element={<ReportsPage />} />
             </Route>
+          </Route>
+          {/* Menu: lo usa el POS y tambien un restaurante que solo esta en NeuronPOS Delivery */}
+          <Route element={<ModuleGate code={['pos', 'marketplace']} name="Menú" />}>
+            <Route path="menu" element={<MenuAdminPage />} />
+          </Route>
+          {/* NeuronPOS Delivery (modulo marketplace, sin costo) */}
+          <Route element={<ModuleGate code="marketplace" name="NeuronPOS Delivery" />}>
+            <Route path="delivery" element={<ListingPage />} />
           </Route>
           {/* Clientes: modulos lealtad y monedero */}
           <Route element={<ModuleGate code={['lealtad', 'monedero']} name="Clientes y lealtad" />}>
