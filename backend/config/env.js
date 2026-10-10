@@ -52,6 +52,18 @@ export const env = {
   // Jobs en segundo plano (cobro, conciliacion con Clip, pedidos sin pagar).
   jobsEnabled: bool(process.env.JOBS_ENABLED, process.env.NODE_ENV !== 'test'),
 
+  // --- Correo (SMTP) ---
+  // Sin SMTP_HOST no se mandan correos: solo se anotan en el log.
+  smtpHost: process.env.SMTP_HOST || '',
+  smtpPort: parseInt(process.env.SMTP_PORT, 10) || 587,
+  // true = TLS directo (puerto 465); false = STARTTLS.
+  smtpSecure: bool(process.env.SMTP_SECURE, (parseInt(process.env.SMTP_PORT, 10) || 587) === 465),
+  smtpUser: process.env.SMTP_USER || '',
+  smtpPass: process.env.SMTP_PASS || '',
+  // Remitente: "NeuronPOS <no-reply@neuronpos.app>". En correos de un
+  // restaurante se usa su nombre con esta misma direccion.
+  mailFrom: process.env.MAIL_FROM || 'NeuronPOS <no-reply@neuronpos.app>',
+
   // Instaladores de las apps (deploy/instaladores.sh) servidos en /api/descargas.
   downloadsDir: process.env.DOWNLOADS_DIR
     || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'descargas'),

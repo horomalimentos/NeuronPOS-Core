@@ -141,6 +141,9 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `JOBS_ENABLED` | Jobs en segundo plano (cobro, conciliación con Clip, pedidos sin pagar) | `true` (`false` en pruebas) |
 | `UPLOADS_DIR` | Carpeta de las fotos que suben los restaurantes (una subcarpeta por restaurante), servidas en `/api/uploads` | `./uploads` |
 | `DOWNLOADS_DIR` | Carpeta de los instaladores de las apps, servidos en `/api/descargas` | `./descargas` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | Servidor de correo saliente; sin `SMTP_HOST` los correos solo se escriben en el log | —, `587`, `true` si el puerto es 465 |
+| `SMTP_USER`, `SMTP_PASS` | Usuario y contraseña del SMTP | — |
+| `MAIL_FROM` | Remitente; el nombre se cambia por el del restaurante en sus correos | `NeuronPOS <no-reply@neuronpos.app>` |
 
 ## Aislamiento entre restaurantes
 
@@ -467,6 +470,33 @@ Copiado del monedero de Horom. Usa las mismas fichas de clientes de
 Cobro en caja: `POST /api/pos/orders/:id/payments` acepta una línea
 `{ "wallet": { "customer_id", "amount", "code" } }`. Pedido en línea:
 `payment: { "provider": "monedero" }`.
+
+## Correos y recuperar contraseña (incluido, sin módulo)
+
+Adaptado de Horom, sin sus huecos. Los correos salen por SMTP (`SMTP_*` y
+`MAIL_FROM`); los de un restaurante llevan su nombre como remitente y su
+correo de contacto como "Responder a".
+
+- **Olvidé mi contraseña** para clientes del sitio (`/cuenta/olvide`) y para
+  el personal (`/admin/olvide`). La respuesta siempre es la misma, exista o
+  no la cuenta. La liga vale 60 minutos, se usa una vez, pedir otra anula la
+  anterior y no se manda más de una por minuto. El token viaja en el `#` de
+  la URL (no llega a logs ni a `Referer`) y en la base solo se guarda su
+  SHA-256.
+- Al cambiar la contraseña (por la liga, o un administrador la cambia a otro
+  usuario) se cierran todas las sesiones abiertas de esa cuenta
+  (`SESSION_REVOKED`).
+- Correos al cliente: bienvenida, pedido recibido (con la liga de
+  seguimiento) y pedido rechazado (dice si el dinero regresó al monedero o se
+  reembolsa a la tarjeta).
+- Aviso al restaurante de cada pedido en línea (administradores y gerentes),
+  opcional en *Pedidos en línea › Avisarme por correo de cada pedido*.
+- Los avisos de cobro de la mensualidad también salen por correo.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| POST | `/api/portal/auth/forgot` `{email}` · `/api/portal/auth/reset` `{token, password}` | público (cliente) |
+| POST | `/api/auth/forgot` `{email}` · `/api/auth/reset` `{token, password}` | público (personal) |
 
 ## Sitio web y pedidos en línea (fase 2)
 

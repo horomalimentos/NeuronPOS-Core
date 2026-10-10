@@ -23,6 +23,7 @@
     "express-rate-limit": "^8.1.0",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "10.0.10",
     "pg": "^8.18.0"
   }
 }

@@ -224,7 +224,20 @@ export async function applyOrderCheckout(db, checkout, data) {
   if (settings.auto_accept && o.online_status === 'pendiente') {
     await acceptOnlineOrder(db, rid, o.id, { prepMinutes: settings.prep_time_minutes });
   }
-  return { late: false };
+  const email = o.customer_id
+    ? (await db.query('SELECT email FROM customers WHERE id = $1 AND restaurant_id = $2', [o.customer_id, rid])).rows[0]?.email
+    : null;
+  // Ya pagado: confirmacion al cliente y aviso al restaurante (despues del commit).
+  return {
+    late: false,
+    after: async () => {
+      const [{ findRestaurantById }, emails] = await Promise.all([import('../middleware/tenant.js'), import('./emails.js')]);
+      const tenant = await findRestaurantById(rid);
+      if (!tenant) return;
+      if (email) await emails.sendOrderReceived(tenant, o, email);
+      await emails.alertNewOnlineOrder(tenant, o);
+    },
+  };
 }
 
 /** Concilia con Clip las ligas pendientes de un pedido (pagina de resultado). */

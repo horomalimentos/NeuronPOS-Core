@@ -11,6 +11,7 @@ import jwt from 'jsonwebtoken';
 import pool, { withFleetDriver, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, forbidden } from '../utils/http.js';
+import { issuedBeforePasswordChange } from '../services/passwordReset.js';
 import { findRestaurantById } from './tenant.js';
 
 const unauthorized = (msg = 'Se requiere iniciar sesion', code = 'AUTH_REQUIRED') => new HttpError(401, msg, code);
@@ -75,7 +76,7 @@ export async function authenticateUser(req, res, next) {
 
     const user = await withTenant(req.tenant.id, async (db) => {
       const { rows } = await db.query(
-        `SELECT u.id, u.restaurant_id, u.email, u.name, u.role, u.active,
+        `SELECT u.id, u.restaurant_id, u.email, u.name, u.role, u.active, u.password_changed_at,
                 coalesce(array_agg(ub.branch_id) FILTER (WHERE ub.branch_id IS NOT NULL), '{}') AS branch_ids
            FROM users u
            LEFT JOIN user_branches ub ON ub.user_id = u.id
@@ -87,6 +88,10 @@ export async function authenticateUser(req, res, next) {
     });
 
     if (!user) throw unauthorized('Usuario no encontrado', 'INVALID_TOKEN');
+    if (issuedBeforePasswordChange(payload, user.password_changed_at)) {
+      throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+    }
+    delete user.password_changed_at;
     if (!user.active) throw forbidden('Tu cuenta esta desactivada. Contacta a un administrador.', 'ACCOUNT_DEACTIVATED');
 
     req.user = user;
@@ -129,11 +134,15 @@ async function loadCustomer(req) {
   if (!req.tenant) throw unauthorized('Restaurante no encontrado', 'INVALID_TOKEN');
   if (req.tenant.id !== payload.rid) throw forbidden('Esta sesion pertenece a otro restaurante', 'TENANT_MISMATCH');
   const customer = await withTenant(req.tenant.id, async (db) => (await db.query(
-    `SELECT id, restaurant_id, name, email, phone, active FROM customers
+    `SELECT id, restaurant_id, name, email, phone, active, password_changed_at FROM customers
       WHERE id = $1 AND restaurant_id = $2`,
     [payload.sub, req.tenant.id],
   )).rows[0]);
   if (!customer) throw unauthorized('Cuenta no encontrada', 'INVALID_TOKEN');
+  if (issuedBeforePasswordChange(payload, customer.password_changed_at)) {
+    throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+  }
+  delete customer.password_changed_at;
   if (!customer.active) throw forbidden('Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
   return customer;
 }

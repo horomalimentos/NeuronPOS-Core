@@ -18,6 +18,7 @@ import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
 import { checkModuleAccess } from '../services/access.js';
 import { customerDeliveryView } from '../services/delivery/tenant.js';
+import { alertNewOnlineOrder, sendCustomerReset, sendOrderReceived, sendWelcome } from '../services/emails.js';
 import { activeLoyalty, customerCode, pointsValue, resetCustomerCode } from '../services/loyalty.js';
 import {
   activeWallet, checkTopupAmount, createTopupCheckout, reconcileCustomerTopups, refundOrderWallet,
@@ -26,6 +27,7 @@ import {
   acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches, publicBranch,
 } from '../services/online.js';
 import { DEFAULT_PROVIDER, getPaymentProvider, publicPaymentOptions } from '../services/onlinePayments.js';
+import { consumeResetToken, createResetToken, readResetToken } from '../services/passwordReset.js';
 import { calculateOrderTotals, toCents } from '../services/posMath.js';
 import {
   ensureOrderCheckout, getPaymentSettings, loadRestaurantClipCredentials, onlinePaymentAvailable, reconcileOrder,
@@ -183,7 +185,27 @@ router.post('/auth/register', customerAuthLimiter, ah(async (req, res) => {
     if (err?.code === '23505') throw conflict('Ya existe una cuenta con ese correo. Inicia sesion.', 'EMAIL_TAKEN');
     throw err;
   }
+  void sendWelcome(req.tenant, customer);
   res.status(201).json({ token: signCustomerToken(customer), customer: publicCustomer(customer) });
+}));
+
+// Olvide mi contrasena: siempre la misma respuesta (no revela si el correo existe).
+router.post('/auth/forgot', customerAuthLimiter, ah(async (req, res) => {
+  const email = readEmail((req.body || {}).email);
+  const reset = await withTenant(req.tenant.id, (db) => createResetToken(db, 'customers', req.tenant.id, email));
+  if (reset) void sendCustomerReset(req.tenant, reset.account, reset.token);
+  res.json({ ok: true });
+}));
+
+// Nueva contrasena con la liga del correo: cierra las otras sesiones y entra.
+router.post('/auth/reset', customerAuthLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const token = readResetToken(body.token);
+  const hash = await bcrypt.hash(readNewPassword(body.password), 10);
+  const customer = await withTenant(req.tenant.id, (db) => consumeResetToken(
+    db, 'customers', req.tenant.id, token, hash, CUSTOMER_COLS,
+  ));
+  res.json({ token: signCustomerToken(customer), customer: publicCustomer(customer) });
 }));
 
 router.post('/auth/login', customerAuthLimiter, ah(async (req, res) => {
@@ -603,9 +625,15 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
       db, restaurantId: rid, tenant: req.tenant, order: totals, creds, customer: req.customer,
     });
     const full = await loadOrder(db, rid, order.id);
-    return { order: customerOrderView(full, p.branch), payment: next };
+    return { order: customerOrderView(full, p.branch), payment: next, full };
   });
-  res.status(201).json(result);
+  // Avisos por correo (los de pago con Clip salen cuando Clip lo confirma).
+  const { full, ...body } = result;
+  if (full.online_payment_status !== 'pendiente') {
+    if (req.customer?.email) void sendOrderReceived(req.tenant, full, req.customer.email);
+    void alertNewOnlineOrder(req.tenant, full).catch(() => {});
+  }
+  res.status(201).json(body);
 }));
 
 /** Pedidos (con articulos) para la vista del cliente. */

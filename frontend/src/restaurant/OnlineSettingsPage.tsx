@@ -17,6 +17,7 @@ interface OnlineSettings {
   auto_accept: boolean;
   allow_pickup: boolean;
   allow_delivery: boolean;
+  order_email_alerts: boolean;
 }
 
 interface OnlineBranch extends PublicBranch {
@@ -72,6 +73,7 @@ export default function OnlineSettingsPage() {
         body: {
           enabled: form!.enabled, min_order: Number(form!.min_order || 0), prep_time_minutes: Number(form!.prep_time_minutes),
           auto_accept: form!.auto_accept, allow_pickup: form!.allow_pickup, allow_delivery: form!.allow_delivery,
+          order_email_alerts: form!.order_email_alerts,
         },
       }));
       setOk('Configuración guardada.');
@@ -117,6 +119,10 @@ export default function OnlineSettingsPage() {
           <label className="flex items-center gap-3">
             <Toggle label="Aceptar automáticamente" checked={form.auto_accept} onChange={(v) => setForm({ ...form, auto_accept: v })} />
             <span>Aceptar pedidos automáticamente <span className="block text-xs text-gray-500">Si está apagado, el cajero los acepta o rechaza desde Vender → En línea.</span></span>
+          </label>
+          <label className="flex items-center gap-3">
+            <Toggle label="Aviso por correo" checked={form.order_email_alerts} onChange={(v) => setForm({ ...form, order_email_alerts: v })} />
+            <span>Avisarme por correo de cada pedido <span className="block text-xs text-gray-500">Llega a los administradores y gerentes activos.</span></span>
           </label>
           <label className="flex items-center gap-3">
             <Toggle label="Recoger en sucursal" checked={form.allow_pickup} onChange={(v) => setForm({ ...form, allow_pickup: v })} /> Para recoger en sucursal

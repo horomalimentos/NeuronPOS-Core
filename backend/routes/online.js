@@ -49,6 +49,7 @@ router.patch('/settings', ah(async (req, res) => {
     auto_accept: bool(body.auto_accept, 'auto_accept'),
     allow_pickup: bool(body.allow_pickup, 'allow_pickup'),
     allow_delivery: bool(body.allow_delivery, 'allow_delivery'),
+    order_email_alerts: bool(body.order_email_alerts, 'order_email_alerts'),
   }, 2);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const data = await withTenant(req.tenant.id, async (db) => {
