@@ -4,7 +4,8 @@ import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
-import { ROLES, insertSql, int, uuidList } from './common.js';
+import { ROLES, assertModule, insertSql, int, moduleActive, uuidList } from './common.js';
+import { requireModule } from '../../middleware/requireModule.js';
 
 const router = Router();
 
@@ -92,8 +93,12 @@ function methodFields(body, creating) {
 }
 
 router.post('/payment-methods', requireRole(...ROLES.manage), ah(async (req, res) => {
-  const q = insertSql('payment_methods', req.tenant.id, methodFields(req.body || {}, true), METHOD_COLS);
-  const method = await withTenant(req.tenant.id, async (db) => (await db.query(q.text, q.values)).rows[0]);
+  const f = methodFields(req.body || {}, true);
+  const q = insertSql('payment_methods', req.tenant.id, f, METHOD_COLS);
+  const method = await withTenant(req.tenant.id, async (db) => {
+    if (f.currency === 'USD') await assertModule(db, req.tenant.id, 'multimoneda', 'Cobro en dolares');
+    return (await db.query(q.text, q.values)).rows[0];
+  });
   res.status(201).json({ payment_method: method });
 }));
 
@@ -104,6 +109,7 @@ router.patch('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const method = await withTenant(req.tenant.id, async (db) => {
     const cur = (await db.query('SELECT kind FROM payment_methods WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id])).rows[0];
+    if (fields.currency === 'USD') await assertModule(db, req.tenant.id, 'multimoneda', 'Cobro en dolares');
     // "Clip en linea" lo usa el pago en linea: se puede renombrar, no cambiar de tipo.
     // Igual los de "Puntos" y "Monedero" (los usan el canje y el monedero).
     if (['en_linea', 'puntos', 'monedero'].includes(cur?.kind) && fields.kind !== undefined) {
@@ -150,11 +156,12 @@ router.delete('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (re
 
 router.get('/channels', requireRole(...ROLES.kitchen), ah(async (req, res) => {
   const all = req.query.all === '1';
-  const channels = await withTenant(req.tenant.id, async (db) => (await db.query(
+  // Sin el modulo no hay plataformas que elegir en la caja.
+  const channels = await withTenant(req.tenant.id, async (db) => (!(await moduleActive(db, req.tenant.id, 'plataformas')) ? [] : (await db.query(
     `SELECT ${CHANNEL_COLS} FROM sales_channels WHERE restaurant_id = $1 ${all ? '' : 'AND active'}
       ORDER BY sort_order, name`,
     [req.tenant.id],
-  )).rows);
+  )).rows));
   res.json({ channels });
 }));
 
@@ -189,7 +196,7 @@ const duplicateChannel = (err) => {
   throw err;
 };
 
-router.post('/channels', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/channels', requireModule('plataformas'), requireRole(...ROLES.manage), ah(async (req, res) => {
   const f = channelFields(req.body || {}, true);
   const q = insertSql('sales_channels', req.tenant.id, f, CHANNEL_COLS);
   const channel = await withTenant(req.tenant.id, async (db) => {
@@ -199,7 +206,7 @@ router.post('/channels', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ channel });
 }));
 
-router.patch('/channels/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/channels/:id', requireModule('plataformas'), requireRole(...ROLES.manage), ah(async (req, res) => {
   requireUuid(req.params.id);
   const f = channelFields(req.body || {}, false);
   const set = buildSet(f, 3);

@@ -1,5 +1,5 @@
 import {
-  ArrowRight, Award, BarChart3, Boxes, BrainCircuit, HeartHandshake, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone,
+  ArrowRight, Award, BarChart3, Bike, Boxes, BrainCircuit, DollarSign, Gift, HeartHandshake, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone,
   Truck, Users, Wallet,
 } from 'lucide-react';
 import { useEffect, useState, type ComponentType } from 'react';
@@ -38,6 +38,10 @@ const MODULE_INFO: Record<string, { Icon: ComponentType<{ className?: string }>;
   rh: { Icon: Users, points: ['Checador de asistencia', 'Prenómina semanal', 'Expedientes de empleados'] },
   empleado_mes: { Icon: Award, points: ['Votación del equipo', 'Muro de reconocimientos', 'Motiva a tu personal'] },
   domicilios: { Icon: Truck, points: ['Con tus repartidores', 'O con nuestra flotilla', 'Mapa y cortes por repartidor'] },
+  estaciones: { Icon: ChefHat, points: ['Barra, parrilla, sushi…', 'Cada estación con su pantalla', 'Comandas impresas por estación'] },
+  plataformas: { Icon: Bike, points: ['Rappi, Uber Eats, Didi', 'Comisión por plataforma', 'Venta neta en reportes'] },
+  promociones: { Icon: Gift, points: ['2x1, 3x2 y paquetes', 'Descuentos por horario', 'En caja y en línea'] },
+  multimoneda: { Icon: DollarSign, points: ['Cobra en dólares', 'Tipo de cambio por turno', 'Corte en pesos y dólares'] },
 };
 
 export default function HomePage() {

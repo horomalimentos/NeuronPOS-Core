@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { withTenant } from '../config/database.js';
 import { loadModuleRow } from '../middleware/requireModule.js';
 import { insertItems, loadOrder, nextFolio, priceItems, readItemInputs, recalcOrder } from '../routes/pos/orders.js';
+import { moduleActive } from '../routes/pos/common.js';
 import { getSettings } from '../routes/pos/settings.js';
 import { HttpError, badRequest, notFound, oneOf, requireUuid, str } from '../utils/http.js';
 import { checkModuleAccess } from './access.js';
@@ -164,7 +165,9 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
 
   const pos = await getSettings(db, rid);
   // Las mismas promociones que se guardaran en la orden (recalcOrder).
-  const promotions = await promotionsFor(db, rid, { branchId: branch.id, source: 'web', lines });
+  const promotions = await moduleActive(db, rid, 'promociones')
+    ? await promotionsFor(db, rid, { branchId: branch.id, source: 'web', lines })
+    : [];
   const totals = calculateOrderTotals(lines, {
     taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee,
     promoDiscount: promotions.reduce((s, p) => s + p.cents, 0) / 100,

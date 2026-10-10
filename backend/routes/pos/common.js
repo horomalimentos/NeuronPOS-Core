@@ -1,6 +1,6 @@
 // Utilidades compartidas por las rutas del POS: roles, acceso a sucursales y
 // validaciones pequenas.
-import { badRequest, forbidden, requireUuid } from '../../utils/http.js';
+import { HttpError, badRequest, forbidden, requireUuid } from '../../utils/http.js';
 
 // Quien puede hacer que dentro del POS.
 export const ROLES = {
@@ -88,4 +88,21 @@ export function insertSql(table, restaurantId, fields, returning = '*') {
            VALUES ($1${cols.map((_, i) => `, $${i + 2}`).join('')}) RETURNING ${returning}`,
     values: [restaurantId, ...cols.map(([, v]) => v)],
   };
+}
+
+/** ¿El restaurante tiene contratado y vigente el modulo? (dentro de una transaccion con tenant). */
+export async function moduleActive(db, restaurantId, code) {
+  const { rows } = await db.query(
+    `SELECT 1 FROM restaurant_modules
+      WHERE restaurant_id = $1 AND module_code = $2 AND enabled AND (ends_at IS NULL OR ends_at > now())`,
+    [restaurantId, code],
+  );
+  return rows.length > 0;
+}
+
+/** 402 si falta el modulo (mismo codigo que requireModule). */
+export async function assertModule(db, restaurantId, code, name) {
+  if (!(await moduleActive(db, restaurantId, code))) {
+    throw new HttpError(402, `Tu restaurante no tiene contratado el modulo "${name}"`, 'MODULE_NOT_ENABLED');
+  }
 }

@@ -5,8 +5,9 @@ import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, money, notFound, requireUuid, str } from '../../utils/http.js';
 import {
-  ROLES, assertBranchExists, imageUrl, insertSql, int, isManager, requireBranch, signedMoney, uuidList,
+  ROLES, assertBranchExists, assertModule, imageUrl, insertSql, int, isManager, requireBranch, signedMoney, uuidList,
 } from './common.js';
+import { requireModule } from '../../middleware/requireModule.js';
 
 const router = Router();
 
@@ -66,6 +67,7 @@ function stationField(value) {
 /** Valida que la estacion sea del restaurante (RLS ya oculta las ajenas). */
 async function assertStation(db, restaurantId, stationId) {
   if (!stationId) return;
+  await assertModule(db, restaurantId, 'estaciones', 'Estaciones de cocina');
   const { rowCount } = await db.query(
     'SELECT 1 FROM kitchen_stations WHERE id = $1 AND restaurant_id = $2',
     [stationId, restaurantId],
@@ -427,14 +429,14 @@ const duplicateStation = (err) => {
   throw err;
 };
 
-router.post('/stations', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/stations', requireModule('estaciones'), requireRole(...ROLES.manage), ah(async (req, res) => {
   const q = insertSql('kitchen_stations', req.tenant.id, stationFields(req.body || {}, true), STATION_COLS);
   const row = await withTenant(req.tenant.id, async (db) => (await db.query(q.text, q.values)).rows[0])
     .catch(duplicateStation);
   res.status(201).json({ station: row });
 }));
 
-router.patch('/stations/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/stations/:id', requireModule('estaciones'), requireRole(...ROLES.manage), ah(async (req, res) => {
   requireUuid(req.params.id);
   const set = buildSet(stationFields(req.body || {}, false), 3);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');

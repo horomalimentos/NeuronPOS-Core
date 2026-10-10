@@ -22,7 +22,7 @@ import { promotionsFor } from '../../services/promotions.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
 } from '../../utils/http.js';
-import { ROLES, canAccessBranch, int, isManager, requireBranch, uuidList } from './common.js';
+import { ROLES, assertModule, canAccessBranch, int, isManager, moduleActive, requireBranch, uuidList } from './common.js';
 import { getSettings } from './settings.js';
 
 const router = Router();
@@ -138,10 +138,10 @@ export async function recalcOrder(db, restaurantId, order) {
        FROM order_items i WHERE i.restaurant_id = $1 AND i.order_id = $2`,
     [restaurantId, order.id],
   )).rows;
-  // Promociones automaticas: se recalculan con cada cambio mientras no se pague.
-  const promos = await promotionsFor(db, restaurantId, {
-    branchId: order.branch_id, source: order.source || 'pos', lines: items,
-  });
+  // Promociones automaticas (modulo "promociones"): se recalculan con cada cambio mientras no se pague.
+  const promos = await moduleActive(db, restaurantId, 'promociones')
+    ? await promotionsFor(db, restaurantId, { branchId: order.branch_id, source: order.source || 'pos', lines: items })
+    : [];
   // Descuento de cada articulo sobre su importe (los quitados no cuentan).
   let itemCents = 0;
   for (const it of items) {
@@ -396,6 +396,7 @@ router.post('/orders', requireRole(...ROLES.orders), ah(async (req, res) => {
       if (tableId) await checkTable(db, req.tenant.id, branchId, tableId);
       let commission = 0;
       if (channelId) {
+        await assertModule(db, req.tenant.id, 'plataformas', 'Plataformas de delivery');
         const ch = (await db.query(
           'SELECT name, active, commission_pct, requires_order_number, requires_address FROM sales_channels WHERE id = $1 AND restaurant_id = $2',
           [channelId, req.tenant.id],
@@ -813,6 +814,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       'SELECT payment_method_ids FROM sales_channels WHERE id = $1 AND restaurant_id = $2',
       [o.channel_id, req.tenant.id],
     )).rows[0]?.payment_method_ids || [] : [];
+    const usdEnabled = [...methods.values()].some((m) => m.currency === 'USD') && await moduleActive(db, req.tenant.id, 'multimoneda');
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
       if (p.redemption || p.walletPay) return { ...p, kind: m.kind, currency: 'MXN' };
@@ -824,6 +826,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
         throw badRequest('Ese metodo de pago no aplica para esta plataforma', 'PAYMENT_METHOD_NOT_ALLOWED');
       }
       if (m.currency === 'USD') {
+        if (!usdEnabled) throw new HttpError(402, 'Tu restaurante no tiene contratado el modulo "Cobro en dolares"', 'MODULE_NOT_ENABLED');
         if (!(p.received_usd > 0)) throw badRequest('Indica cuantos dolares se recibieron', 'MISSING_FIELD');
         const rate = Number(session.usd_rate);
         if (!(rate > 0)) throw badRequest('El turno no tiene tipo de cambio', 'USD_RATE_REQUIRED');

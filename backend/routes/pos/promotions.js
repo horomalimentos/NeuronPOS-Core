@@ -6,9 +6,11 @@ import { requireRole } from '../../middleware/auth.js';
 import { isPromotionActive } from '../../services/promotions.js';
 import { localParts } from '../../services/hours.js';
 import { ah, badRequest, bool, buildSet, money, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
+import { requireModule } from '../../middleware/requireModule.js';
 import { ROLES, insertSql, int, uuidList } from './common.js';
 
 const router = Router();
+router.use('/promotions', requireModule('promociones'));
 
 const KINDS = ['nxm', 'paquete', 'porcentaje', 'monto', 'regalo'];
 const COLS = `id, name, description, kind, item_ids, category_ids, buy_quantity, pay_quantity, percent, amount,

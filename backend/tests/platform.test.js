@@ -15,9 +15,17 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
   });
   after(() => ctx?.close());
 
+  // Modulos de main en su orden; los del POS extendido se agregan aparte.
+  const BASE = ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'whatsapp', 'marketplace', 'rh', 'turnos', 'empleado_mes', 'domicilios'];
+  const EXTRA = ['estaciones', 'plataformas', 'promociones', 'multimoneda'];
+  const checkCatalog = (codes, base = BASE) => {
+    assert.deepEqual(codes.filter((c) => base.includes(c)), base);
+    assert.deepEqual(codes.filter((c) => !base.includes(c)).sort(), [...EXTRA].sort());
+  };
+
   test('el catalogo trae los modulos sembrados', async () => {
     const res = await ctx.request('GET', '/api/platform/modules', { token: owner });
-    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'whatsapp', 'marketplace', 'rh', 'turnos', 'empleado_mes', 'domicilios']);
+    checkCatalog(res.body.modules.map((m) => m.code));
   });
 
   test('la pagina principal lee los planes sin restaurante y oculta los inactivos', async () => {
@@ -25,7 +33,7 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
     await ctx.request('PUT', '/api/platform/modules/pos', { token: owner, body: { monthly_price_mxn: 499 } });
     const res = await ctx.request('GET', '/api/public/plans');
     assert.equal(res.status, 200);
-    assert.deepEqual(res.body.modules.map((m) => m.code), ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'whatsapp', 'marketplace', 'rh', 'turnos', 'domicilios']);
+    checkCatalog(res.body.modules.map((m) => m.code), BASE.filter((c) => c !== 'empleado_mes'));
     assert.equal(Number(res.body.modules[0].monthly_price_mxn), 499);
     assert.equal(res.body.modules[0].enabled_restaurants, undefined);
     assert.ok(res.body.trial_days > 0);

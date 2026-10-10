@@ -6,7 +6,7 @@ import ImageInput from '../components/ImageInput';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import type { Branch } from '../lib/types';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import { num, posCan } from './lib';
 import type { KitchenStation, Menu, MenuCategory, MenuItem, ModifierGroup } from './types';
 
@@ -62,7 +62,7 @@ export default function MenuAdminPage() {
       <PageHeader title="Menú" subtitle="Productos, categorías, modificadores y estaciones de cocina del punto de venta." actions={actions} />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       <div className="mb-5 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm">
-        {(Object.keys(TAB_LABEL) as Tab[]).map((t) => (
+        {(Object.keys(TAB_LABEL) as Tab[]).filter((t) => t !== 'estaciones' || meHas(me, 'estaciones')).map((t) => (
           <button key={t} onClick={() => setTab(t)}
             className={`flex-1 rounded-lg px-3 py-2 font-medium ${tab === t ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
             {TAB_LABEL[t]}

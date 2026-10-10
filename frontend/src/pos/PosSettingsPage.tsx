@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import ChannelsCard from './ChannelsCard';
 import { EDITABLE_METHOD_KINDS, METHOD_KIND_LABEL, num, posCan } from './lib';
 import type { MethodKind, PaymentMethod, PosSettings } from './types';
@@ -79,9 +79,9 @@ export default function PosSettingsPage() {
                 <input className="input" type="number" min="0" max="100" step="0.01" value={String(settings.cashier_max_discount_pct)} onChange={(e) => setSettings({ ...settings, cashier_max_discount_pct: e.target.value })} />
               </Field>
             </div>
-            <Field label="Tipo de cambio del dólar" hint="Pesos por dólar. Cada turno de caja lo puede ajustar al abrir.">
+            {meHas(me, 'multimoneda') && <Field label="Tipo de cambio del dólar" hint="Pesos por dólar. Cada turno de caja lo puede ajustar al abrir.">
               <input className="input" type="number" min="0.01" step="0.0001" value={String(settings.usd_rate)} onChange={(e) => setSettings({ ...settings, usd_rate: e.target.value })} />
-            </Field>
+            </Field>}
             <div className="flex items-center gap-3 text-sm text-gray-300">
               <Toggle label="Precios con IVA incluido" checked={settings.prices_include_tax} onChange={(v) => setSettings({ ...settings, prices_include_tax: v })} />
               Los precios del menú ya incluyen IVA
@@ -108,17 +108,17 @@ export default function PosSettingsPage() {
             </ul>
             <p className="mt-3 text-xs text-gray-500">El tipo “Efectivo” permite dar cambio y cuenta para el efectivo esperado en el corte.</p>
           </section>
-          <ChannelsCard methods={methods} />
+          {meHas(me, 'plataformas') && <ChannelsCard methods={methods} />}
         </div>
       )}
       {editing && (
-        <MethodModal method={editing === 'new' ? null : editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
+        <MethodModal method={editing === 'new' ? null : editing} usd={meHas(me, 'multimoneda')} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />
       )}
     </>
   );
 }
 
-function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | null; onClose: () => void; onSaved: () => void }) {
+function MethodModal({ method, usd, onClose, onSaved }: { method: PaymentMethod | null; usd: boolean; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
     name: method?.name || '', kind: method?.kind || ('otro' as MethodKind), currency: method?.currency || 'MXN', active: method?.active ?? true,
   });
@@ -159,7 +159,7 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
             </select>
           )}
         </Field>
-        {form.kind === 'efectivo' && !online && (
+        {form.kind === 'efectivo' && !online && (usd || form.currency === 'USD') && (
           <Field label="Moneda" hint="Dólares: se cobra con el tipo de cambio del turno y el cambio se da en pesos.">
             <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as 'MXN' | 'USD' })}>
               <option value="MXN">Pesos</option>

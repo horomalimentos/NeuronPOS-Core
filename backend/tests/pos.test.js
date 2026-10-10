@@ -25,7 +25,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
   before(async () => {
     ctx = await setupDb();
     owner = await ownerToken(ctx);
-    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos'] });
+    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'estaciones', 'reportes', 'plataformas', 'promociones', 'multimoneda'] });
     B = await createRestaurant(ctx, owner, 'beta', { modules: ['pos'] });
     C = await createRestaurant(ctx, owner, 'gamma');
     branchA = (await api(A, 'GET', '/api/branches')).body.branches[0];
@@ -48,6 +48,23 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
         assert.equal(res.body.code, 'MODULE_NOT_ENABLED');
       }
       assert.equal((await ctx.request('GET', '/api/pos/menu')).status, 401, 'sin sesion');
+    });
+
+    test('las funciones con precio aparte piden su modulo (402 sin el)', async () => {
+      // B solo tiene el POS basico.
+      for (const [m, p, body] of [
+        ['POST', '/api/pos/stations', { name: 'Barra' }],
+        ['GET', '/api/pos/reports/sales?from=2026-01-01&to=2026-01-02'],
+        ['POST', '/api/pos/channels', { name: 'Rappi' }],
+        ['GET', '/api/pos/promotions'],
+        ['POST', '/api/pos/promotions', { name: 'X', kind: 'monto', amount: 5 }],
+        ['POST', '/api/pos/payment-methods', { name: 'Dolares', kind: 'efectivo', currency: 'USD' }],
+      ]) {
+        const res = await api(B, m, p, body);
+        assert.equal(res.status, 402, `${m} ${p}`);
+        assert.equal(res.body.code, 'MODULE_NOT_ENABLED');
+      }
+      assert.deepEqual((await api(B, 'GET', '/api/pos/channels')).body.channels, []);
     });
 
     test('restaurante suspendido: 402 aunque tenga el modulo', async () => {
@@ -306,7 +323,8 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal((await api(cocina, 'POST', '/api/pos/stations', { name: 'Parrilla' })).status, 403);
       // B no puede usar la estacion de A.
       const ajena = await api(B, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id });
-      assert.equal(ajena.body.code, 'STATION_NOT_FOUND');
+      // (B ni siquiera tiene el modulo de estaciones; en ambos casos se rechaza.)
+      assert.ok(['STATION_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajena.body.code), ajena.body.code);
 
       const bebidas = (await api(A, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id })).body.category;
       assert.equal(bebidas.station_id, barra.id);
@@ -540,7 +558,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal((await api(cajero, 'POST', '/api/pos/orders', base)).body.code, 'CHANNEL_ORDER_NUMBER_REQUIRED');
       assert.equal((await api(cajero, 'POST', '/api/pos/orders', { ...base, order_type: 'comedor', table_id: mesa2.id })).status, 400);
       const ajeno = await api(B, 'POST', '/api/pos/orders', { ...base, branch_id: branchB.id, channel_order_number: 'R-1' });
-      assert.equal(ajeno.body.code, 'CHANNEL_NOT_FOUND');
+      assert.ok(['CHANNEL_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajeno.body.code), ajeno.body.code);
       // Con plataforma no se pide la direccion (la entrega es de Rappi).
       const o = (await api(cajero, 'POST', '/api/pos/orders', { ...base, channel_order_number: 'R-123' })).body.order;
       assert.equal(o.channel_name, 'Rappi');
@@ -578,7 +596,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal(bad.body.code, 'INVALID_PROMOTION');
       assert.equal((await api(cajero, 'POST', '/api/pos/promotions', { name: 'X', kind: 'monto', amount: 5 })).status, 403);
       const ajena = await api(B, 'POST', '/api/pos/promotions', { name: 'X', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id] });
-      assert.equal(ajena.body.code, 'ITEM_NOT_FOUND');
+      assert.ok(['ITEM_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajena.body.code), ajena.body.code);
 
       const dosx1 = (await api(A, 'POST', '/api/pos/promotions', {
         name: 'Agua 2x1', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id], priority: 1,
@@ -614,7 +632,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
         const del = await api(A, 'DELETE', `/api/pos/promotions/${p.id}`);
         assert.ok([200, 204].includes(del.status));
       }
-      assert.equal((await api(B, 'GET', '/api/pos/promotions')).body.promotions.length, 0);
+      assert.equal((await api(B, 'GET', '/api/pos/promotions')).status, 402);
     });
 
     test('descuento por articulo y PIN rotativo del gerente para pasar el limite del cajero', async () => {

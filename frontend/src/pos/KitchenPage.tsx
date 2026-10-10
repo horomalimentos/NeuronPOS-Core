@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { nativeInfo } from '../lib/native';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import ChannelBadge from './ChannelBadge';
 import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan, posPrefs } from './lib';
@@ -87,7 +87,7 @@ export default function KitchenPage() {
         subtitle="Órdenes enviadas a cocina, de la más antigua a la más reciente."
         actions={<>
           <BranchSelect branches={branches} value={branchId} onChange={setBranchId} />
-          {stations.length > 0 && (
+          {stations.length > 0 && meHas(me, 'estaciones') && (
             <select className="input w-auto" value={station} onChange={(e) => setStation(e.target.value)} aria-label="Estación">
               <option value="">Todas las estaciones</option>
               <option value="general">Cocina general</option>
