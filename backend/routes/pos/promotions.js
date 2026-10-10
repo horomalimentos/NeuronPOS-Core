@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { requireRole } from '../../middleware/auth.js';
 import { isPromotionActive } from '../../services/promotions.js';
+import { normalizeCode } from '../../services/vouchers.js';
 import { localParts } from '../../services/hours.js';
 import { ah, badRequest, bool, buildSet, money, notFound, oneOf, requireUuid, str } from '../../utils/http.js';
 import { requireModule } from '../../middleware/requireModule.js';
@@ -11,6 +12,7 @@ import { ROLES, insertSql, int, uuidList } from './common.js';
 
 const router = Router();
 router.use('/promotions', requireModule('promociones'));
+router.use('/vouchers', requireModule('promociones'));
 
 const KINDS = ['nxm', 'paquete', 'porcentaje', 'monto', 'regalo'];
 const COLS = `id, name, description, kind, item_ids, category_ids, buy_quantity, pay_quantity, percent, amount,
@@ -156,6 +158,99 @@ router.delete('/promotions/:id', requireRole(...ROLES.manage), ah(async (req, re
   });
   if (result) return res.json(result);
   res.status(204).end();
+}));
+
+// ---------------------------------------------------------------------------
+// Vales y codigos promocionales
+// ---------------------------------------------------------------------------
+
+const VOUCHER_COLS = `v.id, v.code, v.description, v.kind, v.amount, v.percent, v.menu_item_id, v.min_amount, v.max_uses,
+  to_char(v.starts_on, 'YYYY-MM-DD') AS starts_on, to_char(v.ends_on, 'YYYY-MM-DD') AS ends_on,
+  v.applies_pos, v.applies_web, v.active, v.created_at`;
+
+function voucherFields(body, creating) {
+  const nullableMoney = (v, field) => (v === undefined ? undefined : v === null || v === '' ? null : money(v, { field }));
+  const code = body.code === undefined ? undefined : normalizeCode(body.code);
+  if (code !== undefined && !/^[A-Z0-9-]{3,30}$/.test(code)) throw badRequest('El codigo debe tener de 3 a 30 letras, numeros o guiones', 'INVALID_FIELD');
+  const pct = body.percent === undefined ? undefined : body.percent === null || body.percent === '' ? null : Number(body.percent);
+  if (pct !== undefined && pct !== null && !(pct > 0 && pct <= 100)) throw badRequest('El porcentaje debe estar entre 1 y 100', 'INVALID_FIELD');
+  const f = {
+    code,
+    description: str(body.description, { field: 'description', max: 200 }),
+    kind: oneOf(body.kind, ['monto', 'porcentaje', 'producto'], 'kind'),
+    amount: nullableMoney(body.amount, 'amount'),
+    percent: pct,
+    menu_item_id: body.menu_item_id === undefined ? undefined : body.menu_item_id ? requireUuid(body.menu_item_id, 'menu_item_id') : null,
+    min_amount: body.min_amount === undefined ? undefined : money(body.min_amount || 0, { field: 'min_amount' }),
+    max_uses: int(body.max_uses, { field: 'max_uses', min: 1, max: 1000000, nullable: true }),
+    starts_on: optional(body.starts_on, DATE_RE, 'starts_on'),
+    ends_on: optional(body.ends_on, DATE_RE, 'ends_on'),
+    applies_pos: bool(body.applies_pos, 'applies_pos'),
+    applies_web: bool(body.applies_web, 'applies_web'),
+    active: bool(body.active, 'active'),
+  };
+  if (creating && (!f.code || !f.kind)) throw badRequest('El codigo y el tipo son obligatorios', 'MISSING_FIELD');
+  return f;
+}
+
+function checkVoucher(v) {
+  if (v.kind === 'monto' && !(Number(v.amount) > 0)) throw badRequest('Indica el monto del vale', 'INVALID_VOUCHER');
+  if (v.kind === 'porcentaje' && !(Number(v.percent) > 0)) throw badRequest('Indica el porcentaje del vale', 'INVALID_VOUCHER');
+  if (v.kind === 'producto' && !v.menu_item_id) throw badRequest('Elige el producto del vale', 'INVALID_VOUCHER');
+  if (v.starts_on && v.ends_on && v.ends_on < v.starts_on) throw badRequest('La fecha final es anterior a la inicial', 'INVALID_VOUCHER');
+}
+
+const getVoucher = async (db, rid, id) => (await db.query(
+  `SELECT ${VOUCHER_COLS}, (SELECT count(*)::int FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS uses,
+          (SELECT coalesce(sum(r.amount), 0) FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS discounted
+     FROM vouchers v WHERE v.id = $1 AND v.restaurant_id = $2`,
+  [id, rid],
+)).rows[0];
+
+router.get('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
+  const vouchers = await withTenant(req.tenant.id, async (db) => (await db.query(
+    `SELECT ${VOUCHER_COLS}, (SELECT count(*)::int FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS uses,
+            (SELECT coalesce(sum(r.amount), 0) FROM voucher_redemptions r WHERE r.voucher_id = v.id) AS discounted
+       FROM vouchers v WHERE v.restaurant_id = $1 ORDER BY v.active DESC, v.created_at DESC`,
+    [req.tenant.id],
+  )).rows);
+  res.json({ vouchers });
+}));
+
+router.post('/vouchers', requireRole(...ROLES.manage), ah(async (req, res) => {
+  const f = voucherFields(req.body || {}, true);
+  checkVoucher(f);
+  const voucher = await withTenant(req.tenant.id, async (db) => {
+    if (f.menu_item_id) {
+      const it = await db.query('SELECT 1 FROM menu_items WHERE id = $1 AND restaurant_id = $2', [f.menu_item_id, req.tenant.id]);
+      if (!it.rowCount) throw badRequest('El producto no existe', 'ITEM_NOT_FOUND');
+    }
+    const q = insertSql('vouchers', req.tenant.id, { ...f, created_by: req.user.id }, 'id');
+    const { rows } = await db.query(q.text, q.values);
+    return getVoucher(db, req.tenant.id, rows[0].id);
+  }).catch((err) => {
+    if (err.code === '23505') throw badRequest('Ya existe un vale con ese codigo', 'VOUCHER_EXISTS');
+    throw err;
+  });
+  res.status(201).json({ voucher });
+}));
+
+router.patch('/vouchers/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const f = voucherFields(req.body || {}, false);
+  const set = buildSet(f, 3);
+  if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
+  const voucher = await withTenant(req.tenant.id, async (db) => {
+    const cur = await getVoucher(db, req.tenant.id, req.params.id);
+    if (!cur) throw notFound('Vale no encontrado', 'VOUCHER_NOT_FOUND');
+    checkVoucher({ ...cur, ...Object.fromEntries(Object.entries(f).filter(([, v]) => v !== undefined)) });
+    await db.query(`UPDATE vouchers SET ${set.sql}, updated_at = now() WHERE id = $1 AND restaurant_id = $2`, [req.params.id, req.tenant.id, ...set.values]);
+    return getVoucher(db, req.tenant.id, req.params.id);
+  }).catch((err) => {
+    if (err.code === '23505') throw badRequest('Ya existe un vale con ese codigo', 'VOUCHER_EXISTS');
+    throw err;
+  });
+  res.json({ voucher });
 }));
 
 export default router;

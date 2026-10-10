@@ -488,6 +488,7 @@ router.post('/quote', optionalCustomer, ah(async (req, res) => {
     })),
     ...p.totals,
     promotions: p.promotions.map((x) => ({ promotion_id: x.promotion_id, name: x.name, amount: x.cents / 100 })),
+    voucher: p.voucher ? { code: p.voucher.code, amount: p.voucher.cents / 100 } : null,
     tax_rate_pct: p.pos.tax_rate_pct,
     prices_include_tax: p.pos.prices_include_tax,
     prep_time_minutes: p.settings.prep_time_minutes,

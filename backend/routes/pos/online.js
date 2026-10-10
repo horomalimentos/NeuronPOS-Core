@@ -8,6 +8,7 @@ import { withTenant } from '../../config/database.js';
 import { sendOrderRejected } from '../../services/emails.js';
 import { deductOrder } from '../../services/inventory.js';
 import { earnForOrder } from '../../services/loyalty.js';
+import { redeemOrderVoucher } from '../../services/vouchers.js';
 import { requireRole } from '../../middleware/auth.js';
 import { acceptOnlineOrder, getOnlineSettings } from '../../services/online.js';
 import { toCents } from '../../services/posMath.js';
@@ -152,6 +153,7 @@ router.post('/online-orders/:id/deliver', requireRole(...ROLES.cashier), ah(asyn
     );
     await deductOrder(db, req.tenant.id, o.id, req.user.id);
     await earnForOrder(db, req.tenant.id, o.id, req.user.id);
+    await redeemOrderVoucher(db, req.tenant.id, o.id);
     return loadOrder(db, req.tenant.id, o.id);
   });
   res.json({ order });

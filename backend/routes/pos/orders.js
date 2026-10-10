@@ -19,6 +19,7 @@ import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { verifyApprovalPin, pinExpiresAt, pinFor, pinLocked } from '../../services/approvalPin.js';
 import { calculateOrderTotals, discountCents, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
 import { promotionsFor } from '../../services/promotions.js';
+import { findVoucher, redeemOrderVoucher, voucherDiscountCents, voucherProblem } from '../../services/vouchers.js';
 import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
 } from '../../utils/http.js';
@@ -48,10 +49,12 @@ const ORDER_SELECT = `
          o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at, o.scheduled_for,
          o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.channel_id, ch.name AS channel_name, ch.color AS channel_color, o.channel_order_number,
-         o.channel_commission_pct, o.promo_discount, o.item_discount
+         o.channel_commission_pct, o.promo_discount, o.item_discount,
+         o.voucher_id, o.voucher_discount, vo.code AS voucher_code
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN sales_channels ch ON ch.id = o.channel_id AND ch.restaurant_id = o.restaurant_id
+    LEFT JOIN vouchers vo ON vo.id = o.voucher_id AND vo.restaurant_id = o.restaurant_id
     LEFT JOIN users u ON u.id = o.created_by AND u.restaurant_id = o.restaurant_id`;
 
 export async function loadItems(db, restaurantId, orderIds) {
@@ -142,6 +145,22 @@ export async function recalcOrder(db, restaurantId, order) {
   const promos = await moduleActive(db, restaurantId, 'promociones')
     ? await promotionsFor(db, restaurantId, { branchId: order.branch_id, source: order.source || 'pos', lines: items })
     : [];
+  // Vale (modulo "promociones"): sobre lo que queda despues de las promociones.
+  // Si ya no aplica (vencio, cambio la orden...) se quita.
+  let voucherCents = 0;
+  if (order.voucher_id) {
+    const v = (await db.query('SELECT * FROM vouchers WHERE id = $1 AND restaurant_id = $2', [order.voucher_id, restaurantId])).rows[0];
+    const subtotalCents = items.filter((i) => !i.voided).reduce((s, i) => s + (toCents(i.unit_price) + toCents(i.modifiers_total)) * Number(i.quantity), 0);
+    const baseCents = subtotalCents - promos.reduce((s, p) => s + p.cents, 0);
+    const tz = (await db.query('SELECT timezone FROM branches WHERE id = $1 AND restaurant_id = $2', [order.branch_id, restaurantId])).rows[0]?.timezone;
+    const problem = await voucherProblem(db, restaurantId, v, { source: order.source || 'pos', timezone: tz, baseCents, lines: items, orderId: order.id });
+    if (problem || !(await moduleActive(db, restaurantId, 'promociones'))) {
+      await db.query('UPDATE orders SET voucher_id = NULL WHERE id = $1 AND restaurant_id = $2', [order.id, restaurantId]);
+      order.voucher_id = null;
+    } else {
+      voucherCents = voucherDiscountCents(v, { baseCents, lines: items });
+    }
+  }
   // Descuento de cada articulo sobre su importe (los quitados no cuentan).
   let itemCents = 0;
   for (const it of items) {
@@ -157,7 +176,7 @@ export async function recalcOrder(db, restaurantId, order) {
     taxRatePct: order.tax_rate_pct,
     pricesIncludeTax: order.prices_include_tax,
     deliveryFee: order.delivery_fee,
-    promoDiscount: promos.reduce((s, p) => s + p.cents, 0) / 100,
+    promoDiscount: (promos.reduce((s, p) => s + p.cents, 0) + voucherCents) / 100,
     itemDiscount: itemCents / 100,
   });
   if (toCents(totals.total) < toCents(order.paid_amount)) {
@@ -172,10 +191,10 @@ export async function recalcOrder(db, restaurantId, order) {
   }
   await db.query(
     `UPDATE orders SET subtotal = $3, discount_amount = $4, tax_amount = $5, total = $6, promo_discount = $7,
-            item_discount = $8, updated_at = now()
+            item_discount = $8, voucher_discount = $9, updated_at = now()
       WHERE id = $1 AND restaurant_id = $2`,
     [order.id, restaurantId, totals.subtotal, totals.discount_amount, totals.tax_amount, totals.total, totals.promo_discount,
-      totals.item_discount],
+      totals.item_discount, voucherCents / 100],
   );
   return totals;
 }
@@ -624,6 +643,36 @@ async function authorizeDiscount(db, req, pct, pin, what) {
   return approver;
 }
 
+// Aplicar un vale por su codigo ({ code }; null lo quita). Modulo "promociones".
+router.put('/orders/:id/voucher', requireRole(...ROLES.orders), ah(async (req, res) => {
+  const code = req.body?.code ? String(req.body.code) : null;
+  const order = await withTenant(req.tenant.id, async (db) => {
+    const o = await lockOrder(db, req, req.params.id);
+    assertActive(o);
+    if (code) {
+      await assertModule(db, req.tenant.id, 'promociones', 'Promociones');
+      const v = await findVoucher(db, req.tenant.id, code);
+      if (!v) throw badRequest('El vale no existe', 'VOUCHER_NOT_FOUND');
+      const items = (await db.query(
+        'SELECT menu_item_id, unit_price, modifiers_total, quantity, voided_at IS NOT NULL AS voided FROM order_items WHERE order_id = $1 AND restaurant_id = $2',
+        [o.id, req.tenant.id],
+      )).rows;
+      const tz = (await db.query('SELECT timezone FROM branches WHERE id = $1 AND restaurant_id = $2', [o.branch_id, req.tenant.id])).rows[0]?.timezone;
+      const problem = await voucherProblem(db, req.tenant.id, v, {
+        source: o.source, timezone: tz, baseCents: toCents(o.subtotal) - toCents(o.promo_discount) + toCents(o.voucher_discount), lines: items, orderId: o.id,
+      });
+      if (problem) throw badRequest(problem, 'VOUCHER_NOT_APPLICABLE');
+      o.voucher_id = v.id;
+    } else {
+      o.voucher_id = null;
+    }
+    await db.query('UPDATE orders SET voucher_id = $3 WHERE id = $1 AND restaurant_id = $2', [o.id, req.tenant.id, o.voucher_id]);
+    await recalcOrder(db, req.tenant.id, o);
+    return loadOrder(db, req.tenant.id, o.id);
+  });
+  res.json({ order });
+}));
+
 // PIN vigente del gerente para dictarlo al cajero (cambia cada 10 minutos).
 router.get('/approval-pin', requireRole(...ROLES.manage), (req, res) => {
   res.json({ pin: pinFor(req.user.id), expires_at: pinExpiresAt() });
@@ -899,6 +948,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       );
       await deductOrder(db, req.tenant.id, o.id, req.user.id);
       await earnForOrder(db, req.tenant.id, o.id, req.user.id);
+      await redeemOrderVoucher(db, req.tenant.id, o.id);
     }
     if (o.order_type === 'domicilio') await afterRegisterPayment(db, req.tenant.id, o.id, paid);
     return {

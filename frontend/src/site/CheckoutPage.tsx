@@ -118,6 +118,10 @@ export default function CheckoutPage() {
     menu_item_id: l.item_id, quantity: l.quantity, modifier_ids: l.modifier_ids, notes: l.notes || null,
   })), [cart.lines]);
 
+  // Codigo promocional (vale): se manda en la cotizacion y en el pedido.
+  const [codeInput, setCodeInput] = useState('');
+  const [code, setCode] = useState('');
+
   // Cotizacion del servidor cada vez que cambia el carrito, la sucursal o el tipo.
   useEffect(() => {
     if (!config || !cart.branch_id || !items.length) { setQuote(null); return undefined; }
@@ -129,7 +133,7 @@ export default function CheckoutPage() {
         body: {
           branch_id: cart.branch_id, order_type: type, items, payment: { method },
           address_id: usingSavedAddress ? addressId : undefined, location: sendPoint ?? undefined,
-          scheduled_for: scheduledFor ?? undefined,
+          scheduled_for: scheduledFor ?? undefined, voucher_code: code || undefined,
         },
       })
         .then((q) => { if (!cancelled) { setQuote(q); setQuoteError(''); } })
@@ -137,7 +141,7 @@ export default function CheckoutPage() {
         .finally(() => { if (!cancelled) setQuoting(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [config, cart.branch_id, type, items, method, usingSavedAddress, addressId, sendPoint?.latitude, sendPoint?.longitude, scheduledFor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, cart.branch_id, type, items, method, usingSavedAddress, addressId, sendPoint?.latitude, sendPoint?.longitude, scheduledFor, code]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!hasModule(site, 'portal')) return <p className="px-6 py-24 text-center text-gray-500">Este restaurante no tiene pedidos en línea.</p>;
   if (!config) {
@@ -173,6 +177,7 @@ export default function CheckoutPage() {
           location: sendPoint ?? undefined,
           scheduled_for: scheduledFor ?? undefined,
           notes: notes.trim() || null,
+          voucher_code: code || undefined,
           payment: payOnline
             ? { provider: 'clip' }
             : payWallet ? { provider: 'monedero' } : { provider: 'contra_entrega', method, pay_with: method === 'efectivo' && payWith ? Number(payWith) : null },
@@ -410,12 +415,22 @@ export default function CheckoutPage() {
                 <>
                   <Row label="Subtotal" value={formatMXN(quote.subtotal)} />
                   {(quote.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promoción: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
+                  {quote.voucher && <Row label={`Código ${quote.voucher.code}`} value={`-${formatMXN(quote.voucher.amount)}`} />}
                   {quote.delivery_fee > 0 && <Row label="Envío" value={formatMXN(quote.delivery_fee)} />}
                   <Row label={`IVA ${Number(quote.tax_rate_pct)}%${quote.prices_include_tax ? ' (incluido)' : ''}`} value={formatMXN(quote.tax_amount)} muted />
                   <Row label="Total" value={formatMXN(quote.total)} strong />
                   <p className="pt-1 text-xs text-gray-500">Tiempo estimado: {quote.prep_time_minutes} min{type === 'domicilio' ? ' más el envío' : ''}.</p>
                 </>
               ) : quoting ? <p className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</p> : null}
+              <div className="flex gap-2 pt-2">
+                <input className="input-light flex-1 py-2 uppercase" placeholder="¿Tienes un código?" maxLength={30} value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value)} aria-label="Código promocional" />
+                {code ? (
+                  <button type="button" className="btn-outline py-2" onClick={() => { setCode(''); setCodeInput(''); }}>Quitar</button>
+                ) : (
+                  <button type="button" className="btn-outline py-2" disabled={!codeInput.trim()} onClick={() => setCode(codeInput.trim())}>Aplicar</button>
+                )}
+              </div>
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
               <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort)) || Boolean(zone && !point) || (when === 'despues' && Boolean(scheduling) && !scheduledFor)}>

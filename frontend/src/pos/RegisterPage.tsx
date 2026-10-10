@@ -1,6 +1,6 @@
 import {
   ArrowLeft, Ban, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
-  ShoppingBag, Tag, Trash2, Truck, Utensils, Wallet,
+  ShoppingBag, Tag, Ticket, Trash2, Truck, Utensils, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -22,6 +22,7 @@ import type {
 } from './types';
 import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
+import VoucherModal from './VoucherModal';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -82,6 +83,8 @@ export default function RegisterPage() {
   const [showPay, setShowPay] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
   const [discountItem, setDiscountItem] = useState<OrderItem | null>(null);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const doVoucher = () => run(async () => { if (await save()) setVoucherOpen(true); });
   const [busy, setBusy] = useState(false);
 
   const inOrder = Boolean(draft || order);
@@ -429,6 +432,7 @@ export default function RegisterPage() {
               <>
                 <Row label="Subtotal" value={formatMXN(order.subtotal)} />
                 {(order.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promo: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
+                {num(order.voucher_discount) > 0 && <Row label={`Vale ${order.voucher_code}`} value={`-${formatMXN(order.voucher_discount)}`} />}
                 {num(order.item_discount) > 0 && <Row label="Descuentos por artículo" value={`-${formatMXN(order.item_discount)}`} />}
                 {num(order.discount_amount) > 0 && <Row label={`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`} value={`-${formatMXN(order.discount_amount)}`} />}
                 <Row label={`IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' incl.' : ''}`} value={formatMXN(order.tax_amount)} />
@@ -447,6 +451,9 @@ export default function RegisterPage() {
               <Button variant="secondary" onClick={doSend} disabled={busy || (cart.length === 0 && unsentCount === 0)}><ChefHat className="h-4 w-4" /> Enviar a cocina</Button>
               {posCan.cashier(role) && (
                 <Button variant="secondary" onClick={doDiscount} disabled={busy || (!order && cart.length === 0)}><Tag className="h-4 w-4" /> Descuento</Button>
+              )}
+              {meHas(me, 'promociones') && (
+                <Button variant="secondary" onClick={doVoucher} disabled={busy || (!order && cart.length === 0)}><Ticket className="h-4 w-4" /> {order?.voucher_id ? 'Cambiar vale' : 'Vale'}</Button>
               )}
               <Button variant="secondary" onClick={() => order && print(order)} disabled={!order || cart.length > 0}><Printer className="h-4 w-4" /> Cuenta</Button>
               <Button variant="ghost" onClick={doCancel} disabled={busy}><Ban className="h-4 w-4" /> {order ? 'Cancelar orden' : 'Descartar'}</Button>
@@ -476,6 +483,7 @@ export default function RegisterPage() {
           onPrint={print}
           onPaid={(o) => { setShowPay(false); setOrder(o); if (o.status === 'pagada') loadFloor(); }} />
       )}
+      {voucherOpen && order && <VoucherModal order={order} onClose={() => setVoucherOpen(false)} onSaved={(o) => { setVoucherOpen(false); setOrder(o); }} />}
       {discountItem && order && (
         <DiscountModal order={order} item={discountItem} maxPct={maxPct} onClose={() => setDiscountItem(null)}
           onSaved={(o) => { setDiscountItem(null); setOrder(o); }} />

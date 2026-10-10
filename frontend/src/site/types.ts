@@ -222,6 +222,7 @@ export interface Quote {
   discount_amount: number;
   promo_discount?: number;
   promotions?: { promotion_id: string; name: string; amount: number }[];
+  voucher?: { code: string; amount: number } | null;
   tax_amount: number;
   delivery_fee: number;
   total: number;

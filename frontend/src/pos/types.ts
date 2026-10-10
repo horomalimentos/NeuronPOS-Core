@@ -208,6 +208,10 @@ export interface Order {
   promo_discount?: Money;
   item_discount?: Money;
   promotions?: { promotion_id: string; name: string; amount: Money }[];
+  // Vale aplicado (su descuento ya esta dentro de promo_discount).
+  voucher_id?: string | null;
+  voucher_code?: string | null;
+  voucher_discount?: Money;
 }
 
 export type PromotionKind = 'nxm' | 'paquete' | 'porcentaje' | 'monto' | 'regalo';

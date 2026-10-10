@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { useAdmin } from '../restaurant/context';
 import { num, posCan } from './lib';
+import VouchersSection from './VouchersSection';
 import type { Menu, Promotion, PromotionKind } from './types';
 
 /**
@@ -105,6 +106,7 @@ export default function PromotionsPage() {
           ))}
         </div>
       )}
+      <VouchersSection menu={menu} />
       {editing && menu && (
         <PromotionModal promotion={editing === 'new' ? null : editing} menu={menu} branches={me.branches}
           onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />

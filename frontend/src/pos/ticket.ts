@@ -83,6 +83,7 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     <table>
       ${row('Subtotal', formatMXN(order.subtotal))}
       ${(order.promotions || []).map((p) => row(`Promo ${esc(p.name)}`, `-${formatMXN(p.amount)}`)).join('')}
+      ${num(order.voucher_discount) ? row(`Vale ${esc(order.voucher_code)}`, `-${formatMXN(order.voucher_discount)}`) : ''}
       ${num(order.item_discount) ? row('Descuentos por artículo', `-${formatMXN(order.item_discount)}`) : ''}
       ${num(order.discount_amount) ? row(`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`, `-${formatMXN(order.discount_amount)}`) : ''}
       ${row(taxLabel, formatMXN(order.tax_amount))}
