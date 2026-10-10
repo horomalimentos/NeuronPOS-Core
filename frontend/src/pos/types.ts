@@ -153,6 +153,9 @@ export interface Order {
   online_status?: OnlineStatus | null;
   delivery_fee?: Money;
   delivery_reference?: string | null;
+  delivery_latitude?: string | null;
+  delivery_longitude?: string | null;
+  delivery_distance_km?: string | null;
   payment_preference?: 'efectivo' | 'tarjeta' | null;
   pay_with?: Money | null;
   accepted_at?: string | null;

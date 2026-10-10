@@ -156,7 +156,14 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
         <p className="font-medium text-white">{o.customer_name}</p>
         {o.customer_phone && <p className="flex items-center gap-1.5 text-gray-400"><Phone className="h-3.5 w-3.5" /> <a href={`tel:${o.customer_phone}`}>{o.customer_phone}</a></p>}
         {delivery && o.customer_address && (
-          <p className="flex gap-1.5 text-gray-400"><MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />{o.customer_address}{o.delivery_reference && ` · ${o.delivery_reference}`}</p>
+          <p className="flex gap-1.5 text-gray-400"><MapPin className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" /><span>
+            {o.customer_address}{o.delivery_reference && ` · ${o.delivery_reference}`}
+            {o.delivery_latitude && (
+              <> · <a className="text-brand hover:underline" target="_blank" rel="noopener noreferrer"
+                href={`https://www.google.com/maps/search/?api=1&query=${o.delivery_latitude},${o.delivery_longitude}`}>
+                ver en mapa{o.delivery_distance_km ? ` (${Number(o.delivery_distance_km).toFixed(1)} km)` : ''}</a></>
+            )}
+          </span></p>
         )}
       </div>
       <ul className="space-y-1 rounded-xl bg-gray-950/60 p-3 text-sm">
