@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { PageHeader, StatusBadge } from '../components/ui';
 import { formatDate } from '../lib/format';
 import { moduleIcon } from '../lib/modules';
-import { canManage, useAdmin } from './context';
+import AnnouncementsFeed from '../rh/AnnouncementsFeed';
+import { canManage, meHas, useAdmin } from './context';
 import TodaySales from './TodaySales';
 
 export default function DashboardPage() {
@@ -24,6 +25,19 @@ export default function DashboardPage() {
   if (me.user.role === 'repartidor') links.domicilios = { to: '/repartidor', label: 'Abrir app del repartidor' };
   else if (manager || me.user.role === 'cajero') links.domicilios = { to: '/admin/reparto', label: 'Abrir reparto' };
   if (manager) {
+    Object.assign(links, {
+      estaciones: { to: '/admin/pos/ajustes', label: 'Configurar estaciones' },
+      reportes: { to: '/admin/reportes', label: 'Ver reportes' },
+      plataformas: { to: '/admin/pos/ajustes', label: 'Configurar canales' },
+      promociones: { to: '/admin/promociones', label: 'Ver promociones' },
+      multimoneda: { to: '/admin/pos/ajustes', label: 'Tipo de cambio' },
+      terminal_clip: { to: '/admin/caja', label: 'Abrir caja' },
+      lealtad: { to: '/admin/clientes', label: 'Ver clientes' },
+    });
+  }
+  if (['admin', 'gerente', 'cajero', 'cocina'].includes(me.user.role)) links.inventario = { to: '/admin/inventario', label: 'Abrir inventario' };
+  if (manager || me.user.role === 'cajero') links.kiosko = { to: '/autoservicio', label: 'Abrir kiosko' };
+  if (manager) {
     links.landing = { to: '/admin/sitio', label: 'Editar sitio web' };
     links.portal = { to: '/admin/pedidos-en-linea', label: 'Configurar pedidos' };
   }
@@ -38,6 +52,7 @@ export default function DashboardPage() {
       />
 
       {manager && !r.access_error && ['pos', 'reportes'].every((c) => enabled.some((m) => m.code === c)) && <TodaySales me={me} />}
+      {meHas(me, 'rh') && <AnnouncementsFeed />}
 
       <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-gray-500">Tus módulos</h2>
       {enabled.length === 0 && <p className="mb-6 text-sm text-gray-500">Todavía no tienes módulos contratados.</p>}

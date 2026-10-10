@@ -41,6 +41,26 @@ router.post(
   }),
 );
 
+// Fotos del personal (evidencia de checklists, incidencias...): cualquier rol
+// con sesion. Mismo formato y validacion que /image.
+router.post(
+  '/photo',
+  authenticateUser,
+  express.raw({ type: 'image/*', limit: MAX_UPLOAD_BYTES }),
+  ah(async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      throw badRequest('Manda la foto como archivo (JPG, PNG, WebP o GIF)', 'IMAGE_REQUIRED');
+    }
+    const ext = sniffImage(req.body);
+    if (!ext) throw badRequest('El archivo no es una imagen JPG, PNG, WebP o GIF', 'INVALID_IMAGE');
+    const dir = path.join(env.uploadsDir, req.tenant.id);
+    await fs.mkdir(dir, { recursive: true });
+    const name = `${crypto.randomUUID()}.${ext}`;
+    await fs.writeFile(path.join(dir, name), req.body);
+    res.status(201).json({ url: `/api/uploads/${req.tenant.id}/${name}`, size: req.body.length });
+  }),
+);
+
 // express.raw responde 413 con su propio error: se traduce al formato de la API.
 router.use((err, req, res, next) => {
   if (err?.type === 'entity.too.large') {

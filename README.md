@@ -1132,6 +1132,31 @@ Pantallas: `/admin/rh` (Empleados, Asistencia, Nómina, Configuración),
 tareas, historial y reglas), `/admin/empleado-del-mes/empleados` (cuando
 solo se tiene `empleado_mes`) y `/admin/muro`.
 
+### Operación diaria: checklists, incidencias y comunicados
+
+Dentro del módulo `rh` (sin costo extra), como en Horom:
+
+- **Checklists** (`/admin/checklists`, todo el personal): el gerente arma plantillas
+  (Apertura, Cierre, Limpieza...) por sucursal, y cada punto puede pedir **foto de
+  evidencia**. Cada día se genera la lista de la sucursal; quien marca cada punto queda
+  registrado y solo se puede **enviar** cuando todo está completo. El gerente ve el
+  historial con fotos.
+- **Incidencias** (RH > Incidencias): acta de retardo, falta, conducta, accidente u otro,
+  con medida tomada y hasta 6 fotos. El empleado la ve en **Mi nómina** y la **firma de
+  enterado** con su comentario; el gerente la cierra.
+- **Comunicados** (RH > Comunicados): avisos al personal por sucursal y/o área, normal o
+  importante, con fecha de fin. Salen en el **Inicio** de cada quien con botón
+  "Enterado" y el gerente ve cuántos lo leyeron.
+
+API: `/api/rh/checklists/*`, `/api/rh/incidents`, `/api/rh/me/incidents`,
+`/api/rh/announcements` y `/api/rh/announcements/feed`.
+
+**Fotos** (`POST /api/uploads`, `{ data: "data:image/jpeg;base64,..." }`, máx. 4 MB): el
+navegador las reduce a 1600 px antes de subirlas. Se guardan en `UPLOADS_DIR` (por
+defecto `backend/uploads/`, ignorada por git) en una carpeta por restaurante y se sirven
+en `/api/uploads/files/<restaurante>/<archivo>`. **Respalda esa carpeta** junto con la base.
+
+
 ## Domicilios (fase 5)
 
 Todo detrás de `requireModule('domicilios')` (sin el módulo: 402). Dos modos

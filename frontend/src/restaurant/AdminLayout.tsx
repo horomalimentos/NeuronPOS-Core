@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -75,6 +75,7 @@ export default function AdminLayout() {
     { to: '/repartidor', label: 'Mis entregas', icon: Bike, end: false, show: has('domicilios') && role === 'repartidor' },
     { to: '/admin/domicilios', label: 'Domicilios', icon: Truck, end: false, show: has('domicilios') && canManage(role) },
     { to: '/admin/rh', label: 'RH', icon: Contact, end: false, show: has('rh') && canManage(role) },
+    { to: '/admin/checklists', label: 'Checklists', icon: ClipboardCheck, end: false, show: has('rh') && role !== 'repartidor' },
     { to: '/admin/checador', label: 'Checador', icon: Clock, end: false, show: has('rh') },
     { to: '/admin/mi-nomina', label: 'Mi nómina', icon: Receipt, end: false, show: has('rh') },
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },

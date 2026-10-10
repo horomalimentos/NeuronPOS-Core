@@ -43,8 +43,11 @@ import SubscriptionPage from './restaurant/SubscriptionPage';
 import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
+import AnnouncementsPage from './rh/AnnouncementsPage';
 import AttendancePage from './rh/AttendancePage';
+import ChecklistsPage from './rh/ChecklistsPage';
 import EmployeesPage from './rh/EmployeesPage';
+import IncidentsPage from './rh/IncidentsPage';
 import KioskPage from './rh/KioskPage';
 import ModuleGate from './rh/ModuleGate';
 import MyPayrollPage from './rh/MyPayrollPage';
@@ -179,9 +182,12 @@ export default function App() {
               <Route path="nomina/:id" element={<PayrollPeriodPage />} />
               <Route path="aclaraciones" element={<ClaimsPage />} />
               <Route path="aguinaldo" element={<AguinaldoPage />} />
+              <Route path="incidencias" element={<IncidentsPage />} />
+              <Route path="comunicados" element={<AnnouncementsPage />} />
               <Route path="ajustes" element={<RhSettingsPage />} />
             </Route>
             <Route path="checador" element={<KioskPage />} />
+            <Route path="checklists" element={<ChecklistsPage />} />
             <Route path="mi-nomina" element={<MyPayrollPage />} />
           </Route>
           {/* Domicilios (modulo domicilios) */}
