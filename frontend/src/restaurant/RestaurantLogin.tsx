@@ -1,6 +1,6 @@
 import { Store } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AuthCard } from '../components/AuthCard';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -53,6 +53,7 @@ export default function RestaurantLogin() {
           <input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
         <Button type="submit" loading={loading} className="w-full">Entrar</Button>
+        <Link to="/admin/olvide" className="block text-center text-xs text-gray-500 hover:text-gray-300">¿Olvidaste tu contraseña?</Link>
         {session.getDevSlug() && (
           <button type="button" className="w-full text-center text-xs text-gray-500 hover:text-gray-300"
             onClick={() => { session.setDevSlug(null); window.location.reload(); }}>

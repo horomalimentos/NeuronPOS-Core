@@ -5,6 +5,7 @@
 // los ve como entregados.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
+import { sendOrderRejected } from '../../services/emails.js';
 import { deductOrder } from '../../services/inventory.js';
 import { earnForOrder } from '../../services/loyalty.js';
 import { requireRole } from '../../middleware/auth.js';
@@ -99,9 +100,14 @@ router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async
       [o.id, req.tenant.id, req.user.id, reason],
     );
     await refundOrderWallet(db, req.tenant.id, o, { reason: `Pedido #${o.folio} rechazado`, userId: req.user.id });
-    return loadOrder(db, req.tenant.id, o.id);
+    const email = o.customer_id
+      ? (await db.query('SELECT email FROM customers WHERE id = $1 AND restaurant_id = $2', [o.customer_id, req.tenant.id])).rows[0]?.email
+      : null;
+    return { ...(await loadOrder(db, req.tenant.id, o.id)), customer_email: email };
   });
-  res.json({ order });
+  const { customer_email: email, ...view } = order;
+  if (email) void sendOrderRejected(req.tenant, view, email, reason);
+  res.json({ order: view });
 }));
 
 // Domicilio: el pedido salio con el repartidor (el cliente lo ve "en camino").

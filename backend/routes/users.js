@@ -115,6 +115,8 @@ router.patch('/:id', requireRole('admin'), ah(async (req, res) => {
   }
   const password = readPassword(body.password, false);
   if (password) fields.password_hash = await bcrypt.hash(password, 12);
+  // Otra persona le cambia la contrasena: se cierran sus sesiones abiertas.
+  if (password && !isSelf) fields.password_changed_at = new Date();
   const branchIds = readBranchIds(body.branch_ids);
 
   const user = await withTenant(req.tenant.id, async (db) => {

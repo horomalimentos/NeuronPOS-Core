@@ -70,7 +70,102 @@ export function LoginPage() {
             <input className="input-light" type="password" required autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
           </label>
           <button className="btn-brand w-full py-3" disabled={loading}>{loading && <Loader2 className="h-4 w-4 animate-spin" />} Entrar</button>
+          <Link to="/cuenta/olvide" className="block text-center text-sm text-gray-500 hover:text-brand">¿Olvidaste tu contraseña?</Link>
         </form>
+      </AuthBox>
+    </PortalOnly>
+  );
+}
+
+/** Pide la liga para cambiar la contrasena (siempre responde igual). */
+export function ForgotPasswordPage() {
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      await portalApi('/portal/auth/forgot', { method: 'POST', body: { email }, noRedirect: true });
+      setSent(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+    setLoading(false);
+  }
+
+  return (
+    <PortalOnly>
+      <AuthBox title="Recupera tu contraseña" footer={<Link className="font-semibold text-brand" to="/cuenta/entrar">Volver a iniciar sesión</Link>}>
+        {sent ? (
+          <p className="text-center text-sm text-gray-600">
+            Si <b>{email}</b> tiene cuenta, te mandamos un correo con la liga para cambiar tu contraseña. Vence en 1 hora; revisa también tu carpeta de spam.
+          </p>
+        ) : (
+          <form onSubmit={submit} className="space-y-4">
+            {error && <Notice kind="error">{error}</Notice>}
+            <p className="text-sm text-gray-500">Escribe el correo de tu cuenta y te mandamos una liga para cambiarla.</p>
+            <label className="block"><span className="label-light">Correo</span>
+              <input className="input-light" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <button className="btn-brand w-full py-3" disabled={loading}>{loading && <Loader2 className="h-4 w-4 animate-spin" />} Mandar liga</button>
+          </form>
+        )}
+      </AuthBox>
+    </PortalOnly>
+  );
+}
+
+/** Token del fragmento (#token=...): no viaja al servidor en la URL ni en el Referer. */
+const tokenFromHash = () => new URLSearchParams(window.location.hash.slice(1)).get('token') || '';
+
+export function ResetPasswordPage() {
+  const { refreshCustomer } = useSiteCtx();
+  const navigate = useNavigate();
+  const [token] = useState(tokenFromHash);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    // Se quita el token de la barra de direcciones (historial).
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  }, []);
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    if (password !== confirm) { setError('Las contraseñas no coinciden'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const r = await portalApi<{ token: string }>('/portal/auth/reset', { method: 'POST', body: { token, password }, noRedirect: true });
+      session.setToken('customer', r.token);
+      refreshCustomer();
+      navigate('/cuenta', { replace: true });
+    } catch (err) {
+      setError(errorMessage(err));
+      setLoading(false);
+    }
+  }
+
+  return (
+    <PortalOnly>
+      <AuthBox title="Nueva contraseña" footer={<Link className="font-semibold text-brand" to="/cuenta/olvide">Pedir otra liga</Link>}>
+        {!token ? <Notice kind="error">La liga está incompleta. Ábrela desde el correo o pide otra.</Notice> : (
+          <form onSubmit={submit} className="space-y-4">
+            {error && <Notice kind="error">{error}</Notice>}
+            <label className="block"><span className="label-light">Nueva contraseña</span>
+              <input className="input-light" type="password" required minLength={8} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </label>
+            <label className="block"><span className="label-light">Repítela</span>
+              <input className="input-light" type="password" required minLength={8} autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </label>
+            <button className="btn-brand w-full py-3" disabled={loading}>{loading && <Loader2 className="h-4 w-4 animate-spin" />} Guardar y entrar</button>
+          </form>
+        )}
       </AuthBox>
     </PortalOnly>
   );

@@ -7,7 +7,9 @@ import pool, { withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import { signPlatformToken, signUserToken } from '../middleware/auth.js';
 import { requireTenant } from '../middleware/tenant.js';
-import { HttpError, ah, str } from '../utils/http.js';
+import { sendStaffReset } from '../services/emails.js';
+import { consumeResetToken, createResetToken, readResetToken } from '../services/passwordReset.js';
+import { EMAIL_RE, HttpError, ah, badRequest, str } from '../utils/http.js';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -55,6 +57,28 @@ restaurantAuthRouter.post('/login', loginLimiter, requireTenant, ah(async (req, 
     user: { id: user.id, email: user.email, name: user.name, role: user.role },
     restaurant: { id: req.tenant.id, slug: req.tenant.slug, name: req.tenant.name },
   });
+}));
+
+// Olvide mi contrasena (personal): siempre la misma respuesta.
+restaurantAuthRouter.post('/forgot', loginLimiter, requireTenant, ah(async (req, res) => {
+  const email = str((req.body || {}).email, { field: 'email', required: true, max: 200 }).toLowerCase();
+  if (!EMAIL_RE.test(email)) throw badRequest('Correo invalido', 'INVALID_EMAIL');
+  const reset = await withTenant(req.tenant.id, (db) => createResetToken(db, 'users', req.tenant.id, email));
+  if (reset) void sendStaffReset(req.tenant, reset.account, reset.token);
+  res.json({ ok: true });
+}));
+
+// Nueva contrasena con la liga del correo: cierra las sesiones abiertas.
+restaurantAuthRouter.post('/reset', loginLimiter, requireTenant, ah(async (req, res) => {
+  const body = req.body || {};
+  const token = readResetToken(body.token);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (password.length < 8 || password.length > 200) {
+    throw badRequest('La contrasena debe tener al menos 8 caracteres', 'WEAK_PASSWORD');
+  }
+  const hash = await bcrypt.hash(password, 12);
+  const user = await withTenant(req.tenant.id, (db) => consumeResetToken(db, 'users', req.tenant.id, token, hash, 'id, email'));
+  res.json({ ok: true, email: user.email });
 }));
 
 export const platformAuthRouter = Router();

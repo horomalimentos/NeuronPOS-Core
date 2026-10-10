@@ -1,23 +1,27 @@
 // Avisos a restaurantes (facturas, ligas de pago, suspension...).
 //
-// Todavia no hay correo configurado: el notificador por defecto solo escribe
-// en el log. Para mandar correos (o WhatsApp) se instala otro con
+// Salen por correo (services/mailer.js; sin SMTP solo quedan en el log). Para
+// mandarlos por otro medio (WhatsApp) se instala otro notificador con
 // setNotifier({ async send(message) {...} }) sin tocar el resto del codigo.
 //
 // message = { type, to, subject, text, data }
 import { env } from '../config/env.js';
+import { sendEmail } from './mailer.js';
 
-const logNotifier = {
+const mailNotifier = {
   async send(message) {
-    if (env.isTest) return;
-    console.log(`[aviso] ${message.type} -> ${message.to || '(sin correo de contacto)'}: ${message.subject}`);
+    if (!message.to) {
+      if (!env.isTest) console.log(`[aviso] ${message.type} (sin correo de contacto): ${message.subject}`);
+      return;
+    }
+    await sendEmail({ to: message.to, subject: message.subject, text: message.text });
   },
 };
 
-let current = logNotifier;
+let current = mailNotifier;
 
 export function setNotifier(notifier) {
-  current = notifier || logNotifier;
+  current = notifier || mailNotifier;
 }
 
 const money = (v) => `$${Number(v || 0).toFixed(2)} MXN`;

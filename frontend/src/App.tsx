@@ -34,6 +34,7 @@ import AdminLayout from './restaurant/AdminLayout';
 import BranchesPage from './restaurant/BranchesPage';
 import DashboardPage from './restaurant/DashboardPage';
 import RestaurantLogin from './restaurant/RestaurantLogin';
+import { StaffForgotPage, StaffResetPage } from './restaurant/StaffPasswordPages';
 import SubscriptionPage from './restaurant/SubscriptionPage';
 import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
@@ -49,7 +50,9 @@ import RecognitionPage from './rh/RecognitionPage';
 import RhLayout from './rh/RhLayout';
 import RhSettingsPage from './rh/RhSettingsPage';
 import WallPage from './rh/WallPage';
-import { AccountPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage } from './site/AccountPages';
+import {
+  AccountPage, ForgotPasswordPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage, ResetPasswordPage,
+} from './site/AccountPages';
 import CheckoutPage from './site/CheckoutPage';
 import OrderPage from './site/OrderPage';
 import PaymentResultPage from './site/PaymentResultPage';
@@ -71,6 +74,8 @@ export default function App() {
           <Route path="/cuenta" element={<AccountPage />} />
           <Route path="/cuenta/entrar" element={<LoginPage />} />
           <Route path="/cuenta/registro" element={<CustomerRegisterPage />} />
+          <Route path="/cuenta/olvide" element={<ForgotPasswordPage />} />
+          <Route path="/cuenta/restablecer" element={<ResetPasswordPage />} />
           <Route path="/cuenta/pedidos" element={<OrdersPage />} />
         </Route>
 
@@ -93,6 +98,8 @@ export default function App() {
 
         {/* Administracion del restaurante */}
         <Route path="/admin/login" element={<RestaurantLogin />} />
+        <Route path="/admin/olvide" element={<StaffForgotPage />} />
+        <Route path="/admin/restablecer" element={<StaffResetPage />} />
         <Route path="/admin" element={<AdminLayout />}>
           <Route index element={<DashboardPage />} />
           <Route path="sucursales" element={<BranchesPage />} />

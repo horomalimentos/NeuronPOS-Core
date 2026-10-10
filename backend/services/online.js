@@ -2,7 +2,7 @@
 // Reciben un `db` que ya viene de withTenant (contexto RLS del restaurante).
 import { branchOpenState, hhmm } from './hours.js';
 
-const ONLINE_COLS = `enabled, min_order, prep_time_minutes, auto_accept, allow_pickup, allow_delivery, updated_at`;
+const ONLINE_COLS = `enabled, min_order, prep_time_minutes, auto_accept, allow_pickup, allow_delivery, order_email_alerts, updated_at`;
 
 /** Configuracion de pedidos en linea (se crea con valores por defecto si falta). */
 export async function getOnlineSettings(db, restaurantId) {
