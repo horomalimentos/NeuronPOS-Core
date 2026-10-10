@@ -16,6 +16,7 @@ import { session } from '../lib/session';
 import { formatTime } from '../pos/lib';
 import { DRIVER_STATUS_LABEL, type DriverStatus, type MarketplaceInfo } from '../marketplace/lib';
 import ZoneFields from '../marketplace/ZoneFields';
+import MarketplaceSection from './MarketplaceSection';
 import { useSite } from '../restaurant/useSite';
 import type { Point } from '../components/ZoneMap';
 
@@ -300,6 +301,8 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             <Banknote className="h-5 w-5" /> Traes {formatMXN(cash)} en efectivo por entregar{fleet ? ' a NeuronPOS' : ' en caja'}.
           </div>
         )}
+
+        {fleet && fleetMe?.base && approved && <MarketplaceSection onDuty={onDuty} />}
 
         {offers.length > 0 && (
           <section>

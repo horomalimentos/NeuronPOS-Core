@@ -50,6 +50,7 @@ export async function setupDb() {
     pool: db.default,
     withTenant: db.withTenant,
     withPlatform: db.withPlatform,
+    withFleetDriver: db.withFleetDriver,
     port,
     async close() {
       await new Promise((r) => server.close(r));

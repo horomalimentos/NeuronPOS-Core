@@ -668,14 +668,36 @@ su POS) y en `marketplace_orders` con el envío y su reparto (80/20 copiado al
 pedir). El cliente sigue su pedido en `/delivery/pedido/:token`. El
 restaurante lo acepta, rechaza con motivo o marca listo en `/admin/delivery`
 (o desde su POS: un trigger sincroniza aceptar, rechazar, cancelar y listo).
-Por ahora solo efectivo; la tarjeta con Clip entra con los ajustes del
-repartidor (fase 3).
+La orden del restaurante lleva **solo la comida** (el envío no es suyo).
 
-Dinero (fases 2 y 3): en efectivo el repartidor cobra al cliente, paga la
-comida en el restaurante y se queda el envío; el 20 % de NeuronPOS se le suma
-como adeudo. En tarjeta (Clip de NeuronPOS) el repartidor también paga la
-comida al recoger y NeuronPOS le abona esa comida más su 80 % del envío, que
-primero descuenta su adeudo; lo que falte lo puede pagar con tarjeta.
+**Fase 3 (el repartidor y el dinero):** en `/repartidor` (Flota NeuronPOS) el
+repartidor aprobado y en turno ve los pedidos **aceptados o listos** de los
+restaurantes dentro de su radio, con lo que gana, lo que paga en el
+restaurante y lo que cobra (sin datos del cliente hasta tomarlo). Toma uno a la
+vez (gana el primero), lo puede soltar antes de recoger, marca *Recogí y pagué
+la comida* y *Entregado*. Su **cuenta con NeuronPOS**
+(`marketplace_driver_ledger`, una fila por movimiento; saldo = suma):
+
+- **Efectivo:** cobra comida + envío al cliente, paga la comida en el
+  restaurante y se queda el envío; al entregar se le carga el 20 % de
+  NeuronPOS (`comision_efectivo`, negativo).
+- **Tarjeta** (decisión de Alex, "paga el repartidor"): el cliente paga todo en
+  línea con la **cuenta de Clip de la plataforma**; el pedido nace
+  `pago_pendiente`, el restaurante no lo ve hasta que Clip confirma (webhook
+  `/api/webhooks/clip/plataforma` + conciliación cada 2 min; la liga vence a
+  los 30 min y el pedido se cancela). El repartidor paga la comida al recoger
+  y al entregar se le abona **comida + su 80 % del envío** (`abono_tarjeta`),
+  que primero cubre su adeudo.
+- Con el adeudo en el **tope** del Panel ya no ve ni toma pedidos en efectivo
+  (los de tarjeta sí). Puede **pagar su adeudo con tarjeta** (liga de Clip,
+  `pago_clip`, aplicado una sola vez) o en efectivo al Panel.
+- **Panel › Delivery › Cuentas de repartidores:** saldos, movimientos y
+  registro de *pagó en efectivo*, *liquidación* (se le paga su saldo a favor)
+  y *ajuste* con motivo. **Pedidos:** todos los restaurantes, con filtro *Por
+  reembolsar* (pagados con tarjeta y luego rechazados o cancelados: se
+  reembolsan desde el panel de Clip con la referencia).
+- RLS: el repartidor solo lee su cuenta y sus ligas; nadie más que la
+  plataforma escribe movimientos.
 
 API:
 
@@ -694,6 +716,13 @@ API:
 | GET | `/api/marketplace/orders` | restaurante (pedidos de Delivery) |
 | POST | `/api/marketplace/orders/:id/accept`, `/reject`, `/ready` | admin/gerente/cajero |
 | PUT | `/api/fleet/zone` | repartidor (epicentro y radio) |
+| GET | `/api/fleet/marketplace` | repartidor (saldo, su pedido y disponibles) |
+| POST | `/api/fleet/marketplace/orders/:id/take`, `/release`, `/pickup`, `/deliver` | repartidor |
+| GET | `/api/fleet/marketplace/ledger` | repartidor (movimientos) |
+| POST | `/api/fleet/marketplace/pay-debt` `{amount?}` | repartidor (liga de Clip) |
+| GET | `/api/platform/marketplace/balances` | Panel |
+| GET/POST | `/api/platform/marketplace/drivers/:id/ledger` | Panel (`pago_efectivo`, `liquidacion`, `ajuste`) |
+| GET | `/api/platform/marketplace/orders?status=` | Panel (`reembolsar` = por reembolsar) |
 | GET/PUT | `/api/platform/marketplace/settings` | Panel |
 | PUT | `/api/platform/marketplace/fee-tiers` | Panel |
 | GET | `/api/platform/marketplace/drivers?status=` | Panel |

@@ -4,6 +4,7 @@ import { Alert, Button, Field, PageHeader, Spinner, Toggle } from '../components
 import type { Point } from '../components/ZoneMap';
 import { errorMessage, platformApi } from '../lib/api';
 import { formatDate, formatMXN } from '../lib/format';
+import { DriverAccountsCard, MarketplaceOrdersCard } from './MarketplaceMoney';
 import { DRIVER_STATUS_LABEL, DRIVER_STATUS_STYLE, type DriverStatus, type FeeTier } from '../marketplace/lib';
 
 interface Settings {
@@ -26,7 +27,8 @@ const mapsLink = (p: Point) => `https://www.google.com/maps?q=${p.latitude},${p.
 /**
  * Panel › Delivery: reglas de NeuronPOS Delivery (reparto del envio entre
  * repartidor y NeuronPOS, comision, distancias, tope de adeudo), la tabla de
- * envio por km, la aprobacion de repartidores y las fichas de restaurantes.
+ * envio por km, la aprobacion de repartidores, sus cuentas, los pedidos y
+ * las fichas de restaurantes.
  */
 export default function MarketplacePage() {
   const [data, setData] = useState<{ settings: Settings; fee_tiers: FeeTier[]; summary: Summary } | null>(null);
@@ -53,6 +55,8 @@ export default function MarketplacePage() {
         <TiersCard tiers={data.fee_tiers} share={Number(data.settings.driver_share_pct)} onSaved={load} />
       </div>
       <DriversCard onChange={load} />
+      <DriverAccountsCard />
+      <MarketplaceOrdersCard />
       <ListingsCard />
     </>
   );

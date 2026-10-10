@@ -9,7 +9,7 @@ interface DeliveryOrder {
   id: string; branch_name: string; folio: number; status: 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
   customer_name: string; customer_phone: string; address: string; reference: string | null; distance_km: string;
   food_total: string; delivery_fee: string; total: string; pay_with: string | null; cancel_reason: string | null; notes: string | null;
-  estimated_ready_at: string | null; created_at: string;
+  estimated_ready_at: string | null; created_at: string; payment_method: 'efectivo' | 'tarjeta'; driver_assigned: boolean;
   items: { name: string; quantity: number; notes: string | null; modifiers: string[] }[];
 }
 
@@ -76,7 +76,11 @@ export default function DeliveryOrders() {
               ))}
             </ul>
             {o.notes && <p className="mt-1 text-sm text-amber-200">Nota: {o.notes}</p>}
-            <p className="mt-2 text-sm text-gray-300">Comida <b>{formatMXN(o.food_total)}</b> <span className="text-gray-500">· el repartidor te la paga al recoger</span></p>
+            <p className="mt-2 text-sm text-gray-300">Comida <b>{formatMXN(o.food_total)}</b> <span className="text-gray-500">· el repartidor te la paga al recoger</span>
+              {o.payment_method === 'tarjeta' && <span className="ml-2 rounded-full bg-emerald-950/60 px-2 py-0.5 text-xs text-emerald-300">Cliente pagó con tarjeta</span>}</p>
+            {['aceptado', 'listo'].includes(o.status) && (
+              <p className="mt-1 text-xs text-gray-400">{o.driver_assigned ? 'Un repartidor ya va por el pedido.' : 'Buscando repartidor en la zona…'}</p>
+            )}
             <p className="mt-1 flex items-center gap-1 text-xs text-gray-400"><MapPin className="h-3.5 w-3.5" /> {o.address} · {Number(o.distance_km).toFixed(1)} km</p>
             <a href={`tel:${o.customer_phone.replace(/[^\d+]/g, '')}`} className="mt-1 inline-flex items-center gap-1 text-xs text-sky-300"><Phone className="h-3.5 w-3.5" /> {o.customer_phone}</a>
             {o.status === 'aceptado' && o.estimated_ready_at && <p className="mt-1 text-xs text-gray-400">Listo a las {formatTime(o.estimated_ready_at)}</p>}

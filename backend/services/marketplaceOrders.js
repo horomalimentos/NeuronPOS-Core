@@ -8,15 +8,19 @@
 // repartidores conectados no se puede pedir).
 //
 // El pedido se guarda en el restaurante (orders, canal 'marketplace', a
-// domicilio, en linea pendiente de aceptar) con el envio de la tabla, y su
-// parte de plataforma en marketplace_orders (envio, reparto 80/20, token de
-// seguimiento). Precios: siempre los del menu en el servidor.
+// domicilio, en linea pendiente de aceptar) solo con la comida: el envio no
+// es del restaurante. La parte de plataforma va en marketplace_orders
+// (envio, reparto 80/20, total del cliente, token de seguimiento).
+// Con tarjeta el pedido nace 'pago_pendiente' (el restaurante no lo ve)
+// hasta que Clip confirma el pago (services/marketplaceMoney.js).
+// Precios: siempre los del menu en el servidor.
 import crypto from 'node:crypto';
 import { withPlatform, withTenant } from '../config/database.js';
 import { insertItems, nextFolio, priceItems, readItemInputs, recalcOrder } from '../routes/pos/orders.js';
 import { getSettings } from '../routes/pos/settings.js';
 import { HttpError, badRequest, notFound, oneOf, requireUuid, str } from '../utils/http.js';
 import { checkModuleAccess } from './access.js';
+import { cancelUnpaidOrder, cardPaymentsAvailable, createOrderCheckout } from './marketplaceMoney.js';
 import { haversineKm, readPoint } from './deliveryZones.js';
 import { branchOpenState } from './hours.js';
 import {
@@ -159,7 +163,8 @@ export function readMarketplaceOrder(body = {}, { quote = false } = {}) {
   };
   if (!input.location) throw badRequest('Marca tu domicilio en el mapa', 'LOCATION_REQUIRED');
   if (input.payment_method === 'tarjeta') {
-    throw badRequest('Por ahora NeuronPOS Delivery solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
+    if (!cardPaymentsAvailable()) throw badRequest('Por ahora NeuronPOS Delivery solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
+    input.pay_with = null;
   }
   if (input.pay_with !== null && (!Number.isFinite(input.pay_with) || input.pay_with < 0 || input.pay_with > 100000)) {
     throw badRequest('Indica con cuanto vas a pagar', 'INVALID_FIELD');
@@ -187,9 +192,10 @@ async function price(db, place, input) {
     throw badRequest(`El pedido minimo en ${place.name} es de $${place.min_order.toFixed(2)}`, 'BELOW_MIN_ORDER');
   }
   const pos = await getSettings(db, rid);
-  const totals = calculateOrderTotals(lines, {
-    taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee: place.delivery_fee,
-  });
+  // La orden del restaurante: solo comida. El cliente paga comida + envio.
+  const food = calculateOrderTotals(lines, { taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax });
+  const fee = toCents(place.delivery_fee);
+  const totals = { ...food, delivery_fee: fee / 100, total: (toCents(food.total) + fee) / 100 };
   if (input.pay_with !== null && toCents(input.pay_with) < toCents(totals.total)) {
     throw badRequest('El efectivo con el que pagas no alcanza para el total', 'PAY_WITH_TOO_LOW');
   }
@@ -211,12 +217,18 @@ export async function quoteMarketplaceOrder(input) {
   return { restaurant: place, lines, totals };
 }
 
-/** Crea el pedido. Regresa { token, order } (vista para el cliente). */
+/**
+ * Crea el pedido. Regresa la vista de seguimiento; con tarjeta, ademas
+ * payment_url (liga de Clip de NeuronPOS).
+ */
 export async function createMarketplaceOrder(input) {
   const place = await placeFor(input);
   const share = Number((await withPlatform(getMarketplaceSettings)).driver_share_pct);
   const rid = place.restaurant_id;
+  const card = input.payment_method === 'tarjeta';
   const token = crypto.randomBytes(18).toString('base64url');
+  // Id generado aqui: el restaurante no puede leer (RETURNING) un pedido 'pago_pendiente'.
+  const marketplaceOrderId = crypto.randomUUID();
   await withTenant(rid, async (db) => {
     const { lines, pos, totals } = await price(db, place, input);
     const folio = await nextFolio(db, rid, place.branch_id);
@@ -224,32 +236,42 @@ export async function createMarketplaceOrder(input) {
       `INSERT INTO orders (restaurant_id, branch_id, folio, order_type, source, channel, online_status,
                            customer_name, customer_phone, customer_address, delivery_reference, notes,
                            tax_rate_pct, prices_include_tax, delivery_fee, payment_provider, payment_preference, pay_with,
-                           public_token, delivery_latitude, delivery_longitude, delivery_distance_km)
-       VALUES ($1, $2, $3, 'domicilio', 'web', 'marketplace', 'pendiente', $4, $5, $6, $7, $8, $9, $10, $11,
-               'contra_entrega', 'efectivo', $12, $13, $14, $15, $16)
+                           public_token, delivery_latitude, delivery_longitude, delivery_distance_km, online_payment_status)
+       VALUES ($1, $2, $3, 'domicilio', 'web', 'marketplace', 'pendiente', $4, $5, $6, $7, $8, $9, $10, 0,
+               'contra_entrega', 'efectivo', $11, $12, $13, $14, $15, $16)
        RETURNING *`,
       [rid, place.branch_id, folio, input.name, input.phone, input.address, input.reference, input.notes,
-        pos.tax_rate_pct, pos.prices_include_tax, totals.delivery_fee, input.pay_with, token,
-        input.location.latitude, input.location.longitude, place.distance_km],
+        pos.tax_rate_pct, pos.prices_include_tax, null, token,
+        input.location.latitude, input.location.longitude, place.distance_km, card ? 'pendiente' : null],
     );
     const order = rows[0];
     await insertItems(db, rid, order.id, null, lines);
     const final = await recalcOrder(db, rid, order);
-    const split = splitDeliveryFee(final.delivery_fee, share);
+    const fee = Number(totals.delivery_fee);
+    const split = splitDeliveryFee(fee, share);
     await db.query(
-      `INSERT INTO marketplace_orders (restaurant_id, branch_id, order_id, public_token, customer_name, customer_phone,
+      `INSERT INTO marketplace_orders (id, restaurant_id, branch_id, order_id, public_token, customer_name, customer_phone,
                                        address, reference, latitude, longitude, distance_km, delivery_fee, driver_share,
-                                       platform_share, food_total, total, payment_method, pay_with)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 'efectivo', $17)`,
+                                       platform_share, food_total, total, payment_method, pay_with, status)
+       VALUES ($20, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [rid, place.branch_id, order.id, token, input.name, input.phone, input.address, input.reference,
-        input.location.latitude, input.location.longitude, place.distance_km, final.delivery_fee, split.driver, split.platform,
-        round2(Number(final.total) - Number(final.delivery_fee)), final.total, input.pay_with],
+        input.location.latitude, input.location.longitude, place.distance_km, fee, split.driver, split.platform,
+        final.total, round2(Number(final.total) + fee), input.payment_method, input.pay_with, card ? 'pago_pendiente' : 'nuevo', marketplaceOrderId],
     );
   });
-  return trackOrder(token);
+  if (!card) return trackOrder(token);
+  try {
+    const link = await createOrderCheckout(marketplaceOrderId);
+    return { ...(await trackOrder(token)), payment_url: link.payment_url };
+  } catch (err) {
+    // Sin liga no hay pedido: se cancela para que no quede colgado.
+    await withPlatform((db) => cancelUnpaidOrder(db, marketplaceOrderId, 'No se pudo generar el pago con tarjeta'));
+    throw err;
+  }
 }
 
 export const MARKETPLACE_STATUS_LABEL = {
+  pago_pendiente: 'Esperando tu pago con tarjeta',
   nuevo: 'Esperando al restaurante',
   aceptado: 'En preparación',
   listo: 'Listo, esperando al repartidor',

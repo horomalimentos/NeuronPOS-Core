@@ -1,6 +1,6 @@
 // Webhooks de Clip.
 //
-//   POST /api/webhooks/clip/plataforma     cobros de suscripcion (cuenta de la plataforma)
+//   POST /api/webhooks/clip/plataforma     cobros de suscripcion y de NeuronPOS Delivery (cuenta de la plataforma)
 //   POST /api/webhooks/clip/r/:restaurante pagos de pedidos (cuenta del restaurante; id o slug)
 //
 // Como en el NeuronPOS original, el cuerpo del webhook NO se cree: solo
@@ -16,6 +16,7 @@ import pool, { withPlatform, withTenant } from '../config/database.js';
 import { platformClipCredentials } from '../services/clip/client.js';
 import { reconcileCheckoutId } from '../services/clip/reconcile.js';
 import { verifyClipSignature, webhookCheckoutId, webhookEventType } from '../services/clip/status.js';
+import { reconcileMarketplaceCheckoutId } from '../services/marketplaceMoney.js';
 import { loadRestaurantClipCredentials } from '../services/restaurantPayments.js';
 import { HttpError, SLUG_RE, UUID_RE, ah, notFound } from '../utils/http.js';
 
@@ -49,7 +50,9 @@ async function handle(req, res, scope, webhookSecret) {
   }
   let matched = false;
   try {
-    const r = checkoutId ? await reconcileCheckoutId(scope, checkoutId) : { matched: false };
+    let r = checkoutId ? await reconcileCheckoutId(scope, checkoutId) : { matched: false };
+    // La cuenta de la plataforma tambien cobra NeuronPOS Delivery (pedidos con tarjeta y adeudos).
+    if (!r.matched && checkoutId && scope.kind === 'platform') r = await reconcileMarketplaceCheckoutId(checkoutId);
     matched = r.matched;
   } catch (err) {
     // No es fatal para Clip: el reconciliador periodico lo vuelve a intentar.
