@@ -1,4 +1,4 @@
-import { CheckCircle2, ChefHat, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ChefHat, RefreshCw, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -30,8 +30,14 @@ export default function KitchenPage() {
   const [stations, setStations] = useState<KitchenStation[]>([]);
   const [station, setStationState] = useState(posPrefs.getStation);
   const setStation = (id: string) => { posPrefs.setStation(id); setStationState(id); };
+  // Listas: lo ya preparado, para regresarlo a cocina si hace falta.
+  const [view, setView] = useState<'' | 'listas'>('');
+  const [done, setDone] = useState<Order[] | null>(null);
+  const [times, setTimes] = useState({ warn: 10, late: 20 });
   useEffect(() => {
     api<{ stations: KitchenStation[] }>('/pos/menu').then((m) => setStations(m.stations || [])).catch(() => undefined);
+    api<{ settings: { kitchen_warn_minutes: number; kitchen_late_minutes: number } }>('/pos/settings')
+      .then((r) => setTimes({ warn: r.settings.kitchen_warn_minutes, late: r.settings.kitchen_late_minutes })).catch(() => undefined);
   }, []);
   const stationName = station === 'general' ? 'Cocina general' : stations.find((s) => s.id === station)?.name;
   // Neuron KDS con impresora de comandas: imprime lo que va llegando (ordenes
@@ -57,10 +63,22 @@ export default function KitchenPage() {
 
   const load = useCallback(() => {
     if (!branchId) return;
-    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}${station ? `&station_id=${station}` : ''}`)
-      .then((r) => { setOrders(r.orders); setError(''); setNow(Date.now()); })
+    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}${station ? `&station_id=${station}` : ''}${view ? `&view=${view}` : ''}`)
+      .then((r) => { if (view) setDone(r.orders); else setOrders(r.orders); setError(''); setNow(Date.now()); })
       .catch((e) => setError(errorMessage(e)));
-  }, [branchId, station]);
+  }, [branchId, station, view]);
+
+  async function unready(o: Order) {
+    setMarking(o.id);
+    try {
+      await api(`/pos/orders/${o.id}/unready`, { method: 'POST', body: station ? { station_id: station } : {} });
+      setDone((list) => (list || []).filter((x) => x.id !== o.id));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setMarking(null);
+    }
+  }
 
   useEffect(() => {
     load();
@@ -97,15 +115,33 @@ export default function KitchenPage() {
           <Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Actualizar</Button>
         </>}
       />
+      <div className="mb-4 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:w-fit">
+        {([['', 'En preparación'], ['listas', 'Listas']] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setView(v)} className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 font-medium ${view === v ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>{l}</button>
+        ))}
+      </div>
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-      {!orders ? <Spinner /> : orders.length === 0 ? (
+      {view === 'listas' ? (
+        !done ? <Spinner /> : done.length === 0 ? <p className="py-16 text-center text-gray-500">Nada listo en las últimas horas.</p> : (
+          <div className="card divide-y divide-gray-800">
+            {done.map((o) => (
+              <div key={o.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <span className="w-40 font-semibold text-white">{o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]} · {o.folio}</span>
+                <span className="min-w-0 flex-1 truncate text-gray-300">{o.items?.map((i) => `${i.quantity}× ${i.name}`).join(', ')}</span>
+                <span className="text-xs text-gray-500">lista {formatTime(o.items?.map((i) => i.ready_at || '').sort().pop() || o.ready_at)}</span>
+                {canReady && <Button variant="secondary" onClick={() => unready(o)} loading={marking === o.id}><Undo2 className="h-4 w-4" /> Regresar a cocina</Button>}
+              </div>
+            ))}
+          </div>
+        )
+      ) : !orders ? <Spinner /> : orders.length === 0 ? (
         <div className="py-20 text-center text-gray-500"><ChefHat className="mx-auto mb-3 h-10 w-10" />Sin órdenes pendientes.</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {orders.map((o) => {
             const since = o.items?.filter((i) => i.is_new).map((i) => i.sent_at!).sort()[0] || o.sent_at;
             const mins = minutesSince(since, now);
-            const tone = mins >= 20 ? 'border-red-600' : mins >= 10 ? 'border-amber-500' : 'border-gray-700';
+            const tone = mins >= times.late ? 'border-red-600' : mins >= times.warn ? 'border-amber-500' : 'border-gray-700';
             return (
               <article key={o.id} className={`card flex flex-col border-t-4 ${tone}`}>
                 <header className="flex items-start justify-between border-b border-gray-800 p-4">
@@ -119,7 +155,7 @@ export default function KitchenPage() {
                     {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
                   </div>
                   <div className="text-right">
-                    <p className={`text-lg font-semibold ${mins >= 20 ? 'text-red-400' : mins >= 10 ? 'text-amber-300' : 'text-gray-200'}`}>{mins} min</p>
+                    <p className={`text-lg font-semibold ${mins >= times.late ? 'text-red-400' : mins >= times.warn ? 'text-amber-300' : 'text-gray-200'}`}>{mins} min</p>
                     <p className="text-xs text-gray-500">{formatTime(since)}</p>
                   </div>
                 </header>

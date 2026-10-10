@@ -44,6 +44,8 @@ export default function PosSettingsPage() {
           usd_rate: num(settings.usd_rate),
           ticket_header: settings.ticket_header || null,
           ticket_footer: settings.ticket_footer || null,
+          kitchen_warn_minutes: Number(settings.kitchen_warn_minutes),
+          kitchen_late_minutes: Number(settings.kitchen_late_minutes),
         },
       });
       setSettings(r.settings);
@@ -84,6 +86,10 @@ export default function PosSettingsPage() {
             {meHas(me, 'multimoneda') && <Field label="Tipo de cambio del dólar" hint="Pesos por dólar. Cada turno de caja lo puede ajustar al abrir.">
               <input className="input" type="number" min="0.01" step="0.0001" value={String(settings.usd_rate)} onChange={(e) => setSettings({ ...settings, usd_rate: e.target.value })} />
             </Field>}
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="Cocina: amarillo a los (min)"><input className="input" type="number" min="1" max="240" value={settings.kitchen_warn_minutes} onChange={(e) => setSettings({ ...settings, kitchen_warn_minutes: Number(e.target.value) })} /></Field>
+              <Field label="Cocina: rojo a los (min)"><input className="input" type="number" min="2" max="480" value={settings.kitchen_late_minutes} onChange={(e) => setSettings({ ...settings, kitchen_late_minutes: Number(e.target.value) })} /></Field>
+            </div>
             <div className="flex items-center gap-3 text-sm text-gray-300">
               <Toggle label="Precios con IVA incluido" checked={settings.prices_include_tax} onChange={(v) => setSettings({ ...settings, prices_include_tax: v })} />
               Los precios del menú ya incluyen IVA

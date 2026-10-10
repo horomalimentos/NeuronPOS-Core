@@ -625,6 +625,33 @@ router.post('/orders/:id/ready', can('kitchenReady'), ah(async (req, res) => {
   res.json({ order });
 }));
 
+// Regresar a cocina lo que ya se marco listo (se marco por error o hay que
+// rehacerlo). Con station_id solo lo de esa estacion. Una orden "lista" vuelve
+// a "enviada".
+router.post('/orders/:id/unready', can('kitchenReady'), ah(async (req, res) => {
+  const raw = req.body?.station_id;
+  const general = raw === 'general';
+  const stationId = raw && !general ? requireUuid(raw, 'station_id') : null;
+  const order = await withTenant(req.tenant.id, async (db) => {
+    const o = await lockOrder(db, req, req.params.id);
+    if (o.status === 'cancelada') throw badRequest('La orden esta cancelada', 'ORDER_CLOSED');
+    const { rowCount } = await db.query(
+      `UPDATE order_items SET ready_at = NULL
+        WHERE order_id = $1 AND restaurant_id = $2 AND ready_at IS NOT NULL AND voided_at IS NULL
+          ${general ? 'AND station_id IS NULL' : stationId ? 'AND station_id = $3' : ''}`,
+      stationId ? [o.id, req.tenant.id, stationId] : [o.id, req.tenant.id],
+    );
+    if (!rowCount) throw badRequest('No hay nada listo que regresar', 'NOTHING_READY');
+    await db.query(
+      `UPDATE orders SET ready_at = NULL, status = CASE WHEN status = 'lista' THEN 'enviada' ELSE status END, updated_at = now()
+        WHERE id = $1 AND restaurant_id = $2`,
+      [o.id, req.tenant.id],
+    );
+    return loadOrder(db, req.tenant.id, o.id);
+  });
+  res.json({ order });
+}));
+
 // ---------------------------------------------------------------------------
 // Descuentos: limite del cajero y PIN del gerente
 // ---------------------------------------------------------------------------
@@ -981,15 +1008,24 @@ router.get('/kitchen', can('kitchen'), ah(async (req, res) => {
   const general = raw === 'general';
   const stationId = raw && !general ? requireUuid(raw, 'station_id') : null;
   const inStation = (alias) => (general ? `AND ${alias}.station_id IS NULL` : stationId ? `AND ${alias}.station_id = $3` : '');
+  // ?view=listas: lo ya preparado (para regresarlo si hace falta).
+  const done = req.query.view === 'listas';
   const orders = await withTenant(req.tenant.id, async (db) => {
     const list = (await db.query(
       `${ORDER_SELECT}
         WHERE o.restaurant_id = $1 AND o.branch_id = $2 AND o.status <> 'cancelada'
           AND o.created_at > now() - interval '24 hours'
-          AND EXISTS (SELECT 1 FROM order_items i
+          AND ${done
+    // Listas: todo lo enviado ya esta listo (las ultimas 12 horas, recientes primero).
+    ? `EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND i.restaurant_id = o.restaurant_id
+                 AND i.sent_at IS NOT NULL AND i.voided_at IS NULL AND i.ready_at > now() - interval '12 hours' ${inStation('i')})
+       AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND i.restaurant_id = o.restaurant_id
+                 AND i.sent_at IS NOT NULL AND i.voided_at IS NULL AND i.ready_at IS NULL ${inStation('i')})`
+    : `EXISTS (SELECT 1 FROM order_items i
                        WHERE i.order_id = o.id AND i.restaurant_id = o.restaurant_id
-                         AND i.sent_at IS NOT NULL AND i.voided_at IS NULL AND i.ready_at IS NULL ${inStation('i')})
-        ORDER BY o.sent_at, o.created_at`,
+                         AND i.sent_at IS NOT NULL AND i.voided_at IS NULL AND i.ready_at IS NULL ${inStation('i')})`}
+        ORDER BY ${done ? '(SELECT max(i.ready_at) FROM order_items i WHERE i.order_id = o.id AND i.restaurant_id = o.restaurant_id) DESC' : 'o.sent_at, o.created_at'}
+        ${done ? 'LIMIT 40' : ''}`,
       stationId ? [req.tenant.id, branchId, stationId] : [req.tenant.id, branchId],
     )).rows;
     if (!list.length) return [];

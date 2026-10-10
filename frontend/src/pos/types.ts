@@ -269,6 +269,9 @@ export interface PosSettings {
   ticket_footer: string | null;
   /** Tipo de cambio por omision (pesos por dolar). */
   usd_rate: Money;
+  /** Pantalla de cocina: minutos para amarillo y rojo. */
+  kitchen_warn_minutes: number;
+  kitchen_late_minutes: number;
 }
 
 export interface CashSession {

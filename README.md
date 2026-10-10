@@ -299,6 +299,9 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
   cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
   pedidos, mientras la caja sigue vendiendo.
+- **Cocina**: los minutos para amarillo y rojo se configuran en Ajustes del POS. La
+  pestaña **Listas** muestra lo preparado en las últimas 12 horas con **Regresar a
+  cocina** (por estación; una orden "lista" vuelve a "enviada").
 - Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
   dirección del cliente; la logística de reparto llega con el módulo
   Domicilios). Folio consecutivo por sucursal.

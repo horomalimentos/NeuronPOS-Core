@@ -9,7 +9,7 @@ import { can } from '../../services/permissions.js';
 
 const router = Router();
 
-const SETTINGS_COLS = 'tax_rate_pct, prices_include_tax, cashier_max_discount_pct, ticket_header, ticket_footer, usd_rate';
+const SETTINGS_COLS = 'tax_rate_pct, prices_include_tax, cashier_max_discount_pct, ticket_header, ticket_footer, usd_rate, kitchen_warn_minutes, kitchen_late_minutes';
 const METHOD_COLS = 'id, name, kind, currency, active, sort_order';
 const CHANNEL_COLS = 'id, name, color, commission_pct, payment_method_ids, requires_order_number, requires_address, sort_order, active';
 export const METHOD_KINDS = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
@@ -55,10 +55,16 @@ router.patch('/settings', can('manage'), ah(async (req, res) => {
     ticket_header: str(body.ticket_header, { field: 'ticket_header', max: 500 }),
     ticket_footer: str(body.ticket_footer, { field: 'ticket_footer', max: 500 }),
     usd_rate: usdRate(body.usd_rate),
+    // Pantalla de cocina: minutos para amarillo y rojo.
+    kitchen_warn_minutes: int(body.kitchen_warn_minutes, { field: 'kitchen_warn_minutes', min: 1, max: 240 }),
+    kitchen_late_minutes: int(body.kitchen_late_minutes, { field: 'kitchen_late_minutes', min: 1, max: 480 }),
   }, 2);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const settings = await withTenant(req.tenant.id, async (db) => {
-    await getSettings(db, req.tenant.id);
+    const cur = await getSettings(db, req.tenant.id);
+    const warn = body.kitchen_warn_minutes ?? cur.kitchen_warn_minutes;
+    const late = body.kitchen_late_minutes ?? cur.kitchen_late_minutes;
+    if (Number(late) <= Number(warn)) throw badRequest('El tiempo en rojo debe ser mayor que el amarillo', 'INVALID_FIELD');
     return (await db.query(
       `UPDATE pos_settings SET ${set.sql}, updated_at = now() WHERE restaurant_id = $1 RETURNING ${SETTINGS_COLS}`,
       [req.tenant.id, ...set.values],
