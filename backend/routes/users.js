@@ -61,6 +61,19 @@ async function getUser(db, restaurantId, id) {
   return rows[0] || null;
 }
 
+// Bitacora de accesos (ultimos 300; ?user_id= para uno, ?failed=1 solo fallidos).
+router.get('/access-log', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  const userId = req.query.user_id ? requireUuid(req.query.user_id, 'user_id') : null;
+  const log = await withTenant(req.tenant.id, async (db) => (await db.query(
+    `SELECT l.id, l.user_id, u.name AS user_name, l.email, l.result, l.ip, l.user_agent, l.created_at
+       FROM access_log l LEFT JOIN users u ON u.id = l.user_id AND u.restaurant_id = l.restaurant_id
+      WHERE l.restaurant_id = $1 AND ($2::uuid IS NULL OR l.user_id = $2) AND (NOT $3 OR l.result <> 'ok')
+      ORDER BY l.created_at DESC LIMIT 300`,
+    [req.tenant.id, userId, req.query.failed === '1'],
+  )).rows);
+  res.json({ log });
+}));
+
 router.get('/', requireRole('admin', 'gerente'), ah(async (req, res) => {
   const rows = await withTenant(req.tenant.id, async (db) => (await db.query(
     `${SELECT_USERS} GROUP BY u.id ORDER BY u.name`,
