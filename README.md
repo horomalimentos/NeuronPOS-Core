@@ -145,6 +145,8 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `SMTP_USER`, `SMTP_PASS` | Usuario y contraseña del SMTP | — |
 | `MAIL_FROM` | Remitente; el nombre se cambia por el del restaurante en sus correos | `NeuronPOS <no-reply@neuronpos.app>` |
 | `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Llaves de las notificaciones push. Opcionales: si no se ponen, se generan solas la primera vez y se guardan en la base (la privada cifrada con `PAYMENT_SECRETS_KEY`) | generadas, `mailto:soporte@neuronpos.app` |
+| `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN` | App de Meta de la plataforma para el bot de WhatsApp: con el app secret se comprueba la firma de cada webhook. Un restaurante con app propia guarda la suya en su configuración y usa el token de verificación que le muestra el panel | — |
+| `WHATSAPP_GRAPH_URL` | API de Meta (cambiarla solo para pruebas) | `https://graph.facebook.com/v21.0` |
 
 ## Aislamiento entre restaurantes
 
@@ -579,6 +581,44 @@ gerentes.
 | GET | `/api/feedback/complaints?status=&branch_id=` | admin, gerente |
 | POST | `/api/feedback/complaints/:id/approve` `{responsible_employee_id?, compensation?, employee_charge?, notes?}` | admin, gerente |
 | POST | `/api/feedback/complaints/:id/reject` `{notes}` | admin, gerente |
+
+## Bot de WhatsApp (módulo `whatsapp`)
+
+Adaptado del bot de Horom (whatsappBot.js) para varios restaurantes. Cada
+restaurante conecta su número de WhatsApp Business (Cloud API de Meta) en
+*WhatsApp › Configuración*: Phone number ID, token de acceso (se guarda
+cifrado) y, si usa una app de Meta propia, su app secret. El webhook es uno
+solo para toda la plataforma (`/api/webhooks/whatsapp`) y se enruta por el
+número que recibió el mensaje; cada envío se valida con la firma de Meta.
+
+- **Pedido en el chat**: sucursal, recoger o domicilio, categorías y
+  productos en listas, modificadores, cantidad, carrito (también se puede
+  escribir el nombre de un producto o el número de la opción), ubicación si la
+  sucursal tiene zona de entrega, dirección, nombre, pago (efectivo con
+  cambio, tarjeta al recibir o liga de Clip) y confirmación. Se crea como un
+  pedido en línea normal (mismas validaciones y precios que el sitio) con
+  `orders.channel = 'whatsapp'`; entra al POS y a cocina igual.
+- **Avisos**: cuando el pedido se paga, se acepta, está listo, va en camino o
+  se rechaza, el cliente recibe un mensaje (solo dentro de las 24 h desde su
+  último mensaje, como exige WhatsApp).
+- **Menú principal**: hacer pedido, estado de mi pedido, horario y
+  sucursales, hasta 5 preguntas frecuentes y hablar con una persona.
+- **Paso a una persona**: el cliente escribe "asesor" (o toca la opción); la
+  conversación queda *Por atender* en el panel (con contador en el menú). Al
+  contestar desde el panel el bot se calla hasta que alguien la *devuelve al
+  bot* (o pasan 12 h sin mensajes). Pueden atender admin, gerente y cajero.
+- Mensajes repetidos por Meta se procesan una sola vez; cada conversación se
+  atiende en orden.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET/POST | `/api/webhooks/whatsapp` | Meta (verificación y mensajes) |
+| GET/PUT | `/api/whatsapp/settings` | admin |
+| GET | `/api/whatsapp/pending-count` | admin, gerente, cajero |
+| GET | `/api/whatsapp/conversations?filter=atencion\|todas&q=` | admin, gerente, cajero |
+| GET | `/api/whatsapp/conversations/:id` | admin, gerente, cajero |
+| POST | `/api/whatsapp/conversations/:id/messages` | admin, gerente, cajero |
+| POST | `/api/whatsapp/conversations/:id/take` · `/release` · `/seen` | admin, gerente, cajero |
 
 ## Prenómina en vivo, aclaraciones y aguinaldo (incluido en `rh`)
 

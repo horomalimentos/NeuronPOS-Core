@@ -34,6 +34,7 @@ import AdminLayout from './restaurant/AdminLayout';
 import BranchesPage from './restaurant/BranchesPage';
 import DashboardPage from './restaurant/DashboardPage';
 import FeedbackPage from './restaurant/FeedbackPage';
+import WhatsAppPage from './restaurant/WhatsAppPage';
 import RestaurantLogin from './restaurant/RestaurantLogin';
 import { StaffForgotPage, StaffResetPage } from './restaurant/StaffPasswordPages';
 import SubscriptionPage from './restaurant/SubscriptionPage';
@@ -161,6 +162,10 @@ export default function App() {
             <Route path="reparto" element={<DispatchPage />} />
             <Route path="reparto/cortes" element={<DriverCutsPage />} />
             <Route path="domicilios" element={<DeliverySettingsPage />} />
+          </Route>
+          {/* Bot de WhatsApp (modulo whatsapp) */}
+          <Route element={<ModuleGate code="whatsapp" name="Bot de WhatsApp" />}>
+            <Route path="whatsapp" element={<WhatsAppPage />} />
           </Route>
           {/* Calificaciones y quejas (modulo quejas) */}
           <Route element={<ModuleGate code="quejas" name="Calificaciones y quejas" />}>

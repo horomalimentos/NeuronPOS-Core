@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -23,6 +23,7 @@ export default function AdminLayout() {
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
   const hasToken = Boolean(session.getToken('restaurant'));
+  const waPending = useWhatsAppPending(me);
 
   const reload = useCallback(() => {
     api<Me>('/me')
@@ -74,6 +75,7 @@ export default function AdminLayout() {
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
     { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
+    { to: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, end: false, show: has('whatsapp') && posCan.cashier(role), badge: waPending },
     { to: '/admin/quejas', label: 'Quejas', icon: MessageSquareWarning, end: false, show: has('quejas') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
     { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: !blocked && canManage(role) },
@@ -96,11 +98,12 @@ export default function AdminLayout() {
             {me.restaurant.name}
           </div>
           <nav className="flex flex-1 gap-1 overflow-x-auto">
-            {nav.map(({ to, label, icon: Icon, end }) => (
+            {nav.map(({ to, label, icon: Icon, end, badge }) => (
               <NavLink key={to} to={to} end={end}
                 className={({ isActive }) => `flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition
                   ${isActive ? 'bg-brand/15 text-white' : 'text-gray-400 hover:text-white'}`}>
                 <Icon className="h-4 w-4" /> {label}
+                {badge ? <span className="rounded-full bg-amber-500 px-1.5 text-xs font-bold text-gray-900">{badge}</span> : null}
               </NavLink>
             ))}
           </nav>
@@ -133,6 +136,21 @@ export default function AdminLayout() {
       </main>
     </div>
   );
+}
+
+/** Conversaciones de WhatsApp esperando a una persona (se revisa cada 30 s). */
+function useWhatsAppPending(me: Me | null) {
+  const [count, setCount] = useState(0);
+  const enabled = Boolean(me && !me.restaurant.access_error && me.modules.find((m) => m.code === 'whatsapp')?.enabled
+    && posCan.cashier(me.user.role));
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const load = () => { api<{ count: number }>('/whatsapp/pending-count').then((r) => setCount(r.count)).catch(() => {}); };
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
+  }, [enabled]);
+  return enabled ? count : 0;
 }
 
 /** Aviso de pago pendiente o vencido (admin y gerente). */
