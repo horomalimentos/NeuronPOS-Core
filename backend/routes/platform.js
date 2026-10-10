@@ -1,15 +1,17 @@
 // API del dueno de la plataforma (Panel NeuronPOS). Todo corre con
 // withPlatform, que habilita ver/editar cualquier restaurante bajo RLS.
 import { Router } from 'express';
-import bcrypt from 'bcryptjs';
 import { withPlatform } from '../config/database.js';
 import { authenticatePlatform } from '../middleware/auth.js';
 import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
-import { getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant } from '../services/restaurants.js';
+import {
+  createRestaurant, getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant,
+} from '../services/restaurants.js';
 import { addDays, getPlatformSettings, listInvoices, today } from '../services/subscriptions.js';
 import platformBillingRouter from './platformBilling.js';
 import platformFleetRouter from './platformFleet.js';
+import platformMarketplaceRouter from './platformMarketplace.js';
 import {
   COLOR_RE, DOMAIN_RE, EMAIL_RE, SLUG_RE, ah, badRequest, bool, buildSet, dateOrNull,
   money, notFound, oneOf, requireUuid, str,
@@ -164,45 +166,9 @@ router.post('/restaurants', ah(async (req, res) => {
   }
   const branchName = str(body.branch_name, { field: 'branch_name', max: 120 }) || 'Matriz';
 
-  const id = await withPlatform(async (db) => {
-    const cols = Object.entries(f).filter(([, v]) => v !== undefined);
-    const { rows } = await db.query(
-      `INSERT INTO restaurants (${cols.map(([k]) => k).join(', ')})
-       VALUES (${cols.map((_, i) => `$${i + 1}`).join(', ')}) RETURNING id`,
-      cols.map(([, v]) => v),
-    );
-    const rid = rows[0].id;
-
-    // Una fila por modulo del catalogo; habilitados los que se pidieron.
-    await db.query(
-      `INSERT INTO restaurant_modules (restaurant_id, module_code, enabled, started_at)
-       SELECT $1, m.code, m.code = ANY($2::text[]), CASE WHEN m.code = ANY($2::text[]) THEN now() END
-         FROM modules m`,
-      [rid, moduleCodes],
-    );
-    await db.query('INSERT INTO delivery_settings (restaurant_id) VALUES ($1)', [rid]);
-    // Configuracion del POS y metodos de pago basicos (efectivo, tarjeta, transferencia).
-    await db.query('SELECT seed_pos_defaults($1)', [rid]);
-    // Fase 4: reglas de nomina y del empleado del mes con sus valores por defecto.
-    await db.query('SELECT seed_hr_defaults($1)', [rid]);
-    const branch = await db.query(
-      'INSERT INTO branches (restaurant_id, name) VALUES ($1, $2) RETURNING id',
-      [rid, branchName],
-    );
-    if (admin) {
-      const hash = await bcrypt.hash(admin.password, 12);
-      const u = await db.query(
-        `INSERT INTO users (restaurant_id, email, name, password_hash, role)
-         VALUES ($1, $2, $3, $4, 'admin') RETURNING id`,
-        [rid, admin.email, admin.name, hash],
-      );
-      await db.query(
-        'INSERT INTO user_branches (restaurant_id, user_id, branch_id, is_primary) VALUES ($1, $2, $3, true)',
-        [rid, u.rows[0].id, branch.rows[0].id],
-      );
-    }
-    return rid;
-  });
+  const { id } = await withPlatform((db) => createRestaurant(db, {
+    fields: f, moduleCodes, branchName, admin,
+  }));
 
   const detail = await withPlatform((db) => getRestaurantDetail(db, id));
   res.status(201).json(detail);
@@ -369,6 +335,7 @@ router.put('/restaurants/:id/delivery', ah(async (req, res) => {
 router.use(platformBillingRouter);
 // Flota de repartidores de la plataforma (fase 5).
 router.use(platformFleetRouter);
+router.use(platformMarketplaceRouter);
 
 router.get('/restaurants/:id/charge', ah(async (req, res) => {
   requireUuid(req.params.id);

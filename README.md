@@ -620,6 +620,64 @@ número que recibió el mensaje; cada envío se valida con la firma de Meta.
 | POST | `/api/whatsapp/conversations/:id/messages` | admin, gerente, cajero |
 | POST | `/api/whatsapp/conversations/:id/take` · `/release` · `/seen` | admin, gerente, cajero |
 
+## NeuronPOS Delivery (módulo `marketplace`, sin costo)
+
+Plataforma local de pedidos a domicilio, estilo Uber Eats / DiDi Food, sin
+mensualidad para restaurantes ni repartidores. Se construye por fases (plan en
+`neuronpos-delivery-plan.md` de los archivos del proyecto); la **fase 1** deja
+la base:
+
+- **Registro gratis de restaurantes** en `/delivery/restaurantes`: crea la
+  cuenta (estado activo, solo con el módulo `marketplace` de $0), su sucursal
+  Matriz con la ubicación del mapa y el administrador. El slug se genera del
+  nombre (`tacos-dona-pepa`, `-2`, …). Un restaurante solo de Delivery usa el
+  **Menú** (`/api/pos/menu`, categorías, productos, modificadores) sin
+  contratar el POS; el resto del POS sigue pidiendo el módulo `pos`.
+- **Ficha por sucursal** en `/admin/delivery`: ubicación, tipo de comida,
+  descripción, minutos de preparación y pedido mínimo. Para **publicar** hace
+  falta ubicación, horario (Sucursales › Horario) y al menos un producto. Se
+  puede pausar 15/30/60 min. El Panel puede ocultarla con motivo; el
+  restaurante no puede quitarse ese bloqueo (trigger en la BD).
+- **Registro de repartidores** en `/delivery/repartidores`: datos, vehículo,
+  **epicentro** y **km a la redonda** (hasta el máximo del Panel). Quedan
+  *en revisión*; entran a `/repartidor` (pestaña Flota NeuronPOS), ven su
+  estado y pueden cambiar su zona, pero solo se ponen **en turno** cuando el
+  Panel los aprueba (CHECK `NOT on_duty OR status = 'aprobado'`; un trigger
+  impide que el repartidor cambie su propio estado).
+- **Panel › Delivery**: reglas (envío para el repartidor, inicia en 80 %;
+  comisión sobre la comida, inicia en 0 %; distancia máxima; radio máximo del
+  repartidor; tope de adeudo, inicia en $300), **tabla de envío por km**
+  (inicia 3 km $35, 5 km $45, 8 km $60, 10 km $75) con el reparto de cada
+  tramo, aprobación/rechazo/bloqueo de repartidores y fichas de restaurantes.
+- **Cobertura**: un restaurante se puede atender si hay un repartidor aprobado,
+  en turno, con el punto del restaurante dentro de su radio
+  (`coveringDrivers`, Haversine en SQL). Lo usa la fase 2 para no dejar pedir
+  si nadie cubre.
+
+Dinero (fases 2 y 3): en efectivo el repartidor cobra al cliente, paga la
+comida en el restaurante y se queda el envío; el 20 % de NeuronPOS se le suma
+como adeudo. En tarjeta (Clip de NeuronPOS) el repartidor también paga la
+comida al recoger y NeuronPOS le abona esa comida más su 80 % del envío, que
+primero descuenta su adeudo; lo que falte lo puede pagar con tarjeta.
+
+API:
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/marketplace/info` | público (reglas y tarifas) |
+| POST | `/api/marketplace/restaurants` | público (registro, 10/h por IP) |
+| POST | `/api/marketplace/drivers` | público (registro; regresa token de la app) |
+| GET | `/api/marketplace/listings` | restaurante |
+| PUT | `/api/marketplace/listings/:branchId` | admin/gerente |
+| POST | `/api/marketplace/listings/:branchId/pause` | admin/gerente/cajero |
+| PUT | `/api/fleet/zone` | repartidor (epicentro y radio) |
+| GET/PUT | `/api/platform/marketplace/settings` | Panel |
+| PUT | `/api/platform/marketplace/fee-tiers` | Panel |
+| GET | `/api/platform/marketplace/drivers?status=` | Panel |
+| POST | `/api/platform/marketplace/drivers/:id/review` | Panel |
+| GET | `/api/platform/marketplace/listings` | Panel |
+| POST | `/api/platform/marketplace/listings/:branchId/block` | Panel |
+
 ## Prenómina en vivo, aclaraciones y aguinaldo (incluido en `rh`)
 
 Adaptado de Horom. No es un módulo aparte: viene con Recursos humanos.

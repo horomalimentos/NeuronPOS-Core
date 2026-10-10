@@ -72,8 +72,8 @@ export async function assignDriver(db, request, driverId) {
   if (!['solicitado', 'asignado'].includes(request.status)) {
     throw conflict('Solo se asignan solicitudes que no se han recogido', 'INVALID_TRANSITION');
   }
-  const driver = (await db.query('SELECT id, name, phone, active FROM fleet_drivers WHERE id = $1', [driverId])).rows[0];
-  if (!driver || !driver.active) throw badRequest('Repartidor no valido', 'DRIVER_NOT_FOUND');
+  const driver = (await db.query('SELECT id, name, phone, active, status FROM fleet_drivers WHERE id = $1', [driverId])).rows[0];
+  if (!driver || !driver.active || driver.status !== 'aprobado') throw badRequest('Repartidor no valido', 'DRIVER_NOT_FOUND');
   const { rows } = await db.query(
     `UPDATE delivery_requests SET status = 'asignado', driver_id = $2, driver_name = $3, driver_phone = $4,
             assigned_at = now(), updated_at = now()
@@ -127,7 +127,7 @@ export async function offerRequest(db, requestId) {
     `INSERT INTO delivery_request_offers (request_id, driver_id, summary, expires_at)
      SELECT $1, d.id, $2::jsonb, now() + make_interval(secs => $3)
        FROM fleet_drivers d
-      WHERE d.active AND d.on_duty
+      WHERE d.active AND d.on_duty AND d.status = 'aprobado'
         AND NOT EXISTS (SELECT 1 FROM delivery_requests x
                          WHERE x.driver_id = d.id AND x.status IN ('asignado', 'recogido', 'en_camino'))
      ON CONFLICT (request_id, driver_id) DO UPDATE

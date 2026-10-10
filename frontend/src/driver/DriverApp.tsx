@@ -2,6 +2,7 @@ import {
   Banknote, Bike, Check, CircleSlash, LogOut, MapPin, Navigation, Phone, Power, RefreshCw, Store, Truck,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { AuthCard } from '../components/AuthCard';
 import { PushBell } from '../components/PushBell';
 import { Alert, Button, Field, Modal, Spinner, Toggle } from '../components/ui';
@@ -13,9 +14,18 @@ import { formatMXN } from '../lib/format';
 import { disablePush } from '../lib/push';
 import { session } from '../lib/session';
 import { formatTime } from '../pos/lib';
+import { DRIVER_STATUS_LABEL, type DriverStatus, type MarketplaceInfo } from '../marketplace/lib';
+import ZoneFields from '../marketplace/ZoneFields';
 import { useSite } from '../restaurant/useSite';
+import type { Point } from '../components/ZoneMap';
 
 const POLL_MS = 15000;
+
+/** Datos del repartidor de la flota / NeuronPOS Delivery (GET /fleet/me). */
+interface FleetMe {
+  id: string; name: string; on_duty: boolean; status: DriverStatus; self_registered: boolean;
+  base: Point | null; radius_km: number | null; review_note: string | null;
+}
 
 type Kind = 'propio' | 'flota';
 
@@ -110,6 +120,11 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
             <input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
           </Field>
           <Button type="submit" loading={loading} className="w-full">Entrar</Button>
+          {tab === 'flota' && (
+            <p className="text-center text-sm text-gray-400">
+              ¿Quieres repartir con NeuronPOS Delivery? <Link to="/delivery/repartidores" className="font-semibold text-brand">Regístrate</Link>
+            </p>
+          )}
         </form>
       )}
     </AuthCard>
@@ -165,16 +180,20 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   const [error, setError] = useState('');
   const [finishing, setFinishing] = useState<{ job: DriverJob; mode: 'entregado' | 'fallido' } | null>(null);
   const [busy, setBusy] = useState('');
+  const [fleetMe, setFleetMe] = useState<FleetMe | null>(null);
+  const [zoneOpen, setZoneOpen] = useState(false);
+  const approved = !fleet || !fleetMe || fleetMe.status === 'aprobado';
 
   const load = useCallback(async () => {
     try {
       if (fleet) {
         const [me, reqs, offs] = await Promise.all([
-          fleetApi<{ driver: { name: string; on_duty: boolean }; cash_pending: string }>('/fleet/me'),
+          fleetApi<{ driver: FleetMe; cash_pending: string }>('/fleet/me'),
           fleetApi<{ requests: FleetRow[] }>('/fleet/requests'),
           fleetApi<{ offers: FleetOffer[] }>('/fleet/offers'),
         ]);
         setName(me.driver.name);
+        setFleetMe(me.driver);
         setOnDuty(me.driver.on_duty);
         setCash(Number(me.cash_pending));
         setJobs(reqs.requests.map(fromFleet));
@@ -261,14 +280,21 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             <Power className={`h-4 w-4 ${onDuty ? 'text-emerald-400' : 'text-gray-500'}`} />
             {onDuty ? 'En turno · compartiendo ubicación' : 'Fuera de turno'}
           </span>
-          <Toggle checked={onDuty} onChange={toggleDuty} disabled={busy === 'duty'} label="En turno" />
+          <Toggle checked={onDuty} onChange={toggleDuty} disabled={busy === 'duty' || !approved} label="En turno" />
         </div>
+        {fleet && fleetMe && (fleetMe.self_registered || fleetMe.base) && (
+          <button type="button" onClick={() => setZoneOpen(true)} className="mt-2 flex w-full items-center gap-2 text-left text-xs text-gray-400 hover:text-white">
+            <MapPin className="h-3.5 w-3.5" />
+            {fleetMe.base ? `Mi zona: ${fleetMe.radius_km} km a la redonda de mi epicentro · Cambiar` : 'Elige tu zona de reparto'}
+          </button>
+        )}
         {onDuty && geo.error && <p className="mt-2 text-xs text-amber-300">{geo.error}</p>}
         {onDuty && !geo.error && geo.lastSent && <p className="mt-1 text-xs text-gray-500">Ubicación enviada a las {formatTime(geo.lastSent.toISOString())}</p>}
       </header>
 
       <main className="space-y-4 px-4 pt-4">
         {error && <Alert>{error}</Alert>}
+        {fleet && fleetMe && !approved && <ReviewNotice me={fleetMe} />}
         {cash > 0 && (
           <div className="flex items-center gap-3 rounded-xl border border-amber-700/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
             <Banknote className="h-5 w-5" /> Traes {formatMXN(cash)} en efectivo por entregar{fleet ? ' a NeuronPOS' : ' en caja'}.
@@ -334,6 +360,9 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             const ok = await setStatus(finishing.job, finishing.mode, extra);
             if (ok) setFinishing(null);
           }} />
+      )}
+      {zoneOpen && fleetMe && (
+        <ZoneModal me={fleetMe} onClose={() => setZoneOpen(false)} onSaved={(d) => { setFleetMe(d); setZoneOpen(false); }} />
       )}
     </div>
   );
@@ -430,6 +459,56 @@ function FinishSheet({ job, mode, fleet, onClose, onConfirm }: {
         ) : <p className="text-sm text-emerald-300">El pedido ya está pagado: solo entrégalo.</p>}
         <Button type="submit" className="w-full py-3 text-base"><Check className="h-5 w-5" /> Confirmar entrega</Button>
       </form>
+    </Modal>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// NeuronPOS Delivery: estado del registro y zona de reparto
+// ---------------------------------------------------------------------------
+
+function ReviewNotice({ me }: { me: FleetMe }) {
+  const pending = me.status === 'pendiente';
+  return (
+    <div className={`rounded-xl border px-4 py-3 text-sm ${pending ? 'border-amber-700/60 bg-amber-950/40 text-amber-200' : 'border-red-800/60 bg-red-950/40 text-red-200'}`}>
+      <p className="font-semibold">{DRIVER_STATUS_LABEL[me.status]}</p>
+      <p className="mt-1">
+        {pending
+          ? 'NeuronPOS está revisando tu registro. Cuando te aprueben podrás ponerte en turno y recibir pedidos de tu zona.'
+          : me.review_note || 'Tu cuenta no puede recibir pedidos. Comunícate con NeuronPOS.'}
+      </p>
+    </div>
+  );
+}
+
+function ZoneModal({ me, onClose, onSaved }: { me: FleetMe; onClose: () => void; onSaved: (d: FleetMe) => void }) {
+  const [base, setBase] = useState<Point | null>(me.base);
+  const [radius, setRadius] = useState(me.radius_km ?? 5);
+  const [max, setMax] = useState(15);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api<MarketplaceInfo>('/marketplace/info', { noRedirect: true }).then((i) => setMax(i.driver_max_radius_km)).catch(() => {});
+  }, []);
+  const save = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const r = await fleetApi<{ driver: FleetMe }>('/fleet/zone', { method: 'PUT', body: { base, radius_km: radius } });
+      onSaved(r.driver);
+    } catch (e) { setError(errorMessage(e)); }
+    setBusy(false);
+  };
+  return (
+    <Modal title="Mi zona de reparto" onClose={onClose}>
+      <div className="space-y-4">
+        <ZoneFields base={base} radius={radius} maxRadius={max} onBase={setBase} onRadius={setRadius} />
+        {error && <Alert>{error}</Alert>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose}>Cancelar</Button>
+          <Button onClick={() => void save()} loading={busy} disabled={!base}>Guardar zona</Button>
+        </div>
+      </div>
     </Modal>
   );
 }

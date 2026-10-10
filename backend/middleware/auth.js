@@ -173,7 +173,8 @@ export async function authenticateFleet(req, res, next) {
     const payload = readToken(req, { audience: FLEET_AUDIENCE });
     if (payload.typ !== 'fleet' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
     const driver = await withFleetDriver(payload.sub, async (db) => (await db.query(
-      'SELECT id, name, email, phone, vehicle, plate, active, on_duty FROM fleet_drivers WHERE id = $1',
+      `SELECT id, name, email, phone, vehicle, plate, active, on_duty, status, self_registered,
+              base_latitude, base_longitude, radius_km, review_note FROM fleet_drivers WHERE id = $1`,
       [payload.sub],
     )).rows[0]);
     if (!driver) throw unauthorized('Repartidor no encontrado', 'INVALID_TOKEN');

@@ -11,6 +11,7 @@ import branchesRouter from './routes/branches.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
+import { marketplacePublicRouter, marketplaceRouter } from './routes/marketplace.js';
 import inventoryRouter from './routes/inventory/index.js';
 import loyaltyRouter from './routes/loyalty.js';
 import walletRouter from './routes/wallet.js';
@@ -87,6 +88,8 @@ export function createApp() {
   }));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
+  // NeuronPOS Delivery: registro de restaurantes y repartidores (sin tenant).
+  app.use('/api/marketplace', marketplacePublicRouter);
 
   // Todo lo demas es de un restaurante.
   app.use('/api', resolveTenant);
@@ -116,6 +119,8 @@ export function createApp() {
   app.use('/api/push', pushRouter);
   app.use('/api/feedback', feedbackRouter);
   app.use('/api/whatsapp', whatsappRouter);
+  // NeuronPOS Delivery: la ficha de cada sucursal (modulo marketplace).
+  app.use('/api/marketplace', marketplaceRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

@@ -14,6 +14,8 @@ import {
 } from '../services/delivery/fleet.js';
 import { DRIVER_STATUSES } from '../services/delivery/flow.js';
 import { readLocation } from '../services/delivery/location.js';
+import { readPoint } from '../services/deliveryZones.js';
+import { getMarketplaceSettings } from '../services/marketplace.js';
 import { mapsUrl } from '../services/online.js';
 import {
   HttpError, ah, badRequest, bool, notFound, oneOf, requireUuid, str,
@@ -49,6 +51,14 @@ router.post('/auth/login', loginLimiter, ah(async (req, res) => {
 
 router.use(authenticateFleet);
 
+const driverMe = (d) => ({
+  id: d.id, name: d.name, email: d.email, phone: d.phone, vehicle: d.vehicle, plate: d.plate,
+  active: d.active, on_duty: d.on_duty, status: d.status, self_registered: d.self_registered,
+  base: d.base_latitude === null ? null : { latitude: Number(d.base_latitude), longitude: Number(d.base_longitude) },
+  radius_km: d.radius_km === null ? null : Number(d.radius_km),
+  review_note: d.status === 'aprobado' ? null : d.review_note,
+});
+
 const view = (r) => ({
   ...driverRequestView(r),
   maps_url: mapsUrl(r.dropoff_address),
@@ -70,12 +80,36 @@ router.get('/me', ah(async (req, res) => {
     )).rows[0];
     return { cash_pending: cash.total, cash_deliveries: cash.deliveries, today };
   });
-  res.json({ driver: req.fleetDriver, ...data });
+  res.json({ driver: driverMe(req.fleetDriver), ...data });
+}));
+
+// Zona de trabajo (NeuronPOS Delivery): epicentro y km a la redonda.
+router.put('/zone', ah(async (req, res) => {
+  const body = req.body || {};
+  const base = readPoint(body.base, 'base');
+  if (!base) throw badRequest('Marca tu epicentro en el mapa', 'MISSING_FIELD');
+  const radius = Number(body.radius_km);
+  const driver = await withFleetDriver(req.fleetDriver.id, async (db) => {
+    const max = Number((await getMarketplaceSettings(db)).driver_max_radius_km);
+    if (!Number.isFinite(radius) || radius < 1 || radius > max) throw badRequest(`El radio debe ser de 1 a ${max} km`, 'INVALID_FIELD');
+    return (await db.query(
+      `UPDATE fleet_drivers SET base_latitude = $2, base_longitude = $3, radius_km = $4, updated_at = now()
+        WHERE id = $1 RETURNING id, name, email, phone, vehicle, plate, active, on_duty, status, self_registered,
+                                base_latitude, base_longitude, radius_km, review_note`,
+      [req.fleetDriver.id, base.latitude, base.longitude, Math.round(radius * 10) / 10],
+    )).rows[0];
+  });
+  res.json({ driver: driverMe(driver) });
 }));
 
 router.post('/duty', ah(async (req, res) => {
   const onDuty = bool((req.body || {}).on_duty, 'on_duty');
   if (onDuty === undefined) throw badRequest('Indica si estas en turno', 'MISSING_FIELD');
+  if (onDuty && req.fleetDriver.status !== 'aprobado') {
+    throw new HttpError(403, req.fleetDriver.status === 'pendiente'
+      ? 'Tu registro esta en revision; te avisamos cuando NeuronPOS lo apruebe'
+      : 'Tu cuenta de repartidor no esta aprobada', 'DRIVER_NOT_APPROVED');
+  }
   await withFleetDriver(req.fleetDriver.id, (db) => db.query(
     'UPDATE fleet_drivers SET on_duty = $2, updated_at = now() WHERE id = $1',
     [req.fleetDriver.id, onDuty],

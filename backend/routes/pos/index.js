@@ -1,8 +1,9 @@
 // Modulo POS. Todas las rutas requieren usuario del restaurante y el modulo
-// 'pos' contratado (requireModule responde 402 si no).
+// 'pos' contratado (requireModule responde 402 si no). El menu tambien lo
+// usa un restaurante que solo esta en NeuronPOS Delivery (modulo marketplace).
 import { Router } from 'express';
 import { authenticateUser } from '../../middleware/auth.js';
-import { requireModule } from '../../middleware/requireModule.js';
+import { requireAnyModule, requireModule } from '../../middleware/requireModule.js';
 import cashRouter from './cash.js';
 import menuRouter from './menu.js';
 import onlineRouter from './online.js';
@@ -12,13 +13,15 @@ import settingsRouter from './settings.js';
 import tablesRouter from './tables.js';
 
 const router = Router();
-router.use(authenticateUser, requireModule('pos'));
+router.use(authenticateUser);
+router.use(['/menu', '/categories', '/items', '/modifier-groups'], requireAnyModule('pos', 'marketplace'));
+router.use(menuRouter);
+router.use(requireModule('pos'));
 
 router.get('/status', (req, res) => {
   res.json({ ok: true, module: 'pos', message: 'Modulo POS habilitado.' });
 });
 
-router.use(menuRouter);
 router.use(tablesRouter);
 router.use(settingsRouter);
 router.use(ordersRouter);
