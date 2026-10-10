@@ -39,6 +39,13 @@ export const orderLimiter = limiter({
   message: 'Hiciste demasiados pedidos seguidos. Intenta mas tarde o llama a la sucursal.',
 });
 
+/** Calificar, quejarse y subir fotos de evidencia. */
+export const feedbackLimiter = limiter({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  message: 'Demasiados intentos. Intenta de nuevo más tarde.',
+});
+
 /** Checador (kiosco): intentos de NIP por dispositivo. El bloqueo por empleado vive en la BD. */
 export const kioskLimiter = limiter({
   windowMs: 60 * 1000,

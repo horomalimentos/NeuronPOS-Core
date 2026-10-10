@@ -109,6 +109,7 @@ router.delete('/adjustments/:id', manager, ah(async (req, res) => {
     const used = await db.query('SELECT 1 FROM payroll_item_lines WHERE restaurant_id = $1 AND adjustment_id = $2 LIMIT 1', [req.tenant.id, req.params.id]);
     if (used.rowCount) throw new HttpError(409, 'El ajuste ya se aplicó en una nómina: desactívalo en lugar de borrarlo', 'ADJUSTMENT_APPLIED');
     await db.query('UPDATE recognition_results SET adjustment_id = NULL WHERE restaurant_id = $1 AND adjustment_id = $2', [req.tenant.id, req.params.id]);
+    await db.query('UPDATE customer_complaints SET payroll_adjustment_id = NULL WHERE restaurant_id = $1 AND payroll_adjustment_id = $2', [req.tenant.id, req.params.id]);
     const { rowCount } = await db.query('DELETE FROM payroll_adjustments WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
     if (!rowCount) throw notFound('Ajuste no encontrado', 'ADJUSTMENT_NOT_FOUND');
   });

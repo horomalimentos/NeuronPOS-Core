@@ -162,6 +162,7 @@ export interface CustomerOrder {
   online_payment_status: 'pendiente' | 'pagado' | 'cancelado' | null;
   payment_due_at: string | null;
   items: {
+    id: string;
     name: string;
     quantity: number;
     unit_price: Money;
@@ -188,6 +189,22 @@ export interface CustomerOrder {
   paid_at: string | null;
   /** Reparto a domicilio (fase 5); la ubicacion solo llega en camino. */
   delivery?: CustomerDelivery | null;
+  /** Calificacion y queja (modulo quejas); null sin el modulo. */
+  feedback?: OrderFeedback | null;
+}
+
+export interface OrderFeedback {
+  has_account: boolean;
+  can_rate: boolean;
+  can_complain: boolean;
+  rating: { overall: number; food: number | null; service: number | null; comment: string | null; created_at: string } | null;
+  complaint: {
+    status: 'pendiente' | 'aprobada' | 'rechazada';
+    reason: string;
+    created_at: string;
+    reviewed_at: string | null;
+    response: string | null;
+  } | null;
 }
 
 export interface CustomerDelivery {

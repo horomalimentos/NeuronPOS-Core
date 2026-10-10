@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -74,6 +74,7 @@ export default function AdminLayout() {
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
     { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
+    { to: '/admin/quejas', label: 'Quejas', icon: MessageSquareWarning, end: false, show: has('quejas') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
     { to: '/admin/sucursales', label: 'Sucursales', icon: Building2, end: false, show: !blocked && canManage(role) },
     { to: '/admin/usuarios', label: 'Usuarios', icon: Users, end: false, show: !blocked && canManage(role) },

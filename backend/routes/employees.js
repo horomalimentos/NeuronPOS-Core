@@ -172,7 +172,8 @@ router.delete('/:id', requireRole('admin'), ah(async (req, res) => {
     const used = await db.query(
       `SELECT EXISTS (SELECT 1 FROM time_entries WHERE restaurant_id = $1 AND employee_id = $2)
            OR EXISTS (SELECT 1 FROM payroll_items WHERE restaurant_id = $1 AND employee_id = $2)
-           OR EXISTS (SELECT 1 FROM recognition_results WHERE restaurant_id = $1 AND employee_id = $2) AS used`,
+           OR EXISTS (SELECT 1 FROM recognition_results WHERE restaurant_id = $1 AND employee_id = $2)
+           OR EXISTS (SELECT 1 FROM customer_complaints WHERE restaurant_id = $1 AND responsible_employee_id = $2) AS used`,
       [req.tenant.id, req.params.id],
     );
     if (used.rows[0].used) {

@@ -9,18 +9,25 @@
 // notas. El servidor valua todo con las mismas reglas del POS (priceItems y
 // posMath); cualquier precio que mande el cliente se ignora.
 import crypto from 'node:crypto';
-import { Router } from 'express';
+import express, { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { withTenant } from '../config/database.js';
 import { authenticateCustomer, optionalCustomer, signCustomerToken } from '../middleware/auth.js';
-import { customerAuthLimiter, orderLimiter, publicLimiter } from '../middleware/rateLimits.js';
+import {
+  customerAuthLimiter, feedbackLimiter, orderLimiter, publicLimiter,
+} from '../middleware/rateLimits.js';
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
 import { checkModuleAccess } from '../services/access.js';
 import { customerDeliveryView } from '../services/delivery/tenant.js';
 import { loadZones, quoteZone, readPoint } from '../services/deliveryZones.js';
 import { readScheduledFor, scheduleSlots } from '../services/scheduling.js';
-import { alertNewOnlineOrder, sendCustomerReset, sendOrderReceived, sendWelcome } from '../services/emails.js';
+import {
+  MAX_EVIDENCE, createComplaint, customerFeedback, feedbackOpen, rateOrder, saveEvidence,
+} from '../services/feedback.js';
+import {
+  alertNewComplaint, alertNewOnlineOrder, sendCustomerReset, sendOrderReceived, sendWelcome,
+} from '../services/emails.js';
 import { activeLoyalty, customerCode, pointsValue, resetCustomerCode } from '../services/loyalty.js';
 import {
   activeWallet, checkTopupAmount, createTopupCheckout, reconcileCustomerTopups, refundOrderWallet,
@@ -38,6 +45,7 @@ import {
   EMAIL_RE, HttpError, ah, badRequest, notFound, oneOf, requireUuid, str,
 } from '../utils/http.js';
 import { loadMenu } from './pos/menu.js';
+import { MAX_UPLOAD_BYTES, sniffImage } from './uploads.js';
 import {
   insertItems, loadItems, loadOrder, nextFolio, priceItems, readItemInputs, recalcOrder,
 } from './pos/orders.js';
@@ -70,6 +78,16 @@ async function moduleState(tenant) {
     zonas: !checkModuleAccess(tenant, 'zonas_entrega', zonas),
     programados: !checkModuleAccess(tenant, 'pedidos_programados', programados),
   };
+}
+
+/** Calificaciones y quejas (modulo quejas). */
+async function feedbackActive(tenant) {
+  return !checkModuleAccess(tenant, 'quejas', await loadModuleRow(tenant.id, 'quejas'));
+}
+
+async function requireFeedback(req) {
+  const denied = checkModuleAccess(req.tenant, 'quejas', await loadModuleRow(req.tenant.id, 'quejas'));
+  if (denied) throw new HttpError(denied.status, denied.error, denied.code);
 }
 
 // ---------------------------------------------------------------------------
@@ -710,7 +728,7 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
 }));
 
 /** Pedidos (con articulos) para la vista del cliente. */
-async function customerViews(db, rid, orders) {
+async function customerViews(db, rid, orders, { feedback = false } = {}) {
   if (!orders.length) return [];
   const branches = new Map((await loadBranches(db, rid, { onlyActive: false })).map((b) => [b.id, b]));
   const items = await loadItems(db, rid, orders.map((o) => o.id));
@@ -719,26 +737,30 @@ async function customerViews(db, rid, orders) {
     const view = customerOrderView({ ...o, items: items.filter((i) => i.order_id === o.id) }, branches.get(o.branch_id));
     // Fase 5: estado del reparto y, en camino, ubicacion aproximada del repartidor.
     view.delivery = await customerDeliveryView(db, rid, o);
+    // Calificacion y queja (modulo quejas).
+    view.feedback = await customerFeedback(db, rid, o, feedback);
     views.push(view);
   }
   return views;
 }
 
 router.get('/orders', authenticateCustomer, ah(async (req, res) => {
+  const feedback = await feedbackActive(req.tenant);
   const orders = await withTenant(req.tenant.id, async (db) => customerViews(db, req.tenant.id, (await db.query(
     `SELECT * FROM orders WHERE restaurant_id = $1 AND customer_id = $2 AND source = 'web'
       ORDER BY created_at DESC LIMIT 50`,
     [req.tenant.id, req.customer.id],
-  )).rows));
+  )).rows, { feedback }));
   res.json({ orders });
 }));
 
 router.get('/orders/:id', authenticateCustomer, ah(async (req, res) => {
   requireUuid(req.params.id);
+  const feedback = await feedbackActive(req.tenant);
   const order = await withTenant(req.tenant.id, async (db) => (await customerViews(db, req.tenant.id, (await db.query(
     `SELECT * FROM orders WHERE id = $1 AND restaurant_id = $2 AND customer_id = $3 AND source = 'web'`,
     [req.params.id, req.tenant.id, req.customer.id],
-  )).rows))[0]);
+  )).rows, { feedback }))[0]);
   if (!order) throw notFound('Pedido no encontrado', 'ORDER_NOT_FOUND');
   res.json({ order });
 }));
@@ -755,8 +777,9 @@ async function findByToken(db, rid, token, { lock = false } = {}) {
 }
 
 router.get('/track/:token', ah(async (req, res) => {
+  const feedback = await feedbackActive(req.tenant);
   const order = await withTenant(req.tenant.id, async (db) =>
-    (await customerViews(db, req.tenant.id, [await findByToken(db, req.tenant.id, req.params.token)]))[0]);
+    (await customerViews(db, req.tenant.id, [await findByToken(db, req.tenant.id, req.params.token)], { feedback }))[0]);
   res.json({ order });
 }));
 
@@ -805,5 +828,61 @@ router.post('/track/:token/pay', ah(async (req, res) => {
   const payment = await ensureOrderCheckout(req.tenant, req.params.token);
   res.json({ payment });
 }));
+
+// ---------------------------------------------------------------------------
+// Calificacion y queja del pedido (modulo quejas)
+// ---------------------------------------------------------------------------
+
+async function trackView(req) {
+  return withTenant(req.tenant.id, async (db) =>
+    (await customerViews(db, req.tenant.id, [await findByToken(db, req.tenant.id, req.params.token)], { feedback: true }))[0]);
+}
+
+router.post('/track/:token/rating', feedbackLimiter, ah(async (req, res) => {
+  await requireFeedback(req);
+  await withTenant(req.tenant.id, async (db) => {
+    const o = await findByToken(db, req.tenant.id, req.params.token, { lock: true });
+    await rateOrder(db, req.tenant.id, o, req.body || {});
+  });
+  res.status(201).json({ order: await trackView(req) });
+}));
+
+// Foto de evidencia (cuerpo crudo image/*). Se sube antes de mandar la queja.
+router.post(
+  '/track/:token/evidence',
+  feedbackLimiter,
+  express.raw({ type: 'image/*', limit: MAX_UPLOAD_BYTES }),
+  ah(async (req, res) => {
+    await requireFeedback(req);
+    const o = await withTenant(req.tenant.id, (db) => findByToken(db, req.tenant.id, req.params.token));
+    if (!feedbackOpen(o)) throw badRequest('Podrás reportar un problema cuando recibas tu pedido', 'FEEDBACK_CLOSED');
+    if (!Buffer.isBuffer(req.body) || !req.body.length) {
+      throw badRequest('Manda la foto como archivo (JPG, PNG o WebP)', 'IMAGE_REQUIRED');
+    }
+    const ext = sniffImage(req.body);
+    if (!ext) throw badRequest('El archivo no es una imagen JPG, PNG, WebP o GIF', 'INVALID_IMAGE');
+    res.status(201).json({ url: await saveEvidence(req.tenant.id, req.body, ext), max: MAX_EVIDENCE });
+  }),
+);
+
+router.post('/track/:token/complaint', feedbackLimiter, ah(async (req, res) => {
+  await requireFeedback(req);
+  const { complaint, order } = await withTenant(req.tenant.id, async (db) => {
+    const o = await findByToken(db, req.tenant.id, req.params.token, { lock: true });
+    const items = await loadItems(db, req.tenant.id, [o.id]);
+    const customer = o.customer_id
+      ? (await db.query('SELECT email FROM customers WHERE id = $1 AND restaurant_id = $2', [o.customer_id, req.tenant.id])).rows[0]
+      : null;
+    return { complaint: await createComplaint(db, req.tenant.id, o, items, req.body || {}, customer), order: o };
+  });
+  void alertNewComplaint(req.tenant, complaint, order).catch(() => {});
+  res.status(201).json({ order: await trackView(req) });
+}));
+
+// express.raw responde 413 con su propio error: se traduce al formato de la API.
+router.use((err, req, res, next) => {
+  if (err?.type === 'entity.too.large') return next(new HttpError(413, 'La foto pesa mas de 5 MB', 'IMAGE_TOO_LARGE'));
+  next(err);
+});
 
 export default router;

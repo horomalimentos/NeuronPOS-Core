@@ -25,6 +25,7 @@ import recognitionRouter from './routes/recognition.js';
 import rhRouter from './routes/rh/index.js';
 import subscriptionRouter from './routes/subscription.js';
 import uploadsRouter from './routes/uploads.js';
+import feedbackRouter from './routes/feedback.js';
 import usersRouter from './routes/users.js';
 import webhooksRouter from './routes/webhooks.js';
 import websiteRouter from './routes/website.js';
@@ -109,6 +110,7 @@ export function createApp() {
   app.use('/api/loyalty', loyaltyRouter);
   app.use('/api/wallet', walletRouter);
   app.use('/api/push', pushRouter);
+  app.use('/api/feedback', feedbackRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);
