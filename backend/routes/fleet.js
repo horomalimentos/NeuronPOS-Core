@@ -19,6 +19,7 @@ import { getMarketplaceSettings } from '../services/marketplace.js';
 import {
   createDebtCheckout, deliverOrder, driverBoard, driverLedger, pickUpOrder, releaseOrder, takeOrder,
 } from '../services/marketplaceMoney.js';
+import { driverChat, driverSend, readMessageBody } from '../services/marketplaceChat.js';
 import { mapsUrl } from '../services/online.js';
 import {
   HttpError, ah, badRequest, bool, notFound, oneOf, requireUuid, str,
@@ -204,6 +205,16 @@ router.post('/marketplace/orders/:id/release', ah(async (req, res) => {
   requireUuid(req.params.id);
   await releaseOrder(req.fleetDriver.id, req.params.id);
   res.status(204).end();
+}));
+
+router.get('/marketplace/orders/:id/messages', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  res.set('Cache-Control', 'no-store').json(await driverChat(req.fleetDriver.id, req.params.id));
+}));
+
+router.post('/marketplace/orders/:id/messages', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  res.status(201).json(await driverSend(req.fleetDriver.id, req.params.id, readMessageBody(req.body)));
 }));
 
 router.get('/marketplace/ledger', ah(async (req, res) => {

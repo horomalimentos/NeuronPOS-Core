@@ -287,7 +287,8 @@ export async function trackOrder(token) {
   const data = await withPlatform(async (db) => {
     const m = (await db.query(
       `SELECT m.*, r.name AS restaurant_name, r.logo_url, b.name AS branch_name, b.address AS branch_address, b.phone AS branch_phone,
-              o.folio, o.estimated_ready_at, l.prep_minutes
+              o.folio, o.estimated_ready_at, l.prep_minutes,
+              (SELECT count(*) FROM marketplace_messages x WHERE x.marketplace_order_id = m.id)::int AS messages
          FROM marketplace_orders m
          JOIN restaurants r ON r.id = m.restaurant_id
          JOIN branches b ON b.id = m.branch_id
@@ -329,5 +330,7 @@ export async function trackOrder(token) {
     picked_up_at: m.picked_up_at,
     delivered_at: m.delivered_at,
     cancelled_at: m.cancelled_at,
+    driver_assigned: Boolean(m.driver_id),
+    messages: m.messages,
   };
 }

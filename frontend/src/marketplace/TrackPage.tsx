@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
+import OrderChat from './OrderChat';
 
 type Status = 'pago_pendiente' | 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
 interface Tracked {
@@ -97,6 +98,12 @@ export default function TrackPage() {
                 <a href={`tel:${o.restaurant.phone.replace(/[^\d+]/g, '')}`} className="mt-4 inline-flex items-center gap-2 text-sm text-sky-300"><Phone className="h-4 w-4" /> Llamar al restaurante</a>
               )}
             </section>
+            {!paying && (
+              <section className="card p-5">
+                <h2 className="mb-3 font-semibold text-white">Chat con el restaurante y el repartidor</h2>
+                <OrderChat me="cliente" path={`/marketplace/orders/${o.token}/messages`} call={api} />
+              </section>
+            )}
             <section className="card p-5 text-sm">
               <h2 className="mb-2 font-semibold text-white">Tu pedido</h2>
               <ul className="space-y-1">

@@ -699,6 +699,16 @@ la comida* y *Entregado*. Su **cuenta con NeuronPOS**
 - RLS: el repartidor solo lee su cuenta y sus ligas; nadie más que la
   plataforma escribe movimientos.
 
+**Fase 4 (chat del pedido):** cada pedido tiene un **chat de tres partes**
+(`marketplace_messages`): el cliente en su seguimiento, el restaurante con el
+botón *Chat* en `/admin/delivery` y el repartidor que lleva el pedido en su
+app. Se escribe mientras el pedido está en curso (nuevo → en camino) y queda
+de solo lectura un día después de terminar. Cada mensaje muestra quién lo
+escribió (nombre y papel); no se comparten teléfonos. El cliente entra con el
+token del seguimiento (60 mensajes cada 15 min), el repartidor solo si lleva el
+pedido, y el restaurante con RLS de su restaurante (solo puede escribir como
+`restaurante`). Las apps consultan cada 8 s y marcan los mensajes nuevos.
+
 API:
 
 | Método | Ruta | Quién |
@@ -723,6 +733,9 @@ API:
 | GET | `/api/platform/marketplace/balances` | Panel |
 | GET/POST | `/api/platform/marketplace/drivers/:id/ledger` | Panel (`pago_efectivo`, `liquidacion`, `ajuste`) |
 | GET | `/api/platform/marketplace/orders?status=` | Panel (`reembolsar` = por reembolsar) |
+| GET/POST | `/api/marketplace/orders/:token/messages` | cliente (chat) |
+| GET/POST | `/api/marketplace/orders/:id/messages` | restaurante (chat) |
+| GET/POST | `/api/fleet/marketplace/orders/:id/messages` | repartidor que lleva el pedido (chat) |
 | GET/PUT | `/api/platform/marketplace/settings` | Panel |
 | PUT | `/api/platform/marketplace/fee-tiers` | Panel |
 | GET | `/api/platform/marketplace/drivers?status=` | Panel |

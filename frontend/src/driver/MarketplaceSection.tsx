@@ -7,6 +7,7 @@ import { telHref } from '../delivery/lib';
 import { errorMessage, fleetApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
+import { ChatButton } from '../marketplace/OrderChat';
 
 const POLL_MS = 15000;
 const LINK = 'inline-flex items-center gap-1.5 rounded-xl border border-gray-700 px-3 py-1.5 text-xs text-gray-200 hover:bg-gray-800';
@@ -19,7 +20,7 @@ interface Offer {
 interface Job extends Offer {
   folio: number; pickup_phone: string | null; pickup_maps_url: string | null; customer_name: string; customer_phone: string;
   address: string; reference: string | null; dropoff_maps_url: string; pay_with: string | null; change: number | null;
-  total: string; delivery_fee: string; platform_share: string; picked_up_at: string | null;
+  total: string; delivery_fee: string; platform_share: string; picked_up_at: string | null; messages: number;
 }
 interface Board {
   balance: number; debt_limit: number; cash_blocked: boolean; card_payments: boolean;
@@ -114,6 +115,8 @@ export default function MarketplaceSection({ onDuty }: { onDuty: boolean }) {
               <div className="flex flex-wrap gap-2 pt-1">
                 {j.pickup_maps_url && <a className={LINK} href={j.pickup_maps_url} target="_blank" rel="noreferrer"><Navigation className="h-4 w-4" /> Cómo llegar</a>}
                 {j.pickup_phone && <a className={LINK} href={telHref(j.pickup_phone)}><Phone className="h-4 w-4" /> Restaurante</a>}
+                <ChatButton chatKey={`d:${j.id}`} count={j.messages} title={`Chat del pedido #${j.folio}`} me="repartidor"
+                  path={`/fleet/marketplace/orders/${j.id}/messages`} call={fleetApi} />
               </div>
             </div>
           ) : (
@@ -129,6 +132,8 @@ export default function MarketplaceSection({ onDuty }: { onDuty: boolean }) {
               <div className="flex flex-wrap gap-2 pt-1">
                 <a className={LINK} href={j.dropoff_maps_url} target="_blank" rel="noreferrer"><Navigation className="h-4 w-4" /> Cómo llegar</a>
                 <a className={LINK} href={telHref(j.customer_phone)}><Phone className="h-4 w-4" /> Cliente</a>
+                <ChatButton chatKey={`d:${j.id}`} count={j.messages} title={`Chat del pedido #${j.folio}`} me="repartidor"
+                  path={`/fleet/marketplace/orders/${j.id}/messages`} call={fleetApi} />
               </div>
             </div>
           )}
