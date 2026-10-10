@@ -32,6 +32,7 @@ export const METHOD_KIND_LABEL: Record<MethodKind, string> = {
   transferencia: 'Transferencia',
   otro: 'Otro',
   en_linea: 'En línea (Clip)',
+  puntos: 'Puntos de lealtad',
 };
 
 /** Tipos que se pueden elegir al crear o editar un método (el de Clip lo pone el sistema). */

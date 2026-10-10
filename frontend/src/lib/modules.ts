@@ -1,9 +1,10 @@
-import { BarChart3, Boxes, Bike, Globe, Monitor, Star, Users, type LucideIcon, ShoppingBag, Package } from 'lucide-react';
+import { BarChart3, Boxes, HeartHandshake, Bike, Globe, Monitor, Star, Users, type LucideIcon, ShoppingBag, Package } from 'lucide-react';
 
 export const MODULE_ICONS: Record<string, LucideIcon> = {
   pos: Monitor,
   reportes: BarChart3,
   inventario: Boxes,
+  lealtad: HeartHandshake,
   landing: Globe,
   portal: ShoppingBag,
   rh: Users,

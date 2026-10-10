@@ -4,6 +4,7 @@
 import { HttpError, badRequest, notFound } from '../../utils/http.js';
 import { fromCents, normalizePayments, toCents } from '../posMath.js';
 import { deductOrder } from '../inventory.js';
+import { earnForOrder } from '../loyalty.js';
 import {
   ACTIVE_DELIVERY_STATUSES, DELIVERY_STATUS_LABEL, STATUS_TIMESTAMP, assertTransition,
 } from './flow.js';
@@ -118,6 +119,7 @@ export async function settleAtDoor(db, restaurantId, order, {
       [order.id, restaurantId, amount, tipPaid],
     );
     await deductOrder(db, restaurantId, order.id);
+    await earnForOrder(db, restaurantId, order.id);
   } else {
     await db.query(
       'UPDATE orders SET dispatched_at = coalesce(dispatched_at, now()), updated_at = now() WHERE id = $1 AND restaurant_id = $2',

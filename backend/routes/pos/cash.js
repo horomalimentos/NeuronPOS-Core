@@ -153,7 +153,7 @@ router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
     }
     const { payments, movements, methods } = await cutInputs(db, req.tenant.id, s.id);
     const preview = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash });
-    const missing = preview.methods.filter((m) => counts[m.payment_method_id] === undefined
+    const missing = preview.methods.filter((m) => counts[m.payment_method_id] === undefined && m.kind !== 'puntos'
       && (m.kind === 'efectivo' || m.expected !== 0));
     if (missing.length) {
       throw badRequest(`Captura lo contado en: ${missing.map((m) => m.name).join(', ')}`, 'MISSING_COUNTS');

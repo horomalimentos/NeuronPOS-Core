@@ -12,6 +12,7 @@
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { deductOrder } from '../../services/inventory.js';
+import { commitRedemption, countingCodeFailures, earnForOrder, prepareRedemption } from '../../services/loyalty.js';
 import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
@@ -597,7 +598,9 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
   if (!Array.isArray(body.payments)) throw badRequest('payments debe ser una lista', 'INVALID_FIELD');
   if (body.payments.length > 20) throw badRequest('Demasiados pagos', 'INVALID_FIELD');
   const inputs = body.payments.map((p) => ({
-    payment_method_id: requireUuid(p?.payment_method_id, 'payment_method_id'),
+    // Pago con puntos: { loyalty: { customer_id, points, code } }; el metodo y el monto los pone el servidor.
+    loyalty: p?.loyalty && typeof p.loyalty === 'object' ? p.loyalty : null,
+    payment_method_id: p?.loyalty ? null : requireUuid(p?.payment_method_id, 'payment_method_id'),
     amount: money(p.amount ?? 0, { field: 'amount' }),
     tip: money(p.tip ?? 0, { field: 'tip' }),
     received: p.received === undefined || p.received === null || p.received === ''
@@ -605,7 +608,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     reference: str(p.reference, { field: 'reference', max: 100 }) || null,
   }));
 
-  const result = await withTenant(req.tenant.id, async (db) => {
+  const result = await countingCodeFailures(req.tenant.id, () => withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     assertActive(o);
     assertAccepted(o);
@@ -623,12 +626,19 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       throw badRequest('Abre la caja de esta sucursal antes de cobrar', 'CASH_SESSION_REQUIRED');
     }
 
+    for (const p of inputs.filter((x) => x.loyalty)) {
+      if (inputs.filter((x) => x.loyalty).length > 1) throw badRequest('Solo un canje de puntos por cobro', 'INVALID_FIELD');
+      p.redemption = await prepareRedemption(db, req.tenant.id, o, p.loyalty);
+      Object.assign(p, { payment_method_id: p.redemption.methodId, amount: p.redemption.amount, tip: 0, received: undefined });
+    }
     const methods = new Map((await db.query(
       'SELECT id, kind, active FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
       [req.tenant.id, inputs.map((p) => p.payment_method_id)],
     )).rows.map((m) => [m.id, m]));
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
+      if (p.redemption) return { ...p, kind: m.kind };
+      if (m?.kind === 'puntos') throw badRequest('Los puntos se canjean con el botón de puntos', 'POINTS_METHOD_NOT_ALLOWED');
       if (!m || !m.active) throw badRequest('Metodo de pago no valido', 'PAYMENT_METHOD_NOT_FOUND');
       if (m.kind === 'en_linea') throw badRequest('Los pagos en linea solo los registra Clip', 'ONLINE_METHOD_NOT_ALLOWED');
       return { ...p, kind: m.kind };
@@ -638,13 +648,16 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     const norm = normalizePayments(lines, remaining);
 
     for (const [i, p] of norm.lines.entries()) {
-      await db.query(
+      const { rows: [pay] } = await db.query(
         `INSERT INTO order_payments (restaurant_id, order_id, payment_method_id, cash_session_id, amount, tip,
                                      received, change_given, reference, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
         [req.tenant.id, o.id, lines[i].payment_method_id, sessionId, p.amount, p.tip, p.received,
           p.change_given, lines[i].reference, req.user.id],
       );
+      if (lines[i].redemption) {
+        await commitRedemption(db, req.tenant.id, o, lines[i].redemption, { paymentId: pay.id, code: lines[i].loyalty.code, userId: req.user.id });
+      }
     }
     const tips = norm.lines.reduce((s, p) => s + toCents(p.tip), 0);
     const paid = norm.remaining_after === 0;
@@ -665,6 +678,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
         [o.id, req.tenant.id],
       );
       await deductOrder(db, req.tenant.id, o.id, req.user.id);
+      await earnForOrder(db, req.tenant.id, o.id, req.user.id);
     }
     if (o.order_type === 'domicilio') await afterRegisterPayment(db, req.tenant.id, o.id, paid);
     return {
@@ -672,7 +686,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       change: norm.change,
       remaining: norm.remaining_after,
     };
-  });
+  }));
   res.status(201).json(result);
 }));
 
