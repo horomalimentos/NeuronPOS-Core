@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -63,6 +63,7 @@ export default function AdminLayout() {
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/autoservicio', label: 'Kiosko', icon: TabletSmartphone, end: false, show: has('kiosko') && posCan.cashier(role) },
+    { to: '/admin/eventos', label: 'Eventos', icon: CalendarHeart, end: false, show: has('eventos') && posCan.orders(role) },
     { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && has('reportes') && posCan.manage(role) },
     { to: '/admin/clientes', label: 'Clientes', icon: HeartHandshake, end: false, show: (has('lealtad') || has('monedero')) && posCan.cashier(role) },
     { to: '/admin/inventario', label: 'Inventario', icon: Boxes, end: false, show: has('inventario') && invCan.staff(role) },

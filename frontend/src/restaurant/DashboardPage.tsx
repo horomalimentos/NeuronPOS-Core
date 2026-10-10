@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { PageHeader, StatusBadge } from '../components/ui';
 import { formatDate } from '../lib/format';
 import { moduleIcon } from '../lib/modules';
+import { posCan } from '../pos/lib';
 import AnnouncementsFeed from '../rh/AnnouncementsFeed';
 import { canManage, meHas, useAdmin } from './context';
 import TodaySales from './TodaySales';
@@ -37,6 +38,7 @@ export default function DashboardPage() {
     });
   }
   if (['admin', 'gerente', 'cajero', 'cocina'].includes(me.user.role)) links.inventario = { to: '/admin/inventario', label: 'Abrir inventario' };
+  if (posCan.orders(me.user.role)) links.eventos = { to: '/admin/eventos', label: 'Ver eventos' };
   if (manager || me.user.role === 'cajero') links.kiosko = { to: '/autoservicio', label: 'Abrir kiosko' };
   if (manager) {
     links.landing = { to: '/admin/sitio', label: 'Editar sitio web' };

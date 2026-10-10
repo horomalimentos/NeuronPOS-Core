@@ -63,6 +63,9 @@ import {
   AccountPage, ForgotPasswordPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage, ResetPasswordPage,
 } from './site/AccountPages';
 import CheckoutPage from './site/CheckoutPage';
+import EventsPage from './events/EventsPage';
+import EventDetailPage from './events/EventDetailPage';
+import EventPublicPage from './site/EventPublicPage';
 import OrderPage from './site/OrderPage';
 import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
@@ -87,6 +90,7 @@ export default function App() {
           <Route path="/pedir/checkout" element={<CheckoutPage />} />
           <Route path="/pedido/:token" element={<TrackOrderPage />} />
           <Route path="/pago/resultado" element={<PaymentResultPage />} />
+          <Route path="/evento/:slug" element={<EventPublicPage />} />
           <Route path="/cuenta" element={<AccountPage />} />
           <Route path="/cuenta/entrar" element={<LoginPage />} />
           <Route path="/cuenta/registro" element={<CustomerRegisterPage />} />
@@ -144,6 +148,11 @@ export default function App() {
             <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
               <Route path="reportes" element={<ReportsPage />} />
             </Route>
+          </Route>
+          {/* Ventas por evento (modulo eventos) */}
+          <Route element={<ModuleGate code="eventos" name="Eventos y preventas" />}>
+            <Route path="eventos" element={<EventsPage />} />
+            <Route path="eventos/:id" element={<EventDetailPage />} />
           </Route>
           {/* Menu: lo usa el POS y tambien un restaurante que solo esta en NeuronPOS Delivery */}
           <Route element={<ModuleGate code={['pos', 'marketplace']} name="Menú" />}>

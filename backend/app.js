@@ -10,6 +10,8 @@ import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
 import permissionsRouter from './routes/permissions.js';
 import devicesRouter from './routes/devices.js';
+import eventsRouter from './routes/events.js';
+import eventsPublicRouter from './routes/eventsPublic.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
@@ -117,6 +119,9 @@ export function createApp() {
   app.use('/api/permissions', permissionsRouter);
   // Control de dispositivos (modulo dispositivos).
   app.use('/api/devices', devicesRouter);
+  // Ventas por evento y preventas (modulo eventos): personal y pagina publica.
+  app.use('/api/events', eventsRouter);
+  app.use('/api/event-page', eventsPublicRouter);
   // Inventario y compras (modulo 'inventario').
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);
