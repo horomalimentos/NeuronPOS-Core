@@ -76,7 +76,7 @@ export interface DiningTable {
 export type OrderType = 'comedor' | 'para_llevar' | 'domicilio';
 export type OrderStatus = 'abierta' | 'enviada' | 'lista' | 'pagada' | 'cancelada';
 // en_linea = "Clip en línea": lo registra el pago en línea del portal, nunca la caja.
-export type MethodKind = 'efectivo' | 'tarjeta' | 'transferencia' | 'otro' | 'en_linea';
+export type MethodKind = 'efectivo' | 'tarjeta' | 'transferencia' | 'otro' | 'en_linea' | 'puntos';
 
 export interface OrderItemModifier {
   modifier_id: string | null;
@@ -126,6 +126,7 @@ export interface Order {
   customer_name: string | null;
   customer_phone: string | null;
   customer_address: string | null;
+  customer_id?: string | null;
   notes: string | null;
   status: OrderStatus;
   subtotal: Money;

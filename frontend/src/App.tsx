@@ -3,6 +3,7 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import CustomersPage from './loyalty/CustomersPage';
 import CountPage from './inventory/CountPage';
 import CountsPage from './inventory/CountsPage';
 import InventoryLayout from './inventory/InventoryLayout';
@@ -110,6 +111,10 @@ export default function App() {
             <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
               <Route path="reportes" element={<ReportsPage />} />
             </Route>
+          </Route>
+          {/* Clientes y lealtad (modulo lealtad) */}
+          <Route element={<ModuleGate code="lealtad" name="Clientes y lealtad" />}>
+            <Route path="clientes" element={<CustomersPage />} />
           </Route>
           {/* Inventario y compras (modulo inventario) */}
           <Route element={<ModuleGate code="inventario" name="Inventario y compras" />}>

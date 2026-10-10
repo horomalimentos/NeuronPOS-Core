@@ -200,6 +200,7 @@ tiene tres capas:
 | `pos` | Punto de venta |
 | `reportes` | Reportes de ventas (sugerido $150) |
 | `inventario` | Inventario y compras (sugerido $250) |
+| `lealtad` | Clientes y lealtad (sugerido $200) |
 | `landing` | Sitio web |
 | `portal` | Portal de clientes y pedidos en línea |
 | `rh` | Recursos humanos y nómina |
@@ -387,6 +388,44 @@ existencias, conteos y compras (solicitan; no aprueban ni reciben).
 | GET | `/products/:id/prices` | todos |
 
 "Todos" = admin, gerente, cajero y cocina (el mesero y el repartidor no entran).
+
+## Clientes y lealtad (módulo `lealtad`)
+
+Copiado del programa de puntos de Horom. Pantalla `/admin/clientes` (admin,
+gerente y cajero; cambios al programa y ajustes de puntos solo admin y gerente).
+
+- **Clientes del restaurante** con nombre, teléfono, correo y notas, aunque no
+  tengan cuenta en el sitio. Se buscan por nombre, teléfono o correo y muestran
+  compras, total gastado, última visita y movimientos de puntos.
+- **Ganar puntos:** al quedar pagada una orden con cliente (POS, pedido en línea
+  entregado o domicilio pagado) gana `puntos por peso × (total − envío − lo
+  pagado con puntos)`, una sola vez por orden. En caja el cajero agrega al
+  cliente desde el cobro (busca o da de alta con nombre y teléfono).
+- **Canjear:** en el cobro se usa como forma de pago `puntos` (no es descuento,
+  así no cambian impuestos ni totales). Con "Pedir código" encendido, el
+  cliente dicta el código de 6 dígitos que ve en "Mi cuenta" del sitio; cambia
+  cada 5 minutos, sirve una vez y se bloquea tras 5 intentos equivocados (el
+  cliente genera uno nuevo). Mínimo y máximo por orden configurables.
+- **Corte de caja:** lo pagado con puntos sale aparte como "No se cuenta".
+- **Programa:** nombre, puntos por peso, valor de cada punto, mínimo para
+  canjear, máximo por orden, pedir código y ganar en pedidos en línea.
+- Si alguien se registra en el sitio con el mismo correo de un cliente dado de
+  alta en caja, conserva sus puntos. *Limitación:* si en caja solo se dio el
+  teléfono, la cuenta nueva no se une sola; hay que poner el correo al cliente
+  antes de que se registre.
+
+| Método | Ruta (`/api/loyalty`) | Roles |
+|---|---|---|
+| GET / PATCH | `/settings` | personal / admin, gerente |
+| GET, POST | `/customers?q=&sort=&limit=` | personal |
+| GET / PATCH | `/customers/:id` | personal / admin, gerente |
+| POST | `/customers/:id/points` (ajuste con motivo) | admin, gerente |
+| GET | `/stats` | admin, gerente |
+| POST | `/orders/:id/customer` | personal |
+
+Cobro con puntos: `POST /api/pos/orders/:id/payments` acepta una línea
+`{ "loyalty": { "customer_id", "points", "code" } }`. Portal:
+`GET /api/portal/me/loyalty` y `POST /api/portal/me/loyalty/reset-code`.
 
 ## Sitio web y pedidos en línea (fase 2)
 
@@ -1022,7 +1061,7 @@ Pruebas de la app de escritorio: `cd apps/desktop && npm test`.
   entrega.
 - Portal, pendiente: programar pedidos para más
   tarde, subir imágenes (hoy son URLs), notificaciones por WhatsApp/correo y
-  push en lugar de sondeo, recuperar contraseña, lealtad/puntos.
+  push en lugar de sondeo, recuperar contraseña.
 - Cobro, pendiente: prorrateo al cambiar módulos o día de cobro, facturas
   de periodos pasados, cancelar facturas, reembolsos por API, envío real de
   correos/WhatsApp (hoy el notificador solo escribe en el log), CFDI.

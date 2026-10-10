@@ -243,9 +243,11 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
                     <td className="py-2 text-gray-200">{m.name}<span className="block text-xs text-gray-500">{m.payments} pagos{m.tips ? ` · propinas ${formatMXN(m.tips)}` : ''}</span></td>
                     <td className="py-2 text-right text-gray-300">{formatMXN(m.expected)}</td>
                     <td className="py-2 pl-2 text-right">
-                      <input className="input w-28 py-1.5 text-right" type="number" inputMode="decimal" min="0" step="0.01"
-                        required={m.kind === 'efectivo' || m.expected !== 0} value={v ?? ''}
-                        onChange={(e) => setCounts({ ...counts, [m.payment_method_id]: e.target.value })} aria-label={`Contado ${m.name}`} />
+                      {m.kind === 'puntos' ? <span className="text-xs text-gray-500">No se cuenta</span> : (
+                        <input className="input w-28 py-1.5 text-right" type="number" inputMode="decimal" min="0" step="0.01"
+                          required={m.kind === 'efectivo' || m.expected !== 0} value={v ?? ''}
+                          onChange={(e) => setCounts({ ...counts, [m.payment_method_id]: e.target.value })} aria-label={`Contado ${m.name}`} />
+                      )}
                     </td>
                     <td className={`py-2 text-right font-semibold ${diff === null ? 'text-gray-600' : diff < 0 ? 'text-red-400' : diff > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
                       {diff === null ? '—' : formatMXN(diff)}

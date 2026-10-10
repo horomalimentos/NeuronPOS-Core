@@ -18,6 +18,7 @@ import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
 import { checkModuleAccess } from '../services/access.js';
 import { customerDeliveryView } from '../services/delivery/tenant.js';
+import { activeLoyalty, customerCode, pointsValue, resetCustomerCode } from '../services/loyalty.js';
 import {
   acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches, publicBranch,
 } from '../services/online.js';
@@ -154,11 +155,21 @@ router.post('/auth/register', customerAuthLimiter, ah(async (req, res) => {
   const hash = await bcrypt.hash(readNewPassword(body.password), 10);
   let customer;
   try {
-    customer = await withTenant(req.tenant.id, async (db) => (await db.query(
-      `INSERT INTO customers (restaurant_id, name, email, phone, password_hash, last_login_at)
-       VALUES ($1, $2, $3, $4, $5, now()) RETURNING ${CUSTOMER_COLS}`,
-      [req.tenant.id, name, email, phone, hash],
-    )).rows[0]);
+    customer = await withTenant(req.tenant.id, async (db) => {
+      // Si en caja ya lo dieron de alta con ese correo (sin cuenta), se usa
+      // esa ficha para que conserve sus puntos y su historial.
+      const claimed = (await db.query(
+        `UPDATE customers SET password_hash = $3, phone = coalesce(phone, $4), last_login_at = now(), updated_at = now()
+          WHERE restaurant_id = $1 AND email = $2 AND password_hash IS NULL RETURNING ${CUSTOMER_COLS}`,
+        [req.tenant.id, email, hash, phone],
+      )).rows[0];
+      if (claimed) return claimed;
+      return (await db.query(
+        `INSERT INTO customers (restaurant_id, name, email, phone, password_hash, last_login_at)
+         VALUES ($1, $2, $3, $4, $5, now()) RETURNING ${CUSTOMER_COLS}`,
+        [req.tenant.id, name, email, phone, hash],
+      )).rows[0];
+    });
   } catch (err) {
     if (err?.code === '23505') throw conflict('Ya existe una cuenta con ese correo. Inicia sesion.', 'EMAIL_TAKEN');
     throw err;
@@ -230,6 +241,48 @@ function addressFields(body, creating) {
   if (f.label === null) f.label = undefined;
   return f;
 }
+
+// Puntos del cliente y su codigo para canjear en caja (modulo 'lealtad').
+router.get('/me/loyalty', authenticateCustomer, ah(async (req, res) => {
+  const data = await withTenant(req.tenant.id, async (db) => {
+    const s = await activeLoyalty(db, req.tenant.id);
+    if (!s) return { enabled: false };
+    const c = (await db.query(
+      'SELECT points_balance, points_earned, points_redeemed, pos_code_locked FROM customers WHERE id = $1 AND restaurant_id = $2',
+      [req.customer.id, req.tenant.id],
+    )).rows[0];
+    const transactions = (await db.query(
+      `SELECT t.kind, t.points, t.balance_after, t.reason, t.created_at FROM loyalty_transactions t
+        WHERE t.restaurant_id = $1 AND t.customer_id = $2 ORDER BY t.created_at DESC LIMIT 30`,
+      [req.tenant.id, req.customer.id],
+    )).rows;
+    return {
+      enabled: true,
+      program: {
+        name: s.program_name, points_per_peso: s.points_per_peso, peso_per_point: s.peso_per_point,
+        min_redeem_points: s.min_redeem_points, redeem_enabled: s.redeem_enabled, require_code: s.require_code,
+      },
+      balance: c.points_balance,
+      value: pointsValue(s, c.points_balance),
+      earned: c.points_earned,
+      redeemed: c.points_redeemed,
+      code_locked: c.pos_code_locked,
+      code: c.pos_code_locked ? null : await customerCode(db, req.tenant.id, req.customer.id),
+      transactions,
+    };
+  });
+  res.set('Cache-Control', 'no-store').json(data);
+}));
+
+// Nuevo codigo (y desbloqueo si se bloqueo por intentos fallidos).
+router.post('/me/loyalty/reset-code', authenticateCustomer, ah(async (req, res) => {
+  const code = await withTenant(req.tenant.id, async (db) => {
+    if (!(await activeLoyalty(db, req.tenant.id))) throw notFound('El restaurante no tiene programa de puntos', 'LOYALTY_DISABLED');
+    await resetCustomerCode(db, req.tenant.id, req.customer.id);
+    return customerCode(db, req.tenant.id, req.customer.id);
+  });
+  res.set('Cache-Control', 'no-store').json({ code });
+}));
 
 router.post('/me/addresses', authenticateCustomer, ah(async (req, res) => {
   const f = addressFields(req.body || {}, true);
