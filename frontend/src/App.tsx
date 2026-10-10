@@ -63,7 +63,9 @@ import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
 import DriverSignupPage from './marketplace/DriverSignupPage';
 import ListingPage from './marketplace/ListingPage';
+import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
+import DeliveryTrackPage from './marketplace/TrackPage';
 import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
@@ -95,6 +97,8 @@ export default function App() {
         <Route path="/delivery" element={<DeliveryLanding />} />
         <Route path="/delivery/restaurantes" element={<RestaurantSignupPage />} />
         <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
+        <Route path="/delivery/r/:branchId" element={<DeliveryRestaurantPage />} />
+        <Route path="/delivery/pedido/:token" element={<DeliveryTrackPage />} />
 
         {/* App del repartidor (propio del restaurante o de la flota) */}
         <Route path="/repartidor" element={<DriverApp />} />

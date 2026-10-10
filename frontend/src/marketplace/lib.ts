@@ -53,3 +53,17 @@ export const DRIVER_STATUS_STYLE: Record<DriverStatus, string> = {
 /** Tramos de envio como texto: "hasta 3 km $35 · hasta 5 km $45". */
 export const tiersText = (tiers: FeeTier[], money: (n: number) => string) =>
   tiers.map((t) => `hasta ${t.up_to_km} km ${money(t.fee)}`).join(' · ');
+
+export interface NearbyRestaurant {
+  branch_id: string; name: string; branch_name: string; logo_url: string | null; cuisine: string | null; description: string | null;
+  cover_url: string | null; address: string | null; prep_minutes: number; min_order: number; distance_km: number | null;
+  delivery_fee: number | null; open: boolean; today: { opens_at: string; closes_at: string } | null; has_driver: boolean;
+  can_order: boolean; reason: 'lejos' | 'cerrado' | 'sin_repartidor' | 'sin_ubicacion' | null;
+}
+
+export const REASON_LABEL: Record<string, string> = {
+  cerrado: 'Cerrado ahora',
+  sin_repartidor: 'Sin repartidores cerca',
+  lejos: 'No entrega hasta tu domicilio',
+  sin_ubicacion: 'Elige dónde te entregamos',
+};

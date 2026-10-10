@@ -1,18 +1,21 @@
-import { ArrowRight, Bike, MapPin, Store, Wallet } from 'lucide-react';
+import { ArrowRight, Bike, MapPin, Receipt, Store, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
+import { ordersStore, useStore } from './customer';
 import type { MarketplaceInfo } from './lib';
+import NearbyRestaurants from './NearbyRestaurants';
 
 /**
- * Pagina de NeuronPOS Delivery (/delivery). En la fase 1 invita a
- * restaurantes y repartidores a registrarse gratis y muestra las tarifas de
- * envio; en la fase 2 aqui mismo los clientes veran los restaurantes cercanos.
+ * Pagina de NeuronPOS Delivery (/delivery): el cliente elige donde le
+ * entregan y ve los restaurantes cercanos (fase 2); abajo, la invitacion a
+ * restaurantes y repartidores y las tarifas de envio.
  */
 export default function DeliveryLanding() {
   const [info, setInfo] = useState<MarketplaceInfo | null>(null);
+  const recent = useStore(ordersStore);
   useEffect(() => {
     resetBranding();
     document.title = 'NeuronPOS Delivery';
@@ -23,7 +26,7 @@ export default function DeliveryLanding() {
     <div className="min-h-screen bg-gray-950">
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -right-40 -top-40 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
-        <div className="relative mx-auto max-w-5xl px-4 pb-10 pt-14 sm:pt-20">
+        <div className="relative mx-auto max-w-5xl px-4 pb-8 pt-10 sm:pt-14">
           <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
             <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
           </div>
@@ -33,6 +36,19 @@ export default function DeliveryLanding() {
             para repartidores.
           </p>
         </div>
+      </div>
+
+      <div className="mx-auto max-w-5xl px-4 pb-10">
+        {recent.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+            <Receipt className="h-4 w-4 text-gray-400" />
+            <span className="text-gray-400">Tus pedidos:</span>
+            {recent.slice(0, 3).map((o) => (
+              <Link key={o.token} to={`/delivery/pedido/${o.token}`} className="rounded-full bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700">{o.restaurant}</Link>
+            ))}
+          </div>
+        )}
+        <NearbyRestaurants />
       </div>
 
       <div className="mx-auto grid max-w-5xl gap-4 px-4 pb-10 md:grid-cols-2">
