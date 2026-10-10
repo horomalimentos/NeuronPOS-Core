@@ -2,6 +2,7 @@ import { Bell, Check, ChefHat, MapPin, PackageCheck, Phone, X } from 'lucide-rea
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { ChatButton } from './OrderChat';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 
@@ -9,7 +10,7 @@ interface DeliveryOrder {
   id: string; branch_name: string; folio: number; status: 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
   customer_name: string; customer_phone: string; address: string; reference: string | null; distance_km: string;
   food_total: string; delivery_fee: string; total: string; pay_with: string | null; cancel_reason: string | null; notes: string | null;
-  estimated_ready_at: string | null; created_at: string; payment_method: 'efectivo' | 'tarjeta'; driver_assigned: boolean;
+  estimated_ready_at: string | null; created_at: string; payment_method: 'efectivo' | 'tarjeta'; driver_assigned: boolean; messages: number;
   items: { name: string; quantity: number; notes: string | null; modifiers: string[] }[];
 }
 
@@ -85,6 +86,8 @@ export default function DeliveryOrders() {
             <a href={`tel:${o.customer_phone.replace(/[^\d+]/g, '')}`} className="mt-1 inline-flex items-center gap-1 text-xs text-sky-300"><Phone className="h-3.5 w-3.5" /> {o.customer_phone}</a>
             {o.status === 'aceptado' && o.estimated_ready_at && <p className="mt-1 text-xs text-gray-400">Listo a las {formatTime(o.estimated_ready_at)}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
+              <ChatButton chatKey={`r:${o.id}`} count={o.messages} title={`Chat del pedido #${o.folio}`} me="restaurante"
+                path={`/marketplace/orders/${o.id}/messages`} call={api} />
               {o.status === 'nuevo' && (
                 <>
                   <Button className="flex-1" loading={busy === `${o.id}:accept`} onClick={() => void act(o, 'accept')}><Check className="h-4 w-4" /> Aceptar</Button>

@@ -48,7 +48,8 @@ async function loadDriver(db, driverId) {
 
 const ORDER_SELECT = `
   SELECT m.*, r.name AS restaurant_name, b.name AS branch_name, b.address AS branch_address, b.phone AS branch_phone,
-         l.latitude AS r_lat, l.longitude AS r_lng, o.folio, o.estimated_ready_at
+         l.latitude AS r_lat, l.longitude AS r_lng, o.folio, o.estimated_ready_at,
+         (SELECT count(*) FROM marketplace_messages x WHERE x.marketplace_order_id = m.id)::int AS messages
     FROM marketplace_orders m
     JOIN restaurants r ON r.id = m.restaurant_id
     JOIN branches b ON b.id = m.branch_id
@@ -94,6 +95,7 @@ function jobView(m) {
     platform_share: m.platform_share,
     picked_up_at: m.picked_up_at,
     delivered_at: m.delivered_at,
+    messages: m.messages,
   };
 }
 

@@ -11,6 +11,7 @@
 //   - POST /quote, POST /orders       cotizar y pedir (efectivo o tarjeta:
 //                                     con tarjeta regresa payment_url de Clip).
 //   - GET  /orders/:token             seguimiento del cliente (concilia el pago).
+//   - GET/POST /orders/:token/messages chat del pedido (fase 4).
 // marketplaceRouter (con tenant, /api/marketplace): la ficha de cada sucursal
 // y los pedidos que llegan por Delivery (aceptar, rechazar, listo).
 import { Router } from 'express';
@@ -28,12 +29,15 @@ import {
   createMarketplaceOrder, nearbyRestaurants, quoteMarketplaceOrder, readMarketplaceOrder, restaurantFor, trackOrder,
 } from '../services/marketplaceOrders.js';
 import { cardPaymentsAvailable, refreshOrderPayment } from '../services/marketplaceMoney.js';
+import {
+  customerChat, customerSend, readMessageBody, restaurantChat, restaurantSend,
+} from '../services/marketplaceChat.js';
 import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { loadMenu } from './pos/menu.js';
 import { restaurantSiteUrl } from '../services/urls.js';
 import {
-  EMAIL_RE, HttpError, ah, badRequest, bool, money, notFound, requireUuid, str,
+  EMAIL_RE, HttpError, UUID_RE, ah, badRequest, bool, money, notFound, requireUuid, str,
 } from '../utils/http.js';
 
 const signupLimiter = rateLimit({
@@ -219,6 +223,26 @@ marketplacePublicRouter.get('/orders/:token', ah(async (req, res) => {
   res.set('Cache-Control', 'no-store').json({ order });
 }));
 
+const chatLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => env.isTest,
+  message: { error: 'Demasiados mensajes. Espera unos minutos.', code: 'RATE_LIMITED' },
+});
+
+// /orders/<uuid>/messages es la ruta del restaurante (marketplaceRouter); el token del cliente nunca es uuid.
+const customerToken = (req, res, next) => (UUID_RE.test(req.params.token) ? next('router') : next());
+
+marketplacePublicRouter.get('/orders/:token/messages', customerToken, ah(async (req, res) => {
+  res.set('Cache-Control', 'no-store').json(await customerChat(req.params.token));
+}));
+
+marketplacePublicRouter.post('/orders/:token/messages', customerToken, chatLimiter, ah(async (req, res) => {
+  res.status(201).json(await customerSend(req.params.token, readMessageBody(req.body)));
+}));
+
 // ---------------------------------------------------------------------------
 // Restaurante: ficha de cada sucursal
 // ---------------------------------------------------------------------------
@@ -366,6 +390,7 @@ marketplaceRouter.get('/orders', requireRole(...STAFF), ah(async (req, res) => {
             m.address, m.reference, m.distance_km, m.delivery_fee, m.food_total, m.total, m.payment_method, m.pay_with,
             m.cancel_reason, o.notes, o.estimated_ready_at, m.created_at, m.accepted_at, m.ready_at, m.delivered_at,
             m.picked_up_at, m.paid_at, (m.driver_id IS NOT NULL) AS driver_assigned,
+            (SELECT count(*) FROM marketplace_messages x WHERE x.marketplace_order_id = m.id)::int AS messages,
             (SELECT coalesce(json_agg(json_build_object(
                       'name', i.name, 'quantity', i.quantity, 'notes', i.notes,
                       'modifiers', (SELECT coalesce(json_agg(x.name), '[]') FROM order_item_modifiers x WHERE x.order_item_id = i.id))
@@ -431,4 +456,14 @@ marketplaceRouter.post('/orders/:id/ready', requireRole(...STAFF), ah(async (req
     );
   });
   res.json({ order });
+}));
+
+marketplaceRouter.get('/orders/:id/messages', requireRole(...STAFF), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  res.set('Cache-Control', 'no-store').json(await restaurantChat(req.tenant.id, req.params.id));
+}));
+
+marketplaceRouter.post('/orders/:id/messages', requireRole(...STAFF), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  res.status(201).json(await restaurantSend(req.tenant.id, req.params.id, req.user, readMessageBody(req.body)));
 }));
