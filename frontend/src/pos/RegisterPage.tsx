@@ -62,10 +62,10 @@ export default function RegisterPage() {
   const [channels, setChannels] = useState<SalesChannel[]>([]);
   const [clipTerminal, setClipTerminal] = useState<string | null>(null);
   useEffect(() => {
-    if (!branchId || !meHas(me, 'terminal_clip')) { setClipTerminal(null); return; }
+    if (!branchId || !meHas(me, 'terminal_clip') || !posCan.cashier(role)) { setClipTerminal(null); return; }
     api<{ enabled: boolean }>(`/pos/clip/terminal?branch_id=${branchId}&terminal=${encodeURIComponent(terminal)}`)
       .then((r) => setClipTerminal(r.enabled ? terminal : null)).catch(() => setClipTerminal(null));
-  }, [branchId, terminal, me]);
+  }, [branchId, terminal, me, role]);
   const [settings, setSettings] = useState<PosSettings | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
@@ -130,6 +130,7 @@ export default function RegisterPage() {
     return menu.items.filter((i) => (q ? i.name.toLowerCase().includes(q) : !category || i.category_id === category));
   }, [menu, category, search]);
 
+  const menuHasImages = Boolean(menu?.items.some((i) => i.image_url));
   const cartTotal = round2(cart.reduce((s, l) => s + (num(l.item.price) + l.modifiers.reduce((a, m) => a + num(m.price_delta), 0)) * l.quantity, 0));
 
   // ---------------------------------------------------------------------------
@@ -284,7 +285,8 @@ export default function RegisterPage() {
       <>
         {header}
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-        <div className="mb-4 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm">
+        {/* En celular las 4 pestanas van en 2 renglones (meseros con el telefono). */}
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:flex">
           {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe]] as const)
             .map(([key, label, Icon]) => (
               <button key={key} onClick={() => setTab(key)}
@@ -351,12 +353,15 @@ export default function RegisterPage() {
             {visibleItems.map((it) => (
               <button key={it.id} onClick={() => clickItem(it)} disabled={!it.available}
                 className={`card flex flex-col overflow-hidden text-left transition hover:border-brand/60 ${it.available ? '' : 'cursor-not-allowed opacity-50'}`}>
-                <div className="relative aspect-[4/3] w-full bg-gray-800">
-                  {it.image_url
-                    ? <img src={it.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    : <ImageIcon className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 text-gray-600" />}
-                  {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
-                </div>
+                {/* Sin fotos en el menu, tarjetas compactas (caben mas en el celular del mesero). */}
+                {menuHasImages ? (
+                  <div className="relative aspect-[4/3] w-full bg-gray-800">
+                    {it.image_url
+                      ? <img src={it.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      : <ImageIcon className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 text-gray-600" />}
+                    {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
+                  </div>
+                ) : !it.available && <span className="bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
                 <div className="flex flex-1 flex-col p-2">
                   <span className="line-clamp-2 text-sm font-medium leading-tight text-white">{it.name}</span>
                   <span className="mt-auto pt-1 text-sm text-gray-400">{formatMXN(it.price)}</span>
@@ -367,7 +372,7 @@ export default function RegisterPage() {
         </section>
 
         {/* Cuenta */}
-        <aside className="card flex flex-col md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
+        <aside id="cuenta" className="card flex scroll-mt-4 flex-col md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
           <div className="border-b border-gray-800 p-4">
             <div className="flex items-start justify-between gap-2">
               <h2 className="font-semibold text-white">{title}</h2>
@@ -482,6 +487,14 @@ export default function RegisterPage() {
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}
           onPaid={(o) => { setShowPay(false); setOrder(o); if (o.status === 'pagada') loadFloor(); }} />
+      )}
+      {/* Celular: barra fija para ir a la cuenta sin recorrer todo el menu. */}
+      {(cart.length > 0 || items.length > 0) && (
+        <button onClick={() => document.getElementById('cuenta')?.scrollIntoView({ behavior: 'smooth' })}
+          className="fixed inset-x-3 bottom-3 z-30 flex items-center justify-between rounded-2xl bg-brand px-5 py-3.5 font-semibold text-brand-contrast shadow-xl md:hidden">
+          <span>Ver cuenta · {items.filter((i) => !i.voided_at).length + cart.length} {items.filter((i) => !i.voided_at).length + cart.length === 1 ? 'artículo' : 'artículos'}</span>
+          <span>{formatMXN((order ? num(order.total) : 0) + cartTotal)}</span>
+        </button>
       )}
       {voucherOpen && order && <VoucherModal order={order} onClose={() => setVoucherOpen(false)} onSaved={(o) => { setVoucherOpen(false); setOrder(o); }} />}
       {discountItem && order && (
