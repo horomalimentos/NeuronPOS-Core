@@ -5,7 +5,7 @@
 import { formatMXN } from '../lib/format';
 import { nativePrint, type PrintRole } from '../lib/native';
 import type { Branch, Restaurant } from '../lib/types';
-import { ORDER_TYPE_LABEL, formatDateTime, num } from './lib';
+import { MOVEMENT_CATEGORY_LABEL, ORDER_TYPE_LABEL, formatDateTime, num } from './lib';
 import type { CashSessionDetail, Order, OrderItem, PosSettings } from './types';
 
 const esc = (v: unknown) => String(v ?? '')
@@ -104,7 +104,7 @@ export function cashCutHtml(detail: CashSessionDetail, restaurant: Restaurant) {
   const methods = cut.methods.map((m) => `<tr><td colspan="2"><b>${esc(m.name)}</b> (${m.payments})</td></tr>
     ${row('Esperado', formatMXN(m.expected))}
     ${m.counted !== undefined ? row('Contado', formatMXN(m.counted)) + row('Diferencia', formatMXN(m.difference)) : ''}`).join('');
-  const movs = movements.map((m) => row(`${m.kind === 'entrada' ? '+' : '-'} ${esc(m.reason)}`, formatMXN(m.amount))).join('');
+  const movs = movements.map((m) => row(`${m.kind === 'entrada' ? '+' : '-'} ${m.category && m.category !== 'otro' ? `${MOVEMENT_CATEGORY_LABEL[m.category]}: ` : ''}${esc(m.reason)}`, formatMXN(m.amount))).join('');
   const body = `${header(restaurant, null, null)}
     <div class="center"><b>CORTE DE CAJA</b></div>
     <table>

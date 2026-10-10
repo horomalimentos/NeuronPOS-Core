@@ -12,6 +12,8 @@ import { can } from '../../services/permissions.js';
 import { assertDeviceBranch, requireDevice } from '../../services/devices.js';
 
 const router = Router();
+// Para que se usa el efectivo que entra o sale de la caja.
+export const MOVEMENT_CATEGORIES = ['compras', 'servicios', 'propinas', 'nomina', 'retiro', 'fondo', 'otro'];
 const cashier = can('cashier');
 
 const SESSION_SELECT = `
@@ -43,7 +45,7 @@ async function cutInputs(db, restaurantId, sessionId) {
     [restaurantId, sessionId],
   )).rows;
   const movements = (await db.query(
-    `SELECT m.id, m.kind, m.amount, m.reason, m.created_at, u.name AS created_by_name
+    `SELECT m.id, m.kind, m.amount, m.reason, m.category, m.created_at, u.name AS created_by_name
        FROM cash_movements m JOIN users u ON u.id = m.created_by AND u.restaurant_id = m.restaurant_id
       WHERE m.restaurant_id = $1 AND m.session_id = $2 ORDER BY m.created_at`,
     [restaurantId, sessionId],
@@ -129,14 +131,15 @@ router.post('/cash-sessions/:id/movements', cashier, requireDevice, ah(async (re
   const amount = money(body.amount, { field: 'amount' });
   if (!(amount > 0)) throw badRequest('El monto debe ser mayor a cero', 'INVALID_FIELD');
   const reason = str(body.reason, { field: 'reason', required: true, max: 200 });
+  const category = oneOf(body.category, MOVEMENT_CATEGORIES, 'category') || 'otro';
   const movement = await withTenant(req.tenant.id, async (db) => {
     const s = await getSession(db, req, req.params.id, { lock: true });
     assertDeviceBranch(req, s.branch_id);
     if (s.status !== 'abierta') throw badRequest('El turno ya esta cerrado', 'CASH_SESSION_CLOSED');
     return (await db.query(
-      `INSERT INTO cash_movements (restaurant_id, session_id, kind, amount, reason, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, kind, amount, reason, created_at`,
-      [req.tenant.id, s.id, kind, amount, reason, req.user.id],
+      `INSERT INTO cash_movements (restaurant_id, session_id, kind, amount, reason, created_by, category)
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, kind, amount, reason, category, created_at`,
+      [req.tenant.id, s.id, kind, amount, reason, req.user.id, category],
     )).rows[0];
   });
   res.status(201).json({ movement });

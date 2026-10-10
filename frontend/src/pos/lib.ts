@@ -36,6 +36,11 @@ export const METHOD_KIND_LABEL: Record<MethodKind, string> = {
   monedero: 'Monedero del cliente',
 };
 
+/** Para que se usa el efectivo que entra o sale de la caja. */
+export const MOVEMENT_CATEGORY_LABEL: Record<string, string> = {
+  compras: 'Compras', servicios: 'Servicios', propinas: 'Propinas', nomina: 'Nómina', retiro: 'Retiro', fondo: 'Fondo', otro: 'Otro',
+};
+
 /** Tipos que se pueden elegir al crear o editar un método (el de Clip lo pone el sistema). */
 export const EDITABLE_METHOD_KINDS: MethodKind[] = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
 

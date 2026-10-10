@@ -301,9 +301,12 @@ export interface CashMovement {
   kind: 'entrada' | 'salida';
   amount: Money;
   reason: string;
+  category?: MovementCategory;
   created_at: string;
   created_by_name?: string;
 }
+
+export type MovementCategory = 'compras' | 'servicios' | 'propinas' | 'nomina' | 'retiro' | 'fondo' | 'otro';
 
 export interface CutLine {
   payment_method_id: string;

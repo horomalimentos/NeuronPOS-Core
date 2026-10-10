@@ -195,6 +195,16 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
         LEFT JOIN users u ON u.id = paid.created_by AND u.restaurant_id = paid.restaurant_id
        GROUP BY 1, 2 ORDER BY sum(paid.total) DESC`);
 
+    // Entradas y salidas de efectivo por categoria (en el periodo).
+    const cashMovements = await q(`
+      SELECT m.category, m.kind, count(*)::int AS movements, coalesce(sum(m.amount), 0) AS total
+        FROM cash_movements m
+        JOIN cash_sessions cs ON cs.id = m.session_id AND cs.restaurant_id = m.restaurant_id
+        JOIN branches b ON b.id = cs.branch_id AND b.restaurant_id = cs.restaurant_id
+       WHERE m.restaurant_id = $1 AND (m.created_at AT TIME ZONE b.timezone)::date BETWEEN $2::date AND $3::date
+         AND ($4::uuid IS NULL OR cs.branch_id = $4)
+       GROUP BY 1, 2 ORDER BY 2 DESC, 4 DESC`);
+
     const money = (rows, ...keys) => rows.map((r) => {
       const o = { ...r };
       for (const k of keys) o[k] = n(r[k]);
@@ -215,6 +225,7 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       by_order_type: money(byType, 'total'),
       by_branch: money(byBranch, 'total', 'tips'),
       by_channel: money(byChannel, 'total', 'commission', 'net'),
+      cash_movements: money(cashMovements, 'total'),
       items: money(items, 'total'),
       categories: money(categories, 'total'),
       modifiers: money(modifiers, 'total'),

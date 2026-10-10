@@ -5,7 +5,7 @@ import { api, errorMessage } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { formatDay, formatMXN } from '../lib/format';
 import { useAdmin } from '../restaurant/context';
-import { METHOD_KIND_LABEL, ORDER_TYPE_LABEL } from './lib';
+import { METHOD_KIND_LABEL, MOVEMENT_CATEGORY_LABEL, ORDER_TYPE_LABEL } from './lib';
 import type { MethodKind, OrderType } from './types';
 
 /**
@@ -33,6 +33,7 @@ export interface Report {
   by_order_type: { order_type: OrderType; source: 'pos' | 'web' | 'kiosko'; orders: number; total: number }[];
   by_branch: { branch_id: string; branch_name: string; orders: number; total: number; tips: number }[];
   by_channel: { channel_id: string | null; name: string; orders: number; total: number; commission: number; net: number }[];
+  cash_movements?: { category: string; kind: 'entrada' | 'salida'; movements: number; total: number }[];
   items: { menu_item_id: string; name: string; category: string | null; quantity: number; total: number; orders: number }[];
   categories: { category: string; quantity: number; total: number }[];
   modifiers: { group_name: string; name: string; quantity: number; total: number }[];
@@ -359,6 +360,14 @@ export default function ReportsPage() {
               <Table head={['Persona', 'Órdenes', 'Ventas', 'Propinas']}
                 rows={report.staff.map((p) => [p.name, p.orders, formatMXN(p.total), formatMXN(p.tips)])} />
             </Section>
+            {(report.cash_movements?.length ?? 0) > 0 && (
+              <Section title="Efectivo de caja (entradas y salidas)"
+                onCsv={() => downloadCsv(file('movimientos_de_caja'), ['Tipo', 'Categoría', 'Movimientos', 'Total'],
+                  report.cash_movements!.map((m) => [m.kind, MOVEMENT_CATEGORY_LABEL[m.category] || m.category, m.movements, m.total]))}>
+                <Table head={['Movimiento', 'Cantidad', 'Total']}
+                  rows={report.cash_movements!.map((m) => [`${m.kind === 'salida' ? 'Salida' : 'Entrada'} · ${MOVEMENT_CATEGORY_LABEL[m.category] || m.category}`, m.movements, formatMXN(m.total)])} />
+              </Section>
+            )}
             {branches.length > 1 && !branchId && (
               <Section title="Sucursales"
                 onCsv={() => downloadCsv(file('sucursales'), ['Sucursal', 'Órdenes', 'Ventas', 'Propinas'],

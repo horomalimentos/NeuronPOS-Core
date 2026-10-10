@@ -6,7 +6,7 @@ import { formatMXN } from '../lib/format';
 import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import DenominationModal from './DenominationModal';
-import { formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
+import { MOVEMENT_CATEGORY_LABEL, formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
 import DeviceBanner from './DeviceBanner';
 import type { CashCut, CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
@@ -162,7 +162,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
   detail: CashSessionDetail; onChanged: () => void; onClosed: (d: CashSessionDetail) => void; onPrint: (d: CashSessionDetail) => void;
 }) {
   const { session, cut, movements } = detail;
-  const [mv, setMv] = useState({ kind: 'salida' as 'entrada' | 'salida', amount: '', reason: '' });
+  const [mv, setMv] = useState({ kind: 'salida' as 'entrada' | 'salida', amount: '', reason: '', category: 'compras' });
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [countDetail, setCountDetail] = useState<Record<string, Record<string, number>>>({});
   const [counting, setCounting] = useState<CutLine | null>(null);
@@ -258,12 +258,15 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
           <h3 className="mb-3 font-semibold text-white">Entradas y salidas de efectivo</h3>
-          <form onSubmit={addMovement} className="mb-4 grid gap-2 sm:grid-cols-[auto_8rem_1fr_auto]">
+          <form onSubmit={addMovement} className="mb-4 grid gap-2 sm:grid-cols-[auto_8rem_auto_1fr_auto]">
             <select className="input" value={mv.kind} onChange={(e) => setMv({ ...mv, kind: e.target.value as 'entrada' | 'salida' })} aria-label="Tipo">
               <option value="salida">Salida</option>
               <option value="entrada">Entrada</option>
             </select>
             <input className="input" type="number" inputMode="decimal" min="0.01" step="0.01" required placeholder="Monto" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} />
+            <select className="input" value={mv.category} onChange={(e) => setMv({ ...mv, category: e.target.value })} aria-label="Categoría">
+              {Object.entries(MOVEMENT_CATEGORY_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
             <input className="input" required maxLength={200} placeholder="Motivo (ej. compra de hielo)" value={mv.reason} onChange={(e) => setMv({ ...mv, reason: e.target.value })} />
             <Button type="submit" loading={busy}>Agregar</Button>
           </form>
@@ -272,7 +275,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
               {movements.map((m) => (
                 <li key={m.id} className="flex items-center gap-2 py-2">
                   {m.kind === 'entrada' ? <ArrowDownCircle className="h-4 w-4 text-emerald-400" /> : <ArrowUpCircle className="h-4 w-4 text-red-400" />}
-                  <span className="flex-1 text-gray-200">{m.reason}<span className="block text-xs text-gray-500">{formatDateTime(m.created_at)} · {m.created_by_name}</span></span>
+                  <span className="flex-1 text-gray-200">{m.reason}<span className="block text-xs text-gray-500">{m.category && `${MOVEMENT_CATEGORY_LABEL[m.category]} · `}{formatDateTime(m.created_at)} · {m.created_by_name}</span></span>
                   <span className={m.kind === 'entrada' ? 'text-emerald-300' : 'text-red-300'}>{m.kind === 'entrada' ? '+' : '-'}{formatMXN(m.amount)}</span>
                 </li>
               ))}

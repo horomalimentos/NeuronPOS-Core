@@ -13,7 +13,7 @@ describe('cierre de caja con ordenes abiertas', { skip: SKIP_DB }, () => {
   before(async () => {
     ctx = await setupDb();
     owner = await ownerToken(ctx);
-    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos'] });
+    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'reportes'] });
     branch = (await api(A, 'GET', '/api/branches')).body.branches[0];
     const cat = (await api(A, 'POST', '/api/pos/categories', { name: 'Menu' })).body.category;
     taco = (await api(A, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco', price: 100 })).body.item;
@@ -34,5 +34,19 @@ describe('cierre de caja con ordenes abiertas', { skip: SKIP_DB }, () => {
     const forced = await close(c2, { force: true });
     assert.equal(forced.status, 200, JSON.stringify(forced.body));
     assert.equal(forced.body.session.status, 'cerrada');
+  });
+
+  test('se guardan y salen en el corte y en reportes', async () => {
+    const s = (await api(A, 'POST', '/api/pos/cash-sessions/open', { branch_id: branch.id, terminal: 'Caja 3', opening_cash: 500 })).body.session;
+    assert.equal((await api(A, 'POST', `/api/pos/cash-sessions/${s.id}/movements`, { kind: 'salida', amount: 80, reason: 'Hielo', category: 'gasolina' })).status, 400);
+    const m = await api(A, 'POST', `/api/pos/cash-sessions/${s.id}/movements`, { kind: 'salida', amount: 80, reason: 'Hielo', category: 'compras' });
+    assert.equal(m.body.movement.category, 'compras');
+    await api(A, 'POST', `/api/pos/cash-sessions/${s.id}/movements`, { kind: 'salida', amount: 20, reason: 'Algo' });
+    const detail = (await api(A, 'GET', `/api/pos/cash-sessions/${s.id}`)).body;
+    assert.deepEqual(detail.movements.map((x) => x.category), ['compras', 'otro']);
+    const yday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const tmr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    const rep = (await api(A, 'GET', `/api/pos/reports/sales?from=${yday}&to=${tmr}`)).body;
+    assert.deepEqual(rep.cash_movements.map((x) => [x.category, Number(x.total)]), [['compras', 80], ['otro', 20]]);
   });
 });

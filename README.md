@@ -304,6 +304,9 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
   cocina** (por estación; una orden "lista" vuelve a "enviada").
 - **Cierre de caja**: si es la última caja abierta de la sucursal y quedan órdenes
   sin cobrar, el corte avisa cuáles (`OPEN_ORDERS`) y pide confirmar (`force`).
+- **Entradas y salidas de efectivo** con categoría (compras, servicios, propinas,
+  nómina, retiro, fondo, otro): se ven en el corte y su ticket, y Reportes las suma por
+  categoría. El pago de nómina desde caja se registra como "nómina".
 - Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
   dirección del cliente; la logística de reparto llega con el módulo
   Domicilios). Folio consecutivo por sucursal.

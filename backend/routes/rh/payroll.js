@@ -280,8 +280,8 @@ async function payItem(db, req, item, method, cashSessionId) {
     if (s.status !== 'abierta') throw badRequest('El turno de caja ya está cerrado', 'CASH_SESSION_CLOSED');
     if (Number(item.net) > 0) {
       movementId = (await db.query(
-        `INSERT INTO cash_movements (restaurant_id, session_id, kind, amount, reason, created_by)
-         VALUES ($1, $2, 'salida', $3, $4, $5) RETURNING id`,
+        `INSERT INTO cash_movements (restaurant_id, session_id, kind, amount, reason, created_by, category)
+         VALUES ($1, $2, 'salida', $3, $4, $5, 'nomina') RETURNING id`,
         [req.tenant.id, s.id, item.net, `Nómina ${item.employee_name} (${item.start_date} al ${item.end_date})`, req.user.id],
       )).rows[0].id;
     }
