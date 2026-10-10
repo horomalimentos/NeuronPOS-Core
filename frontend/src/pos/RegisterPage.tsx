@@ -18,7 +18,7 @@ import {
 } from './lib';
 import { comandaHtml, lastSentItems, orderTicketHtml, printHtml } from './ticket';
 import type {
-  CashSession, DiningTable, Menu, MenuItem, Order, OrderItem, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone,
+  CashSession, DiningTable, Menu, MenuItem, Order, OrderItem, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone, ZoneMapObject,
 } from './types';
 import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
@@ -26,6 +26,7 @@ import VoucherModal from './VoucherModal';
 import { useLive } from '../lib/live';
 import DeviceBanner from './DeviceBanner';
 import SoldOutModal from './SoldOutModal';
+import { FloorPlanView } from './FloorPlan';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -60,6 +61,7 @@ export default function RegisterPage() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [tables, setTables] = useState<DiningTable[]>([]);
+  const [mapObjects, setMapObjects] = useState<ZoneMapObject[]>([]);
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [channels, setChannels] = useState<SalesChannel[]>([]);
@@ -95,8 +97,8 @@ export default function RegisterPage() {
 
   const loadFloor = useCallback(() => {
     if (!branchId) return;
-    api<{ zones: Zone[]; tables: DiningTable[] }>(`/pos/tables?branch_id=${branchId}`)
-      .then((r) => { setZones(r.zones.filter((z) => z.active)); setTables(r.tables.filter((t) => t.active)); })
+    api<{ zones: Zone[]; tables: DiningTable[]; objects?: ZoneMapObject[] }>(`/pos/tables?branch_id=${branchId}`)
+      .then((r) => { setZones(r.zones.filter((z) => z.active)); setTables(r.tables.filter((t) => t.active)); setMapObjects(r.objects || []); })
       .catch((e) => setError(errorMessage(e)));
     api<{ orders: Order[] }>(`/pos/orders?branch_id=${branchId}&status=activas`)
       .then((r) => setOpenOrders(r.orders)).catch(() => {});
@@ -311,7 +313,7 @@ export default function RegisterPage() {
               </button>
             ))}
         </div>
-        {tab === 'mesas' && <TableGrid zones={zones} tables={tables} onPick={openTable} canManage={posCan.manage(role)} />}
+        {tab === 'mesas' && <TableGrid zones={zones} tables={tables} objects={mapObjects} onPick={openTable} canManage={posCan.manage(role)} />}
         {tab === 'nueva' && <NewOrderForm channels={channels} onStart={(d) => setDraft(d)} />}
         {tab === 'abiertas' && <OpenOrdersList orders={openOrders} onPick={openOrder} />}
         {tab === 'cobradas' && <PaidOrdersList branchId={branchId} onReprint={async (id) => {
@@ -537,8 +539,8 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   );
 }
 
-function TableGrid({ zones, tables, onPick, canManage }: {
-  zones: Zone[]; tables: DiningTable[]; onPick: (t: DiningTable) => void; canManage: boolean;
+function TableGrid({ zones, tables, objects, onPick, canManage }: {
+  zones: Zone[]; tables: DiningTable[]; objects: ZoneMapObject[]; onPick: (t: DiningTable) => void; canManage: boolean;
 }) {
   if (tables.length === 0) {
     return <p className="py-10 text-center text-sm text-gray-500">No hay mesas en esta sucursal.{canManage && <> Créalas en <Link className="text-brand" to="/admin/mesas">Mesas</Link>.</>}</p>;
@@ -547,11 +549,16 @@ function TableGrid({ zones, tables, onPick, canManage }: {
   return (
     <div className="space-y-6">
       {sections.map((z) => {
-        const list = tables.filter((t) => t.zone_id === z.id || (z.id === null && !zones.some((x) => x.id === t.zone_id)));
-        if (!list.length) return null;
+        const all = tables.filter((t) => t.zone_id === z.id || (z.id === null && !zones.some((x) => x.id === t.zone_id)));
+        if (!all.length) return null;
+        // Zona con plano: las mesas acomodadas se ven en el plano y el resto en cuadricula.
+        const zone = zones.find((x) => x.id === z.id);
+        const plan = zone?.map_enabled && all.some((t) => t.map_x != null) ? zone : null;
+        const list = plan ? all.filter((t) => t.map_x == null) : all;
         return (
           <section key={z.id || 'none'}>
             {z.name && <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-gray-500">{z.name}</h3>}
+            {plan && <div className="mb-3"><FloorPlanView zone={plan} tables={all} objects={objects.filter((o) => o.zone_id === plan.id)} onPick={onPick} /></div>}
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
               {list.map((t) => {
                 const busy = t.status === 'ocupada';

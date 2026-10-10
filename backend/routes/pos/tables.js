@@ -8,8 +8,10 @@ import { can } from '../../services/permissions.js';
 
 const router = Router();
 
-const ZONE_COLS = 'id, branch_id, name, sort_order, active';
+const ZONE_COLS = 'id, branch_id, name, sort_order, active, map_enabled, map_width, map_height';
 const TABLE_COLS = 'id, branch_id, zone_id, name, capacity, sort_order, active';
+// Plano: posicion, tamano y forma de la mesa.
+const MAP_COLS = 'map_x, map_y, map_w, map_h, map_shape';
 
 router.get('/tables', can('orders'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
@@ -20,7 +22,7 @@ router.get('/tables', can('orders'), ah(async (req, res) => {
       [req.tenant.id, branchId],
     )).rows;
     const tables = (await db.query(
-      `SELECT ${TABLE_COLS.split(', ').map((c) => `t.${c}`).join(', ')},
+      `SELECT ${[...TABLE_COLS.split(', '), ...MAP_COLS.split(', ')].map((c) => `t.${c}`).join(', ')},
               CASE WHEN o.id IS NULL THEN 'libre' ELSE 'ocupada' END AS status,
               o.id AS order_id, o.folio AS order_folio, o.status AS order_status,
               o.total AS order_total, o.created_at AS order_created_at
@@ -31,9 +33,76 @@ router.get('/tables', can('orders'), ah(async (req, res) => {
         ORDER BY t.sort_order, t.name`,
       [req.tenant.id, branchId],
     )).rows;
-    return { zones, tables };
+    const objects = (await db.query(
+      'SELECT id, zone_id, kind, label, x, y, w, h FROM zone_map_objects WHERE restaurant_id = $1 AND branch_id = $2',
+      [req.tenant.id, branchId],
+    )).rows;
+    return { zones, tables, objects };
   });
   res.json(data);
+}));
+
+// Guardar el plano de una zona: { map_enabled, map_width, map_height,
+// tables: [{ id, map_x, map_y, map_w, map_h, map_shape }], objects: [{ kind, label, x, y, w, h }] }.
+// Los elementos se reemplazan; las mesas que no vienen quedan como estaban.
+const OBJECT_KINDS = ['barra', 'pared', 'puerta', 'bano', 'caja', 'cocina', 'planta', 'texto'];
+router.put('/zones/:id/map', can('manage'), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const b = req.body || {};
+  const width = int(b.map_width ?? 24, { field: 'map_width', min: 8, max: 60 });
+  const height = int(b.map_height ?? 16, { field: 'map_height', min: 6, max: 60 });
+  const inside = (x, y, w, h, what) => {
+    if (x + w > width || y + h > height) throw badRequest(`${what} se sale del plano`, 'OUT_OF_MAP');
+  };
+  const tables = (Array.isArray(b.tables) ? b.tables : []).slice(0, 300).map((t) => {
+    const placed = t.map_x !== null && t.map_x !== undefined;
+    const r = {
+      id: requireUuid(t.id, 'table id'),
+      map_x: placed ? int(t.map_x, { field: 'map_x', min: 0, max: 59 }) : null,
+      map_y: placed ? int(t.map_y, { field: 'map_y', min: 0, max: 59 }) : null,
+      map_w: int(t.map_w ?? 2, { field: 'map_w', min: 1, max: 12 }),
+      map_h: int(t.map_h ?? 2, { field: 'map_h', min: 1, max: 12 }),
+      map_shape: t.map_shape === 'redonda' ? 'redonda' : 'cuadrada',
+    };
+    if (placed) inside(r.map_x, r.map_y, r.map_w, r.map_h, 'Una mesa');
+    return r;
+  });
+  const objects = (Array.isArray(b.objects) ? b.objects : []).slice(0, 200).map((o) => {
+    if (!OBJECT_KINDS.includes(o?.kind)) throw badRequest('Elemento desconocido', 'INVALID_FIELD');
+    const r = {
+      kind: o.kind, label: str(o.label, { field: 'label', max: 40 }) || null,
+      x: int(o.x, { field: 'x', min: 0, max: 59 }), y: int(o.y, { field: 'y', min: 0, max: 59 }),
+      w: int(o.w ?? 2, { field: 'w', min: 1, max: 60 }), h: int(o.h ?? 1, { field: 'h', min: 1, max: 60 }),
+    };
+    inside(r.x, r.y, r.w, r.h, 'Un elemento');
+    return r;
+  });
+  const zone = await withTenant(req.tenant.id, async (db) => {
+    const z = (await db.query('SELECT id, branch_id FROM restaurant_zones WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id])).rows[0];
+    if (!z) throw notFound('Zona no encontrada', 'ZONE_NOT_FOUND');
+    requireBranch(req, z.branch_id);
+    await db.query(
+      'UPDATE restaurant_zones SET map_enabled = $3, map_width = $4, map_height = $5, updated_at = now() WHERE id = $1 AND restaurant_id = $2',
+      [z.id, req.tenant.id, b.map_enabled !== false, width, height],
+    );
+    for (const t of tables) {
+      const { rowCount } = await db.query(
+        `UPDATE restaurant_tables SET map_x = $4, map_y = $5, map_w = $6, map_h = $7, map_shape = $8, updated_at = now()
+          WHERE id = $1 AND restaurant_id = $2 AND zone_id = $3`,
+        [t.id, req.tenant.id, z.id, t.map_x, t.map_y, t.map_w, t.map_h, t.map_shape],
+      );
+      if (!rowCount) throw badRequest('Esa mesa no es de esta zona', 'TABLE_NOT_IN_ZONE');
+    }
+    await db.query('DELETE FROM zone_map_objects WHERE zone_id = $1 AND restaurant_id = $2', [z.id, req.tenant.id]);
+    for (const o of objects) {
+      await db.query(
+        'INSERT INTO zone_map_objects (restaurant_id, branch_id, zone_id, kind, label, x, y, w, h) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
+        [req.tenant.id, z.branch_id, z.id, o.kind, o.label, o.x, o.y, o.w, o.h],
+      );
+    }
+    return (await db.query(`SELECT ${ZONE_COLS} FROM restaurant_zones WHERE id = $1`, [z.id])).rows[0];
+  });
+  res.json({ zone });
 }));
 
 // ---------------------------------------------------------------------------

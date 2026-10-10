@@ -299,6 +299,11 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
   cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
   pedidos, mientras la caja sigue vendiendo.
+- **Plano de mesas** (Mesas > Crear plano, por zona): cuadrícula donde se arrastran las
+  mesas (cuadradas o redondas, del tamaño que se quiera) y elementos del local (barra,
+  pared, puerta, baños, caja, cocina, planta, texto). En la pantalla de venta la zona se
+  ve como plano con el estado de cada mesa (libre, total y estado de la orden); las mesas
+  sin acomodar siguen en cuadrícula. API: `PUT /api/pos/zones/:id/map`.
 - **Cobradas hoy** (pestaña de la pantalla de venta, cajero): las órdenes pagadas del
   día en la sucursal, con búsqueda y botón para reimprimir el ticket.
 - **En vivo**: caja, cocina y pedidos en línea se actualizan al instante cuando otra

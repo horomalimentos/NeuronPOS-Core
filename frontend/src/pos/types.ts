@@ -83,7 +83,14 @@ export interface Zone {
   name: string;
   sort_order: number;
   active: boolean;
+  /** Plano de la zona (cuadricula de map_width x map_height celdas). */
+  map_enabled?: boolean;
+  map_width?: number;
+  map_height?: number;
 }
+
+export type MapObjectKind = 'barra' | 'pared' | 'puerta' | 'bano' | 'caja' | 'cocina' | 'planta' | 'texto';
+export interface ZoneMapObject { id?: string; zone_id?: string; kind: MapObjectKind; label: string | null; x: number; y: number; w: number; h: number }
 
 export interface DiningTable {
   id: string;
@@ -94,6 +101,12 @@ export interface DiningTable {
   sort_order: number;
   active: boolean;
   status?: 'libre' | 'ocupada';
+  /** Posicion en el plano (null = sin acomodar). */
+  map_x?: number | null;
+  map_y?: number | null;
+  map_w?: number;
+  map_h?: number;
+  map_shape?: 'cuadrada' | 'redonda';
   order_id?: string | null;
   order_folio?: number | null;
   order_status?: OrderStatus | null;
