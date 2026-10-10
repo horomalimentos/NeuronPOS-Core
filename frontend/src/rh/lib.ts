@@ -4,7 +4,7 @@
 import { ApiError } from '../lib/api';
 import { session } from '../lib/session';
 import type { Role } from '../lib/types';
-import type { DayStatus, Frequency, PeriodStatus } from './types';
+import type { ClaimKind, DayStatus, Frequency, PeriodStatus } from './types';
 
 export const DOW_LABEL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 export const DOW_SHORT = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -35,6 +35,9 @@ export const DAY_STATUS_STYLE: Record<DayStatus, string> = {
 };
 export const PAY_METHOD_LABEL = { caja: 'Caja (POS)', efectivo: 'Efectivo', transferencia: 'Transferencia', otro: 'Otro' } as const;
 export const ADJUSTMENT_KIND_LABEL = { bono: 'Bono', descuento: 'Descuento', prestamo: 'Préstamo' } as const;
+export const CLAIM_KIND_LABEL: Record<ClaimKind, string> = {
+  falta: 'Falta', retardo: 'Retardo', horas: 'Horas trabajadas', pago: 'Pago', descuento: 'Descuento', otro: 'Otro',
+};
 export const MONTH_LABEL = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 
 const can = (roles: Role[]) => (role: Role) => roles.includes(role);

@@ -4,6 +4,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatDay, formatMXN } from '../lib/format';
+import { LiveSection } from './PayrollExtras';
 import { FREQUENCY_LABEL, PERIOD_STATUS_LABEL, PERIOD_STATUS_STYLE, todayStr } from './lib';
 import type { Frequency, PayrollPeriod } from './types';
 
@@ -26,6 +27,7 @@ export default function PayrollPage() {
         actions={<Button onClick={() => setCreating(true)}><Plus className="h-4 w-4" /> Generar periodo</Button>}
       />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <LiveSection />
       {!periods ? <Spinner /> : periods.length === 0 ? (
         <div className="card p-8 text-center text-sm text-gray-500">Todavía no hay periodos. Genera el primero.</div>
       ) : (

@@ -70,6 +70,7 @@ export interface PayrollSettings {
   official_holidays: boolean;
   punctuality_bonus: Money;
   attendance_bonus: Money;
+  aguinaldo_days: number;
 }
 
 export interface ClockSettings {
@@ -394,4 +395,64 @@ export interface RosterWeek {
   dates: string[];
   employees: RosterEmployee[];
   templates: ShiftTemplate[];
+}
+
+// --- Prenomina en vivo, aclaraciones y aguinaldo ---
+
+export interface LiveItem {
+  employee_id: string;
+  full_name: string;
+  position: string | null;
+  branch_name: string;
+  frequency: Frequency;
+  start_date: string;
+  end_date: string;
+  period_status: PeriodStatus | null;
+  no_salary?: boolean;
+  days_worked?: number;
+  absences?: number;
+  tardies?: number;
+  minutes_worked?: number;
+  gross?: number;
+  deductions?: number;
+  net?: number;
+  lines?: { kind: 'percepcion' | 'deduccion'; code: string; concept: string; amount: number }[];
+  days?: { date: string; type: string; status: DayStatus; shift_name: string | null; scheduled_start: string | null; scheduled_end: string | null; first_in: string | null; late_minutes: number; tardy: boolean }[];
+}
+
+export type ClaimKind = 'falta' | 'retardo' | 'horas' | 'pago' | 'descuento' | 'otro';
+export type ClaimStatus = 'pendiente' | 'resuelta' | 'rechazada';
+
+export interface PayrollClaim {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  item_id: string | null;
+  date: string | null;
+  kind: ClaimKind;
+  description: string;
+  amount: Money | null;
+  status: ClaimStatus;
+  response: string | null;
+  resolved_at: string | null;
+  resolved_by_name: string | null;
+  created_at: string;
+  period_start: string | null;
+  period_end: string | null;
+}
+
+export interface AguinaldoRow {
+  employee_id: string;
+  full_name: string;
+  position: string | null;
+  branch_name: string;
+  hire_date: string;
+  termination_date: string | null;
+  active: boolean;
+  days_counted: number;
+  proportional: boolean;
+  daily_base: number;
+  aguinaldo_days: number;
+  amount: number;
+  payment: { id: string; amount: Money; method: string; paid_at: string; paid_by_name: string | null; notes: string | null } | null;
 }

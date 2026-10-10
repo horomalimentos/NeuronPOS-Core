@@ -5,6 +5,7 @@ import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { attendanceFor } from '../../services/rh/attendance.js';
 import { addDays, localToday } from '../../services/rh/dates.js';
+import { hasPendingClaim } from '../../services/rh/extras.js';
 import { ITEM_COLUMNS, ITEM_FROM, getPeriod, itemLines } from '../../services/rh/payroll.js';
 import { HttpError, ah, badRequest, notFound, requireUuid } from '../../utils/http.js';
 import { getEmployee } from '../employees.js';
@@ -89,6 +90,9 @@ router.post('/me/receipts/:id/sign', ah(async (req, res) => {
   const data = await withTenant(req.tenant.id, async (db) => {
     const { emp, item } = await myReceipt(db, req, req.params.id);
     if (item.signed_at) throw new HttpError(409, 'Este recibo ya está firmado', 'ALREADY_SIGNED');
+    if (await hasPendingClaim(db, req.tenant.id, item.id)) {
+      throw new HttpError(409, 'Tienes una aclaración pendiente de este recibo: espera la respuesta antes de firmar', 'CLAIM_PENDING');
+    }
     await db.query(
       `INSERT INTO payroll_receipt_signatures (restaurant_id, item_id, employee_id, user_id, net_at_signing, ip, user_agent)
        VALUES ($1, $2, $3, $4, $5, $6, $7)`,

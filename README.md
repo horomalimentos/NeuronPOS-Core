@@ -580,6 +580,36 @@ gerentes.
 | POST | `/api/feedback/complaints/:id/approve` `{responsible_employee_id?, compensation?, employee_charge?, notes?}` | admin, gerente |
 | POST | `/api/feedback/complaints/:id/reject` `{notes}` | admin, gerente |
 
+## Prenómina en vivo, aclaraciones y aguinaldo (incluido en `rh`)
+
+Adaptado de Horom. No es un módulo aparte: viene con Recursos humanos.
+
+- **Prenómina en vivo** (*RH › Nómina*, arriba): lo que va del periodo en
+  curso de cada empleado según su frecuencia de pago, con la asistencia hasta
+  hoy. No se guarda; el periodo se genera como siempre. El empleado ve *Mi
+  periodo en curso* en Mi nómina.
+- **Aclaraciones**: el empleado reporta algo de un día (falta, retardo,
+  horas) o de un recibo aprobado (pago, descuento). Mientras una aclaración de
+  un recibo esté pendiente no puede firmarlo. El gerente responde en *RH ›
+  Aclaraciones* (resuelta o rechazada, con respuesta obligatoria).
+- **Aguinaldo** (LFT art. 87): días configurables en *Configuración* (mínimo
+  15), proporcional a los días del año desde el ingreso (o hasta la baja). Con
+  pago por hora la base es tarifa × horas de la jornada. *RH › Aguinaldo*
+  registra el pago por empleado (solo admin, se puede deshacer); el empleado
+  ve su aguinaldo estimado o pagado.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/rh/payroll/live` | admin, gerente |
+| GET | `/api/rh/me/live` | empleado |
+| GET/POST | `/api/rh/me/claims` | empleado |
+| GET | `/api/rh/claims?status=` | admin, gerente |
+| POST | `/api/rh/claims/:id/resolve` | admin, gerente |
+| GET | `/api/rh/aguinaldo?year=` | admin, gerente |
+| POST | `/api/rh/aguinaldo/pay` | admin |
+| DELETE | `/api/rh/aguinaldo/:id` | admin |
+| GET | `/api/rh/me/aguinaldo` | empleado |
+
 ## Turnos y rol semanal (módulo `turnos`)
 
 Adaptado de Horom (catálogo de turnos y asignación por fecha). Requiere
