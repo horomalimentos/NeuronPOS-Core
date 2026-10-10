@@ -1,5 +1,5 @@
 import {
-  ArrowLeft, Ban, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
+  ArrowLeft, Ban, CheckCheck, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
   ShoppingBag, Tag, Ticket, Trash2, Truck, Utensils, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
@@ -75,7 +75,7 @@ export default function RegisterPage() {
 
   // ?tab=linea: viene de un aviso push de pedido en linea.
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea'>(() => (params.get('tab') === 'linea' ? 'linea' : 'mesas'));
+  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea' | 'cobradas'>(() => (params.get('tab') === 'linea' ? 'linea' : 'mesas'));
   const [pendingOnline, setPendingOnline] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
@@ -298,7 +298,8 @@ export default function RegisterPage() {
         {posCan.cashier(role) && <DeviceBanner branchId={branchId} />}
         {/* En celular las 4 pestanas van en 2 renglones (meseros con el telefono). */}
         <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:flex">
-          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe]] as const)
+          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe],
+            ...(posCan.cashier(role) ? [['cobradas', 'Cobradas hoy', CheckCheck]] as const : [])] as const)
             .map(([key, label, Icon]) => (
               <button key={key} onClick={() => setTab(key)}
                 className={`relative flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 font-medium ${tab === key ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
@@ -313,6 +314,9 @@ export default function RegisterPage() {
         {tab === 'mesas' && <TableGrid zones={zones} tables={tables} onPick={openTable} canManage={posCan.manage(role)} />}
         {tab === 'nueva' && <NewOrderForm channels={channels} onStart={(d) => setDraft(d)} />}
         {tab === 'abiertas' && <OpenOrdersList orders={openOrders} onPick={openOrder} />}
+        {tab === 'cobradas' && <PaidOrdersList branchId={branchId} onReprint={async (id) => {
+          try { print((await api<{ order: Order }>(`/pos/orders/${id}`)).order); } catch (e) { setError(errorMessage(e)); }
+        }} />}
         {tab === 'linea' && <OnlineOrdersPanel branchId={branchId} role={role} onOpen={openOrder} onChanged={setPendingOnline} />}
       </>
     );
@@ -637,6 +641,36 @@ function NewOrderForm({ channels, onStart }: { channels: SalesChannel[]; onStart
       )}
       <Button type="submit" className="w-full py-3">Empezar orden</Button>
     </form>
+  );
+}
+
+/** Cobradas hoy en la sucursal: para reimprimir el ticket. */
+function PaidOrdersList({ branchId, onReprint }: { branchId: string; onReprint: (id: string) => void }) {
+  const [orders, setOrders] = useState<Order[] | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    api<{ orders: Order[] }>(`/pos/orders?branch_id=${branchId}&status=pagada&date=${new Date().toLocaleDateString('en-CA')}`)
+      .then((r) => setOrders(r.orders)).catch(() => setOrders([]));
+  }, [branchId]);
+  if (!orders) return <Spinner />;
+  const shown = orders.filter((o) => !q || `${o.folio} ${o.customer_name || ''} ${o.table_name || ''}`.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <>
+      <input className="input mb-3 max-w-xs" placeholder="Buscar folio, cliente o mesa" value={q} onChange={(e) => setQ(e.target.value)} />
+      {shown.length === 0 ? <p className="py-10 text-center text-sm text-gray-500">No hay órdenes cobradas hoy.</p> : (
+        <ul className="card divide-y divide-gray-800 text-sm">
+          {shown.map((o) => (
+            <li key={o.id} className="flex items-center gap-3 px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-white"><b>Folio {o.folio}</b> · {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}</p>
+                <p className="text-xs text-gray-500">{formatTime(o.paid_at || o.created_at)} · <span className="font-semibold text-gray-200">{formatMXN(o.total)}</span></p>
+              </div>
+              <Button variant="secondary" onClick={() => onReprint(o.id)} aria-label={`Reimprimir ticket del folio ${o.folio}`}><Printer className="h-4 w-4" /> <span className="hidden sm:inline">Ticket</span></Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 

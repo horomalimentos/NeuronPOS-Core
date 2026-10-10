@@ -1,6 +1,6 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
-  Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -23,6 +23,7 @@ export default function AdminLayout() {
   const location = useLocation();
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const hasToken = Boolean(session.getToken('restaurant'));
   const waPending = useWhatsAppPending(me);
 
@@ -93,9 +94,13 @@ export default function AdminLayout() {
   const wide = ['/admin/pos', '/admin/cocina'].includes(location.pathname.replace(/\/$/, ''));
 
   const ctx: AdminContext = { me, reload };
+  const here = location.pathname.replace(/\/$/, '');
+  const current = nav.filter((n) => (n.end ? here === n.to : here === n.to || here.startsWith(`${n.to}/`)))
+    .sort((a, b) => b.to.length - a.to.length)[0];
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur">
+      {/* Fijo arriba solo en pantallas grandes: en el celular el menu ocuparia media pantalla. */}
+      <header className="z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur lg:sticky lg:top-0">
         <div className="h-0.5 bg-brand" />
         <div className={`mx-auto flex ${wide ? 'max-w-none' : 'max-w-6xl'} flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3`}>
           <div className="flex items-center gap-2 font-semibold text-white">
@@ -104,9 +109,15 @@ export default function AdminLayout() {
               : <Store className="h-6 w-6 text-brand" />}
             {me.restaurant.name}
           </div>
-          <nav className="flex flex-1 gap-1 overflow-x-auto">
+          {/* Celular: el menu se abre con un boton que muestra la pagina actual. */}
+          <button onClick={() => setMenuOpen(!menuOpen)} className="order-last flex w-full items-center justify-between rounded-lg bg-gray-900 px-3 py-2 text-sm text-gray-200 lg:hidden" aria-expanded={menuOpen}>
+            <span className="flex items-center gap-2">{current && <current.icon className="h-4 w-4" />}{current?.label || 'Menú'}</span>
+            <span className="flex items-center gap-1 text-gray-400">{menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />} Menú</span>
+          </button>
+          {/* Menu en su propio renglon y en varias lineas si hace falta: con todos los modulos no cabe en una. */}
+          <nav className={`${menuOpen ? 'flex' : 'hidden'} order-last w-full flex-wrap gap-1 lg:flex`}>
             {nav.map(({ to, label, icon: Icon, end, badge }) => (
-              <NavLink key={to} to={to} end={end}
+              <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)}
                 className={({ isActive }) => `flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition
                   ${isActive ? 'bg-brand/15 text-white' : 'text-gray-400 hover:text-white'}`}>
                 <Icon className="h-4 w-4" /> {label}

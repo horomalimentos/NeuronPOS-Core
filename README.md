@@ -299,6 +299,8 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
   cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
   pedidos, mientras la caja sigue vendiendo.
+- **Cobradas hoy** (pestaña de la pantalla de venta, cajero): las órdenes pagadas del
+  día en la sucursal, con búsqueda y botón para reimprimir el ticket.
 - **En vivo**: caja, cocina y pedidos en línea se actualizan al instante cuando otra
   pantalla de la sucursal cambia algo (`GET /api/live?branch_id=`, Server-Sent Events
   sobre LISTEN/NOTIFY de Postgres, así funciona con varios procesos). Si se corta la
