@@ -22,6 +22,45 @@ export async function getPeriod(db, restaurantId, id, { lock = false } = {}) {
   return rows[0] || null;
 }
 
+/**
+ * Calcula (sin guardar) la nomina de varios empleados en un rango: asistencia,
+ * ajustes y prestamos (lo ya descontado en otros periodos, sin contar
+ * excludePeriodId). Regresa Map id -> resultado de calculatePayroll.
+ */
+export async function computePayroll(db, restaurantId, employees, range, settings, { excludePeriodId = null, now = new Date() } = {}) {
+  const ids = employees.map((e) => e.id);
+  const { days: daysByEmployee } = await attendanceFor(db, restaurantId, employees, range.start, range.end, { now, settings });
+  const adjustments = (await db.query(
+    `SELECT id, employee_id, kind, concept, amount, recurrence, to_char(apply_date, 'YYYY-MM-DD') AS apply_date,
+            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
+            total_amount, active
+       FROM payroll_adjustments
+      WHERE restaurant_id = $1 AND employee_id = ANY($2::uuid[]) AND active
+      ORDER BY created_at, id`,
+    [restaurantId, ids],
+  )).rows;
+  // Lo ya descontado de cada prestamo en OTROS periodos.
+  const applied = new Map((await db.query(
+    `SELECT l.adjustment_id, sum(l.amount) AS total
+       FROM payroll_item_lines l
+       JOIN payroll_items i ON i.id = l.item_id AND i.restaurant_id = l.restaurant_id
+      WHERE l.restaurant_id = $1 AND l.adjustment_id IS NOT NULL AND i.period_id IS DISTINCT FROM $2::uuid
+      GROUP BY l.adjustment_id`,
+    [restaurantId, excludePeriodId],
+  )).rows.map((r) => [r.adjustment_id, toCents(r.total)]));
+  const out = new Map();
+  for (const e of employees) {
+    out.set(e.id, calculatePayroll({
+      employee: e,
+      settings,
+      days: daysByEmployee.get(e.id),
+      adjustments: applicableAdjustments(adjustments.filter((a) => a.employee_id === e.id), range, applied),
+      weekStartDay: Number(settings.week_start_day),
+    }));
+  }
+  return out;
+}
+
 /** Calcula todos los recibos del periodo. Regresa { calculated, skipped }. */
 export async function calculatePeriod(db, restaurantId, periodId, { userId, now = new Date() } = {}) {
   const period = await getPeriod(db, restaurantId, periodId, { lock: true });
@@ -37,26 +76,7 @@ export async function calculatePeriod(db, restaurantId, periodId, { userId, now 
   const skipped = all.filter((e) => !hasPay(e))
     .map((e) => ({ employee_id: e.id, full_name: e.full_name, reason: 'Sin salario configurado' }));
   const ids = employees.map((e) => e.id);
-  const { days: daysByEmployee } = await attendanceFor(db, restaurantId, employees, range.start, range.end, { now, settings });
-
-  const adjustments = (await db.query(
-    `SELECT id, employee_id, kind, concept, amount, recurrence, to_char(apply_date, 'YYYY-MM-DD') AS apply_date,
-            to_char(start_date, 'YYYY-MM-DD') AS start_date, to_char(end_date, 'YYYY-MM-DD') AS end_date,
-            total_amount, active
-       FROM payroll_adjustments
-      WHERE restaurant_id = $1 AND employee_id = ANY($2::uuid[]) AND active
-      ORDER BY created_at, id`,
-    [restaurantId, ids],
-  )).rows;
-  // Lo ya descontado de cada prestamo en OTROS periodos.
-  const applied = new Map((await db.query(
-    `SELECT l.adjustment_id, sum(l.amount) AS total
-       FROM payroll_item_lines l
-       JOIN payroll_items i ON i.id = l.item_id AND i.restaurant_id = l.restaurant_id
-      WHERE l.restaurant_id = $1 AND l.adjustment_id IS NOT NULL AND i.period_id <> $2
-      GROUP BY l.adjustment_id`,
-    [restaurantId, periodId],
-  )).rows.map((r) => [r.adjustment_id, toCents(r.total)]));
+  const results = await computePayroll(db, restaurantId, employees, range, settings, { excludePeriodId: periodId, now });
 
   // Los que ya no aplican (baja, cambio de frecuencia) salen del periodo.
   await db.query(
@@ -68,13 +88,7 @@ export async function calculatePeriod(db, restaurantId, periodId, { userId, now 
   let deductions = 0;
   let net = 0;
   for (const e of employees) {
-    const r = calculatePayroll({
-      employee: e,
-      settings,
-      days: daysByEmployee.get(e.id),
-      adjustments: applicableAdjustments(adjustments.filter((a) => a.employee_id === e.id), range, applied),
-      weekStartDay: Number(settings.week_start_day),
-    });
+    const r = results.get(e.id);
     const detail = r.days.map((d) => ({
       date: d.date, dow: d.dow, type: d.type, status: d.status, holiday_name: d.holiday_name, shift_name: d.shift_name,
       scheduled_start: d.scheduled_start, scheduled_end: d.scheduled_end, first_in: d.first_in,

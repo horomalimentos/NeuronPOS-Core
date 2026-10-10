@@ -45,6 +45,7 @@ import EmployeesPage from './rh/EmployeesPage';
 import KioskPage from './rh/KioskPage';
 import ModuleGate from './rh/ModuleGate';
 import MyPayrollPage from './rh/MyPayrollPage';
+import { AguinaldoPage, ClaimsPage } from './rh/PayrollExtras';
 import PayrollPage from './rh/PayrollPage';
 import PayrollPeriodPage from './rh/PayrollPeriodPage';
 import RecognitionPage from './rh/RecognitionPage';
@@ -148,6 +149,8 @@ export default function App() {
               <Route path="asistencia" element={<AttendancePage />} />
               <Route path="nomina" element={<PayrollPage />} />
               <Route path="nomina/:id" element={<PayrollPeriodPage />} />
+              <Route path="aclaraciones" element={<ClaimsPage />} />
+              <Route path="aguinaldo" element={<AguinaldoPage />} />
               <Route path="ajustes" element={<RhSettingsPage />} />
             </Route>
             <Route path="checador" element={<KioskPage />} />

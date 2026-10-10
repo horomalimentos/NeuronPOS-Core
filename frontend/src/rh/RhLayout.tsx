@@ -1,4 +1,4 @@
-import { CalendarClock, CalendarRange, Receipt, Settings2, Users } from 'lucide-react';
+import { CalendarClock, CalendarRange, Gift, MessageSquareWarning, Receipt, Settings2, Users } from 'lucide-react';
 import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useAdmin } from '../restaurant/context';
 import { rhCan } from './lib';
@@ -13,6 +13,8 @@ export default function RhLayout() {
       ? [{ to: '/admin/rh/turnos', label: 'Rol de turnos', icon: CalendarRange, end: false }] : []),
     { to: '/admin/rh/asistencia', label: 'Asistencia', icon: CalendarClock, end: false },
     { to: '/admin/rh/nomina', label: 'Nómina', icon: Receipt, end: false },
+    { to: '/admin/rh/aclaraciones', label: 'Aclaraciones', icon: MessageSquareWarning, end: false },
+    { to: '/admin/rh/aguinaldo', label: 'Aguinaldo', icon: Gift, end: false },
     { to: '/admin/rh/ajustes', label: 'Configuración', icon: Settings2, end: false },
   ];
   return (

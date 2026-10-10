@@ -1,4 +1,4 @@
-import { FileSignature } from 'lucide-react';
+import { FileSignature, MessageSquareWarning } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, Button, Modal, PageHeader, Spinner } from '../components/ui';
 import { ApiError, api, errorMessage } from '../lib/api';
@@ -8,6 +8,7 @@ import { printHtml } from '../pos/ticket';
 import { useAdmin } from '../restaurant/context';
 import { DayTable } from './AttendancePage';
 import { DOW_LABEL, FREQUENCY_LABEL, PERIOD_STATUS_LABEL, addDaysStr, hours, inZone, shortDay } from './lib';
+import { ClaimModal, MyAguinaldo, MyClaims, MyLive } from './MyExtras';
 import { ReceiptView } from './PayrollPeriodPage';
 import { receiptHtml } from './print';
 import type { AttendanceDay, AttendanceSummary, MyEmployee, PayrollItem, PayrollPeriod, RosterDay } from './types';
@@ -31,6 +32,8 @@ export default function MyPayrollPage() {
   const [receipts, setReceipts] = useState<PayrollItem[] | null>(null);
   const [error, setError] = useState('');
   const [open, setOpen] = useState<string | null>(null);
+  const [claim, setClaim] = useState<{ itemId?: string; date?: string } | null>(null);
+  const [claimsKey, setClaimsKey] = useState(0);
 
   const load = useCallback(() => {
     api<{ employee: MyEmployee }>('/rh/me').then((r) => {
@@ -87,6 +90,12 @@ export default function MyPayrollPage() {
         </section>
       </div>
 
+      <div className="mt-6 grid gap-6 lg:grid-cols-3">
+        <MyLive onClaim={(date) => setClaim({ date })} />
+        <MyClaims refreshKey={claimsKey} onNew={() => setClaim({})} />
+        <MyAguinaldo />
+      </div>
+
       <section className="card mt-6 overflow-x-auto">
         <h2 className="px-5 pt-5 font-semibold text-white">Mis recibos</h2>
         {!receipts ? <Spinner /> : receipts.length === 0 ? <p className="p-5 text-sm text-gray-500">Todavía no tienes recibos aprobados.</p> : (
@@ -106,12 +115,14 @@ export default function MyPayrollPage() {
           </table>
         )}
       </section>
-      {open && <MyReceiptModal id={open} onClose={() => setOpen(null)} onSigned={load} />}
+      {open && <MyReceiptModal id={open} onClose={() => setOpen(null)} onSigned={load}
+        onClaim={() => { setClaim({ itemId: open }); setOpen(null); }} />}
+      {claim && <ClaimModal {...claim} onClose={() => setClaim(null)} onSaved={() => setClaimsKey((k) => k + 1)} />}
     </>
   );
 }
 
-function MyReceiptModal({ id, onClose, onSigned }: { id: string; onClose: () => void; onSigned: () => void }) {
+function MyReceiptModal({ id, onClose, onSigned, onClaim }: { id: string; onClose: () => void; onSigned: () => void; onClaim: () => void }) {
   const { me } = useAdmin();
   const [data, setData] = useState<{ item: PayrollItem; period: PayrollPeriod } | null>(null);
   const [accept, setAccept] = useState(false);
@@ -146,7 +157,8 @@ function MyReceiptModal({ id, onClose, onSigned }: { id: string; onClose: () => 
                 <input type="checkbox" className="mt-1" checked={accept} onChange={(e) => setAccept(e.target.checked)} />
                 Revisé mi recibo y estoy de acuerdo con el pago neto de {formatMXN(data.item.net)}.
               </label>
-              <div className="mt-3 flex justify-end">
+              <div className="mt-3 flex flex-wrap justify-end gap-2">
+                <Button variant="secondary" onClick={onClaim}><MessageSquareWarning className="h-4 w-4" /> Pedir aclaración</Button>
                 <Button onClick={sign} disabled={!accept} loading={saving}><FileSignature className="h-4 w-4" /> Firmar recibo</Button>
               </div>
             </div>

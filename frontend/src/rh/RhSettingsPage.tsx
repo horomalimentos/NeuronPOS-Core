@@ -127,6 +127,10 @@ function PayrollSettingsCard() {
           {num('punctuality_bonus', 'Bono de puntualidad ($)', 'Sin retardos en el periodo.', '0.01')}
           {num('attendance_bonus', 'Bono de asistencia ($)', 'Sin faltas en el periodo.', '0.01')}
         </div>
+        <h3 className="text-sm font-semibold text-white">Aguinaldo</h3>
+        <div className="grid gap-4 sm:grid-cols-3">
+          {num('aguinaldo_days', 'Días de aguinaldo por año', 'Mínimo 15 (LFT art. 87); proporcional si no trabajó el año completo.')}
+        </div>
         {isAdmin && <div className="flex justify-end"><Button type="submit" loading={saving}>Guardar reglas</Button></div>}
       </form>
     </Section>

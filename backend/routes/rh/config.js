@@ -97,6 +97,8 @@ router.put('/settings', adminOnly, ah(async (req, res) => {
     official_holidays: bool(b.official_holidays, 'official_holidays'),
     punctuality_bonus: money(b.punctuality_bonus, { field: 'punctuality_bonus' }),
     attendance_bonus: money(b.attendance_bonus, { field: 'attendance_bonus' }),
+    // LFT art. 87: minimo 15 dias.
+    aguinaldo_days: int(b.aguinaldo_days, { field: 'aguinaldo_days', min: 15, max: 90 }),
   };
   const set = buildSet(fields, 2);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
