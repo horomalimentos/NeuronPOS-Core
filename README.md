@@ -580,6 +580,32 @@ gerentes.
 | POST | `/api/feedback/complaints/:id/approve` `{responsible_employee_id?, compensation?, employee_charge?, notes?}` | admin, gerente |
 | POST | `/api/feedback/complaints/:id/reject` `{notes}` | admin, gerente |
 
+## Turnos y rol semanal (módulo `turnos`)
+
+Adaptado de Horom (catálogo de turnos y asignación por fecha). Requiere
+Recursos humanos. En *RH › Rol de turnos*:
+
+- **Turnos**: catálogo reutilizable con nombre, horario y color (p. ej.
+  Matutino 07:00–15:00). Si la salida es antes que la entrada, termina al día
+  siguiente. Un turno ya usado no se borra: se desactiva.
+- **Rol**: tabla de la semana por empleado. Con el *pincel* (un turno,
+  Descanso u Horario fijo) se toca cada día para asignarlo; sin pincel se abre
+  el día para elegir turno, descanso, horario a mano y una nota.
+- **Copiar semana anterior** (sin pisar lo ya asignado).
+- Lo asignado manda sobre el horario fijo del empleado en la asistencia, los
+  retardos del checador y la nómina; un día sin asignar usa el fijo. Los días
+  de una nómina aprobada o cerrada no se pueden cambiar.
+- El empleado ve *Mis turnos* de la semana en Mi nómina.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET / POST | `/api/rh/shifts/templates` | admin, gerente |
+| PATCH / DELETE | `/api/rh/shifts/templates/:id` | admin, gerente |
+| GET | `/api/rh/shifts/week?start=&branch_id=` | admin, gerente |
+| PUT | `/api/rh/shifts/days` `{items: [{employee_id, date, shift_id \| rest \| start_time+end_time \| clear, note?}]}` | admin, gerente |
+| POST | `/api/rh/shifts/copy-week` `{from, to, branch_id?, overwrite?}` | admin, gerente |
+| GET | `/api/rh/shifts/mine?start=` | el empleado |
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

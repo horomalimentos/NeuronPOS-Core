@@ -92,3 +92,10 @@ export async function downloadFile(path: string, filename: string) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Suma dias a una fecha AAAA-MM-DD (sin zona horaria). */
+export const addDaysStr = (date: string, n: number) => {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};

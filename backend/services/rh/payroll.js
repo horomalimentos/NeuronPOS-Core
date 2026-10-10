@@ -76,7 +76,7 @@ export async function calculatePeriod(db, restaurantId, periodId, { userId, now 
       weekStartDay: Number(settings.week_start_day),
     });
     const detail = r.days.map((d) => ({
-      date: d.date, dow: d.dow, type: d.type, status: d.status, holiday_name: d.holiday_name,
+      date: d.date, dow: d.dow, type: d.type, status: d.status, holiday_name: d.holiday_name, shift_name: d.shift_name,
       scheduled_start: d.scheduled_start, scheduled_end: d.scheduled_end, first_in: d.first_in,
       minutes_worked: d.minutes_worked, late_minutes: d.late_minutes, tardy: d.tardy, tardy_justified: d.tardy_justified,
       overtime_minutes: d.overtime_minutes, incomplete: d.incomplete, note: d.note,

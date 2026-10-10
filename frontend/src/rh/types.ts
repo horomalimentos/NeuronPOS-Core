@@ -352,3 +352,46 @@ export interface Wall {
   prize_text: string | null;
   current: { year: number; month: number; ranking: RankingRow[] };
 }
+
+// --- Turnos y rol semanal (modulo turnos) ---
+
+export interface ShiftTemplate {
+  id: string;
+  name: string;
+  start_time: string;
+  end_time: string;
+  color: string;
+  active: boolean;
+}
+
+/** Un dia del rol: 'rol' = asignado, 'fijo' = su horario semanal, null = sin horario. */
+export interface RosterDay {
+  date: string;
+  source: 'rol' | 'fijo' | null;
+  shift_id: string | null;
+  shift_name: string | null;
+  color: string | null;
+  is_rest: boolean;
+  start_time: string | null;
+  end_time: string | null;
+  note: string | null;
+  outside: boolean;
+}
+
+export interface RosterEmployee {
+  id: string;
+  full_name: string;
+  position: string | null;
+  area_name: string | null;
+  branch_id: string;
+  branch_name: string;
+  days: RosterDay[];
+}
+
+export interface RosterWeek {
+  start: string;
+  end: string;
+  dates: string[];
+  employees: RosterEmployee[];
+  templates: ShiftTemplate[];
+}

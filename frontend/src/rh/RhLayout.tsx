@@ -1,4 +1,4 @@
-import { CalendarClock, Receipt, Settings2, Users } from 'lucide-react';
+import { CalendarClock, CalendarRange, Receipt, Settings2, Users } from 'lucide-react';
 import { NavLink, Navigate, Outlet } from 'react-router-dom';
 import { useAdmin } from '../restaurant/context';
 import { rhCan } from './lib';
@@ -9,6 +9,8 @@ export default function RhLayout() {
   if (!rhCan.manage(ctx.me.user.role)) return <Navigate to="/admin/mi-nomina" replace />;
   const tabs = [
     { to: '/admin/rh', label: 'Empleados', icon: Users, end: true },
+    ...(ctx.me.modules.some((m) => m.code === 'turnos' && m.enabled)
+      ? [{ to: '/admin/rh/turnos', label: 'Rol de turnos', icon: CalendarRange, end: false }] : []),
     { to: '/admin/rh/asistencia', label: 'Asistencia', icon: CalendarClock, end: false },
     { to: '/admin/rh/nomina', label: 'Nómina', icon: Receipt, end: false },
     { to: '/admin/rh/ajustes', label: 'Configuración', icon: Settings2, end: false },

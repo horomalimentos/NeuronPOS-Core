@@ -92,15 +92,18 @@ function justificationKey(date, kind) { return `${date}|${kind}`; }
  */
 export function analyzeAttendance({
   from, to, schedule = [], entries = [], holidays = new Map(), justifications = [],
-  timeZone, toleranceMinutes = 0, hireDate = null, terminationDate = null, today = null,
+  timeZone, toleranceMinutes = 0, hireDate = null, terminationDate = null, today = null, shiftDays = [],
 }) {
   const byDow = new Map(schedule.map((s) => [Number(s.day_of_week), s]));
+  // Rol por fecha (modulo turnos): manda sobre el horario fijo de ese dia.
+  const roster = new Map(shiftDays.map((d) => [String(d.date).slice(0, 10), d]));
   const sessions = workSessions(entries, timeZone);
   const just = new Map(justifications.map((j) => [justificationKey(String(j.date).slice(0, 10), j.kind), j]));
   const days = [];
   for (const date of eachDay(from, to)) {
     const dow = dayOfWeek(date);
-    const sched = byDow.get(dow) || null;
+    const assigned = roster.get(date);
+    const sched = assigned ? (assigned.is_rest ? null : assigned) : (byDow.get(dow) || null);
     const work = sessions.get(date) || null;
     const holidayName = holidays.get(date) || null;
     const day = {
@@ -108,6 +111,8 @@ export function analyzeAttendance({
       dow,
       type: holidayName ? 'festivo' : (sched ? 'laboral' : 'descanso'),
       holiday_name: holidayName,
+      // Turno del rol (null = horario fijo).
+      shift_name: assigned ? (assigned.is_rest ? 'Descanso' : assigned.shift_name || 'Turno asignado') : null,
       scheduled_start: sched ? minutesToTime(timeToMinutes(sched.start_time)) : null,
       scheduled_end: sched ? minutesToTime(timeToMinutes(sched.end_time)) : null,
       scheduled_minutes: 0,
