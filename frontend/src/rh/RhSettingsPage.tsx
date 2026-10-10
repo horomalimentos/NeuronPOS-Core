@@ -349,7 +349,7 @@ function ClockSettingsCard() {
               <div>
                 <div className="text-white">{b.branch_name}</div>
                 <div className="text-xs text-gray-500">
-                  {b.geo_enabled ? `Geocerca de ${b.radius_meters} m` : 'Sin geocerca'} · {b.allowed_ips.length ? `IPs: ${b.allowed_ips.join(', ')}` : 'Cualquier red'}
+                  {b.geo_enabled ? `Geocerca de ${b.radius_meters} m` : 'Sin geocerca'} · {b.allowed_ips.length ? `IPs: ${b.allowed_ips.join(', ')}` : 'Cualquier red'}{b.mobile_enabled && ' · checada desde el celular'}
                 </div>
               </div>
               <Button variant="secondary" onClick={() => setEditing(b)}>Configurar</Button>
@@ -366,6 +366,7 @@ function ClockModal({ settings, onClose, onSaved }: { settings: ClockSettings; o
   const [form, setForm] = useState({
     geo_enabled: settings.geo_enabled, latitude: settings.latitude || '', longitude: settings.longitude || '',
     radius_meters: String(settings.radius_meters), allowed_ips: settings.allowed_ips.join('\n'),
+    mobile_enabled: settings.mobile_enabled,
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -384,6 +385,7 @@ function ClockModal({ settings, onClose, onSaved }: { settings: ClockSettings; o
         body: {
           geo_enabled: form.geo_enabled, latitude: form.latitude || null, longitude: form.longitude || null,
           radius_meters: Number(form.radius_meters), allowed_ips: form.allowed_ips.split(/[\s,]+/).filter(Boolean),
+          mobile_enabled: form.geo_enabled && form.mobile_enabled,
         },
       });
       onSaved();
@@ -405,6 +407,10 @@ function ClockModal({ settings, onClose, onSaved }: { settings: ClockSettings; o
             <Field label="Longitud"><input className="input" value={form.longitude} onChange={(e) => setForm({ ...form, longitude: e.target.value })} /></Field>
             <Field label="Radio (m)"><input className="input" type="number" min="10" value={form.radius_meters} onChange={(e) => setForm({ ...form, radius_meters: e.target.value })} /></Field>
             <div className="col-span-3"><Button type="button" variant="ghost" onClick={here}>Usar la ubicación de este dispositivo</Button></div>
+            <label className="col-span-3 flex items-center gap-3 text-sm text-gray-300">
+              <Toggle label="Checar desde el celular" checked={form.mobile_enabled} onChange={(v) => setForm({ ...form, mobile_enabled: v })} />
+              Los empleados pueden checar desde su celular (en "Mi nómina"), dentro de este radio
+            </label>
           </div>
         )}
         <Field label="IPs permitidas (opcional)" hint="Una por renglón: IP exacta o rango como 192.168.1.0/24. Vacío = cualquier red.">
