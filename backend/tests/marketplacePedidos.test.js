@@ -96,7 +96,6 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     assert.equal(q.status, 200, JSON.stringify(q.body));
     assert.equal(Number(q.body.totals.total), 75 + 35);
     assert.equal((await pub('POST', '/orders', orderBody({ pay_with: 100 }))).body.code, 'PAY_WITH_TOO_LOW');
-    assert.equal((await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta' }))).body.code, 'PAYMENT_UNAVAILABLE');
     assert.equal((await pub('POST', '/orders', orderBody({ customer: {} }))).status, 400);
 
     const res = await pub('POST', '/orders', orderBody({ pay_with: 200 }));
@@ -115,7 +114,9 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     assert.equal(order.channel, 'marketplace');
     assert.equal(order.order_type, 'domicilio');
     assert.equal(order.online_status, 'pendiente');
-    assert.equal(Number(order.delivery_fee), 35);
+    // El envio no es del restaurante: su orden es solo la comida.
+    assert.equal(Number(order.delivery_fee), 0);
+    assert.equal(Number(order.total), 75);
   });
 
   test('el restaurante acepta y marca listo; el cliente lo ve; rechazo y cancelacion se sincronizan', async () => {

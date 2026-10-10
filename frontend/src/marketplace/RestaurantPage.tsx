@@ -1,4 +1,4 @@
-import { ArrowLeft, Bike, Clock, MapPin, Minus, Plus, ShoppingBag, Store } from 'lucide-react';
+import { ArrowLeft, Banknote, Bike, Clock, CreditCard, MapPin, Minus, Plus, ShoppingBag, Store } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ZoneMap, { type Point } from '../components/ZoneMap';
@@ -17,7 +17,7 @@ interface Quote { totals: { subtotal: string | number; delivery_fee: string | nu
 
 /**
  * Menu de un restaurante en NeuronPOS Delivery, carrito y datos de entrega.
- * Pago en efectivo al recibir (la tarjeta llega en la siguiente fase). El
+ * Pago en efectivo al recibir o con tarjeta (Clip de NeuronPOS). El
  * servidor vuelve a valuar todo y rechaza el pedido si ya no hay
  * repartidores conectados que cubran al restaurante.
  */
@@ -119,10 +119,11 @@ export default function RestaurantPage() {
           </section>
           {checkout && mine.length > 0 && (
             <Checkout branchId={branchId} restaurant={r} location={location} contact={contact}
-              lines={mine} onDone={(token) => {
+              lines={mine} onDone={(token, paymentUrl) => {
                 ordersStore.set([{ token, restaurant: r.name, at: new Date().toISOString() }, ...ordersStore.get()].slice(0, 10));
                 clearCart();
-                navigate(`/delivery/pedido/${token}`);
+                if (paymentUrl) window.location.assign(paymentUrl);
+                else navigate(`/delivery/pedido/${token}`);
               }} onRefresh={load} />
           )}
         </aside>
@@ -142,9 +143,14 @@ function Page({ children }: { children: React.ReactNode }) {
 
 function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRefresh }: {
   branchId: string; restaurant: NearbyRestaurant; location: Point | null; contact: { name: string; phone: string; address: string; reference: string };
-  lines: { item_id: string; quantity: number; modifier_ids: string[]; notes: string }[]; onDone: (token: string) => void; onRefresh: () => void;
+  lines: { item_id: string; quantity: number; modifier_ids: string[]; notes: string }[]; onDone: (token: string, paymentUrl?: string) => void; onRefresh: () => void;
 }) {
   const [f, setF] = useState({ ...contact, notes: '', payWith: '' });
+  const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
+  const [cards, setCards] = useState(false);
+  useEffect(() => {
+    api<{ card_payments: boolean }>('/marketplace/info', { noRedirect: true }).then((i) => setCards(i.card_payments)).catch(() => {});
+  }, []);
   const [pin, setPin] = useState<Point | null>(location);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [error, setError] = useState('');
@@ -169,14 +175,15 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
     setError('');
     try {
       contactStore.set({ name: f.name, phone: f.phone, address: f.address, reference: f.reference });
-      const r = await api<{ order: { token: string } }>('/marketplace/orders', {
+      const r = await api<{ order: { token: string; payment_url?: string } }>('/marketplace/orders', {
         method: 'POST', noRedirect: true,
         body: {
           ...body, customer: { name: f.name, phone: f.phone }, address: { address: f.address, reference: f.reference || null },
-          notes: f.notes || null, payment_method: 'efectivo', pay_with: f.payWith ? Number(f.payWith) : null,
+          notes: f.notes || null, payment_method: method,
+          pay_with: method === 'efectivo' && f.payWith ? Number(f.payWith) : null,
         },
       });
-      onDone(r.order.token);
+      onDone(r.order.token, r.order.payment_url);
     } catch (err) {
       setError(errorMessage(err));
       onRefresh();
@@ -196,11 +203,27 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
         <Field label="Teléfono"><input className="input" type="tel" required value={f.phone} onChange={set('phone')} /></Field>
       </div>
       <Field label="Notas para el restaurante"><input className="input" maxLength={500} value={f.notes} onChange={set('notes')} /></Field>
-      <div className="rounded-xl bg-gray-950/60 p-3 text-sm text-gray-300">
-        <p className="font-medium text-white">Pago en efectivo al recibir</p>
-        <Field label="¿Con cuánto pagas?" hint="Para que el repartidor lleve cambio">
-          <input className="input" type="number" min={0} step={1} value={f.payWith} onChange={set('payWith')} />
-        </Field>
+      <div className="space-y-3 rounded-xl bg-gray-950/60 p-3 text-sm text-gray-300">
+        {cards && (
+          <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Forma de pago">
+            {([['efectivo', 'Efectivo', Banknote], ['tarjeta', 'Tarjeta', CreditCard]] as const).map(([k, label, Icon]) => (
+              <button key={k} type="button" role="radio" aria-checked={method === k} onClick={() => setMethod(k)}
+                className={`flex items-center justify-center gap-2 rounded-lg border px-3 py-2 font-medium ${method === k ? 'border-brand bg-brand/10 text-white' : 'border-gray-700 text-gray-400 hover:text-white'}`}>
+                <Icon className="h-4 w-4" /> {label}
+              </button>
+            ))}
+          </div>
+        )}
+        {method === 'efectivo' ? (
+          <>
+            <p className="font-medium text-white">Pago en efectivo al recibir</p>
+            <Field label="¿Con cuánto pagas?" hint="Para que el repartidor lleve cambio">
+              <input className="input" type="number" min={0} step={1} value={f.payWith} onChange={set('payWith')} />
+            </Field>
+          </>
+        ) : (
+          <p>Pagas en línea con tarjeta (Clip). El restaurante recibe tu pedido en cuanto se confirma el pago.</p>
+        )}
       </div>
       {quote && (
         <div className="space-y-1 text-sm">
@@ -210,7 +233,7 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
         </div>
       )}
       {error && <Alert>{error}</Alert>}
-      <Button type="submit" loading={busy} disabled={!quote || !restaurant.can_order} className="w-full">Hacer pedido</Button>
+      <Button type="submit" loading={busy} disabled={!quote || !restaurant.can_order} className="w-full">{method === 'tarjeta' ? 'Pagar con tarjeta' : 'Hacer pedido'}</Button>
     </form>
   );
 }

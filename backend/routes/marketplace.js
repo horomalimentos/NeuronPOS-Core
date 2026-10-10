@@ -8,8 +8,9 @@
 //                        pendiente hasta que el Panel lo aprueba.
 //   - GET  /restaurants?lat&lng       restaurantes cercanos (fase 2).
 //   - GET  /restaurants/:branchId     ficha y menu para pedir.
-//   - POST /quote, POST /orders       cotizar y pedir (efectivo).
-//   - GET  /orders/:token             seguimiento del cliente.
+//   - POST /quote, POST /orders       cotizar y pedir (efectivo o tarjeta:
+//                                     con tarjeta regresa payment_url de Clip).
+//   - GET  /orders/:token             seguimiento del cliente (concilia el pago).
 // marketplaceRouter (con tenant, /api/marketplace): la ficha de cada sucursal
 // y los pedidos que llegan por Delivery (aceptar, rechazar, listo).
 import { Router } from 'express';
@@ -26,6 +27,7 @@ import {
 import {
   createMarketplaceOrder, nearbyRestaurants, quoteMarketplaceOrder, readMarketplaceOrder, restaurantFor, trackOrder,
 } from '../services/marketplaceOrders.js';
+import { cardPaymentsAvailable, refreshOrderPayment } from '../services/marketplaceMoney.js';
 import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { loadMenu } from './pos/menu.js';
@@ -77,6 +79,7 @@ marketplacePublicRouter.get('/info', ah(async (req, res) => {
       food_commission_pct: Number(s.food_commission_pct),
       max_distance_km: Number(s.max_distance_km),
       driver_max_radius_km: Number(s.driver_max_radius_km),
+      card_payments: cardPaymentsAvailable(),
       fee_tiers: await listFeeTiers(db),
     };
   });
@@ -208,7 +211,12 @@ marketplacePublicRouter.post('/orders', orderLimiter, ah(async (req, res) => {
 }));
 
 marketplacePublicRouter.get('/orders/:token', ah(async (req, res) => {
-  res.set('Cache-Control', 'no-store').json({ order: await trackOrder(req.params.token) });
+  let order = await trackOrder(req.params.token);
+  if (order.status === 'pago_pendiente') {
+    const url = await refreshOrderPayment(order.token);
+    order = { ...(await trackOrder(order.token)), payment_url: url };
+  }
+  res.set('Cache-Control', 'no-store').json({ order });
 }));
 
 // ---------------------------------------------------------------------------
@@ -357,6 +365,7 @@ marketplaceRouter.get('/orders', requireRole(...STAFF), ah(async (req, res) => {
     `SELECT m.id, m.order_id, m.branch_id, b.name AS branch_name, o.folio, m.status, m.customer_name, m.customer_phone,
             m.address, m.reference, m.distance_km, m.delivery_fee, m.food_total, m.total, m.payment_method, m.pay_with,
             m.cancel_reason, o.notes, o.estimated_ready_at, m.created_at, m.accepted_at, m.ready_at, m.delivered_at,
+            m.picked_up_at, m.paid_at, (m.driver_id IS NOT NULL) AS driver_assigned,
             (SELECT coalesce(json_agg(json_build_object(
                       'name', i.name, 'quantity', i.quantity, 'notes', i.notes,
                       'modifiers', (SELECT coalesce(json_agg(x.name), '[]') FROM order_item_modifiers x WHERE x.order_item_id = i.id))

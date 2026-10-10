@@ -16,6 +16,9 @@ import { DRIVER_STATUSES } from '../services/delivery/flow.js';
 import { readLocation } from '../services/delivery/location.js';
 import { readPoint } from '../services/deliveryZones.js';
 import { getMarketplaceSettings } from '../services/marketplace.js';
+import {
+  createDebtCheckout, deliverOrder, driverBoard, driverLedger, pickUpOrder, releaseOrder, takeOrder,
+} from '../services/marketplaceMoney.js';
 import { mapsUrl } from '../services/online.js';
 import {
   HttpError, ah, badRequest, bool, notFound, oneOf, requireUuid, str,
@@ -180,6 +183,38 @@ router.post('/offers/:id/decline', ah(async (req, res) => {
   ));
   if (!rowCount) throw notFound('Oferta no encontrada', 'OFFER_NOT_FOUND');
   res.status(204).end();
+}));
+
+// ---------------------------------------------------------------------------
+// NeuronPOS Delivery: pedidos de la zona, entrega y cuenta del repartidor.
+// ---------------------------------------------------------------------------
+
+router.get('/marketplace', ah(async (req, res) => {
+  res.set('Cache-Control', 'no-store').json(await driverBoard(req.fleetDriver.id));
+}));
+
+const STEPS = { take: takeOrder, pickup: pickUpOrder, deliver: deliverOrder };
+router.post('/marketplace/orders/:id/:step(take|pickup|deliver)', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const job = await STEPS[req.params.step](req.fleetDriver.id, req.params.id);
+  res.json({ job });
+}));
+
+router.post('/marketplace/orders/:id/release', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  await releaseOrder(req.fleetDriver.id, req.params.id);
+  res.status(204).end();
+}));
+
+router.get('/marketplace/ledger', ah(async (req, res) => {
+  res.json(await driverLedger(req.fleetDriver.id));
+}));
+
+// Pagar el adeudo con tarjeta (liga de Clip de NeuronPOS). amount opcional: todo el adeudo.
+router.post('/marketplace/pay-debt', ah(async (req, res) => {
+  const raw = (req.body || {}).amount;
+  const amount = raw === undefined || raw === null || raw === '' ? null : Number(raw);
+  res.json(await createDebtCheckout(req.fleetDriver.id, amount));
 }));
 
 export default router;

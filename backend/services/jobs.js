@@ -18,6 +18,7 @@ import { env } from '../config/env.js';
 import { reconcilePendingCheckouts } from './clip/reconcile.js';
 import { cleanupPush, dispatchPushOutbox, startPushListener } from './push.js';
 import { releaseScheduledOrders } from './scheduledOrders.js';
+import { reconcilePendingMarketplaceCheckouts } from './marketplaceMoney.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
 import { runRecognitionCycle } from './rh/recognition.js';
 import { runBillingCycle } from './subscriptions.js';
@@ -47,6 +48,7 @@ export function startJobs() {
   const timers = [
     every('pagos-vencidos', 60 * 1000, () => expireUnpaidOrders()),
     every('conciliar-clip', 5 * 60 * 1000, () => reconcilePendingCheckouts()),
+    every('delivery-clip', 2 * 60 * 1000, () => reconcilePendingMarketplaceCheckouts()),
     every('empleado-del-mes', 60 * 60 * 1000, () => runRecognitionCycle()),
     every('pedidos-programados', 60 * 1000, () => releaseScheduledOrders()),
     every('push', 30 * 1000, () => dispatchPushOutbox()),
@@ -56,6 +58,6 @@ export function startJobs() {
   ];
   startPushListener();
   if (env.billingAuto) timers.push(every('cobro', 60 * 60 * 1000, () => runBillingCycle()));
-  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip, pedidos programados, notificaciones push, avisos por WhatsApp, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
+  console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip (restaurantes y Delivery), pedidos programados, notificaciones push, avisos por WhatsApp, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
   return timers;
 }
