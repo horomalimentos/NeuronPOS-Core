@@ -299,6 +299,11 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
   cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
   pedidos, mientras la caja sigue vendiendo.
+- **En vivo**: caja, cocina y pedidos en línea se actualizan al instante cuando otra
+  pantalla de la sucursal cambia algo (`GET /api/live?branch_id=`, Server-Sent Events
+  sobre LISTEN/NOTIFY de Postgres, así funciona con varios procesos). Si se corta la
+  conexión siguen consultando cada pocos segundos. En nginx no hace falta configurar
+  nada: la respuesta lleva `X-Accel-Buffering: no` y un latido cada 25 s.
 - **Cocina**: los minutos para amarillo y rojo se configuran en Ajustes del POS. La
   pestaña **Listas** muestra lo preparado en las últimas 12 horas con **Regresar a
   cocina** (por estación; una orden "lista" vuelve a "enviada").

@@ -2,6 +2,7 @@ import { BadgeCheck, Bike, CalendarClock, Check, ChefHat, Clock, CreditCard, Glo
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { useLive } from '../lib/live';
 import { formatMXN } from '../lib/format';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, formatTime, minutesSince, num, posCan } from './lib';
 import OnlinePause from './OnlinePause';
@@ -37,6 +38,7 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+  useLive(branchId, load);
 
   async function act(o: Order, action: 'accept' | 'reject' | 'dispatch' | 'deliver') {
     let body: Record<string, unknown> | undefined;

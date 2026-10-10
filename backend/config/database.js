@@ -6,7 +6,8 @@ const { Pool } = pg;
 // Los NUMERIC llegan como string por defecto; los dejamos asi y convertimos
 // donde haga falta (evita perder precision en montos).
 
-function buildConfig() {
+/** Configuracion de conexion (tambien la usa el canal en vivo, services/live.js). */
+export function buildConfig() {
   const common = {
     max: parseInt(process.env.DB_POOL_MAX, 10) || 10,
     idleTimeoutMillis: 30000,

@@ -2,6 +2,7 @@ import { CheckCircle2, ChefHat, RefreshCw, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { useLive } from '../lib/live';
 import { nativeInfo } from '../lib/native';
 import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
@@ -85,6 +86,8 @@ export default function KitchenPage() {
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+  // Al instante cuando llega o cambia una orden de la sucursal.
+  useLive(branchId, load);
 
   async function ready(o: Order) {
     setMarking(o.id);

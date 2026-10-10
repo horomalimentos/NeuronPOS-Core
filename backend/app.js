@@ -12,6 +12,8 @@ import permissionsRouter from './routes/permissions.js';
 import devicesRouter from './routes/devices.js';
 import eventsRouter from './routes/events.js';
 import eventsPublicRouter from './routes/eventsPublic.js';
+import liveRouter from './routes/live.js';
+import { liveAfterChange } from './services/live.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
@@ -103,6 +105,8 @@ export function createApp() {
   app.use('/api/users', usersRouter);
   app.use('/api/public', publicRouter);
   app.use('/api/uploads', uploadsRouter);
+  // Avisos en vivo despues de cada cambio de caja/ordenes y pedidos del portal.
+  app.use(['/api/pos', '/api/portal'], liveAfterChange);
   app.use('/api/pos', posRouter);
   // Fase 2: sitio web y portal de clientes.
   app.use('/api/website', websiteRouter);
@@ -122,6 +126,8 @@ export function createApp() {
   // Ventas por evento y preventas (modulo eventos): personal y pagina publica.
   app.use('/api/events', eventsRouter);
   app.use('/api/event-page', eventsPublicRouter);
+  // Avisos en vivo (caja, cocina y pedidos en linea).
+  app.use('/api/live', liveRouter);
   // Inventario y compras (modulo 'inventario').
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);

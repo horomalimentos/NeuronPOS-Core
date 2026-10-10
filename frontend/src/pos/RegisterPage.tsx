@@ -23,6 +23,7 @@ import type {
 import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
 import VoucherModal from './VoucherModal';
+import { useLive } from '../lib/live';
 import DeviceBanner from './DeviceBanner';
 import SoldOutModal from './SoldOutModal';
 
@@ -118,6 +119,12 @@ export default function RegisterPage() {
     }
     loadFloor();
   }, [branchId, role, terminal, loadFloor]);
+
+  // Al instante cuando otra pantalla cambia algo de la sucursal (mesas, ordenes, pedidos en linea).
+  useLive(branchId, () => {
+    if (!inOrder) loadFloor();
+    else api<{ pending_count: number }>(`/pos/online-orders?branch_id=${branchId}&status=pendientes`).then((r) => setPendingOnline(r.pending_count)).catch(() => {});
+  });
 
   // Refresca mesas y ordenes abiertas mientras se esta en el selector.
   useEffect(() => {
