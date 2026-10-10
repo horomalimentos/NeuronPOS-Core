@@ -144,6 +144,7 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE` | Servidor de correo saliente; sin `SMTP_HOST` los correos solo se escriben en el log | —, `587`, `true` si el puerto es 465 |
 | `SMTP_USER`, `SMTP_PASS` | Usuario y contraseña del SMTP | — |
 | `MAIL_FROM` | Remitente; el nombre se cambia por el del restaurante en sus correos | `NeuronPOS <no-reply@neuronpos.app>` |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT` | Llaves de las notificaciones push. Opcionales: si no se ponen, se generan solas la primera vez y se guardan en la base (la privada cifrada con `PAYMENT_SECRETS_KEY`) | generadas, `mailto:soporte@neuronpos.app` |
 
 ## Aislamiento entre restaurantes
 
@@ -497,6 +498,37 @@ correo de contacto como "Responder a".
 |---|---|---|
 | POST | `/api/portal/auth/forgot` `{email}` · `/api/portal/auth/reset` `{token, password}` | público (cliente) |
 | POST | `/api/auth/forgot` `{email}` · `/api/auth/reset` `{token, password}` | público (personal) |
+
+## Notificaciones push (módulo `push`)
+
+Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la
+página esté cerrada o el celular bloqueado:
+
+- **Cliente:** su pedido en línea fue aceptado (con la hora estimada), está
+  listo, va en camino, fue rechazado o cancelado. Lo activa en el
+  seguimiento del pedido ("Avísame de mi pedido"; como invitado solo ese
+  pedido) o en *Mi cuenta* (todos sus pedidos). Al tocar el aviso abre el
+  seguimiento.
+- **Personal:** administradores y gerentes de cada pedido en línea nuevo;
+  cajeros solo de su sucursal. Se activa con la campana del encabezado y
+  abre *Vender › En línea*. Al cerrar sesión ese navegador deja de recibirlos.
+- **Repartidor propio:** cuando le asignan un pedido (vibra y se queda en
+  pantalla). Campana en la app `/repartidor`.
+
+Los avisos los generan triggers de Postgres en la misma transacción que el
+cambio del pedido (no importa qué pantalla lo hizo), quedan en
+`push_outbox` y el backend los manda al instante con `LISTEN push_outbox`
+(con un job de respaldo cada 30 s). Cada aviso se manda una sola vez y las
+suscripciones que el navegador da de baja (404/410) se borran solas. En
+iPhone solo funcionan si el cliente agrega el sitio a su pantalla de inicio.
+Las apps de escritorio y Android del POS no reciben push (se usan en el
+navegador del celular).
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/push/key` | público (llave VAPID pública) |
+| POST | `/api/push/subscribe` · `/unsubscribe` | personal y repartidores |
+| POST | `/api/push/customer/subscribe` · `/customer/unsubscribe` `{subscription, token?}` | cliente con sesión o invitado con el token del seguimiento |
 
 ## Sitio web y pedidos en línea (fase 2)
 

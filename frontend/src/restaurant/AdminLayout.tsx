@@ -4,10 +4,12 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { PushBell } from '../components/PushBell';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { applyBranding } from '../lib/branding';
 import { getNative } from '../lib/native';
+import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { invCan } from '../inventory/lib';
@@ -37,7 +39,9 @@ export default function AdminLayout() {
   if (error) return <div className="mx-auto max-w-md p-8"><Alert>{error}</Alert></div>;
   if (!me) return <Spinner />;
 
-  const logout = () => {
+  const logout = async () => {
+    // Este navegador deja de recibir los avisos de esta cuenta.
+    await disablePush({ realm: 'restaurant' }).catch(() => {});
     session.setToken('restaurant', null);
     navigate('/admin/login', { replace: true });
   };
@@ -103,12 +107,13 @@ export default function AdminLayout() {
             <div className="text-sm text-gray-200">{me.user.name}</div>
             {ROLE_LABEL[me.user.role]}
           </div>
+          {has('push') && ['admin', 'gerente', 'cajero', 'repartidor'].includes(role) && <PushBell target={{ realm: 'restaurant' }} />}
           {getNative() && (
             <button onClick={() => { void getNative()?.openSettings(); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Impresoras de la app" title="Impresoras de la app">
               <Printer className="h-4 w-4" />
             </button>
           )}
-          <button onClick={logout} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Cerrar sesión">
+          <button onClick={() => void logout()} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Cerrar sesión">
             <LogOut className="h-4 w-4" />
           </button>
         </div>

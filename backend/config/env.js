@@ -63,6 +63,8 @@ export const env = {
   // Remitente: "NeuronPOS <no-reply@neuronpos.app>". En correos de un
   // restaurante se usa su nombre con esta misma direccion.
   mailFrom: process.env.MAIL_FROM || 'NeuronPOS <no-reply@neuronpos.app>',
+  // Contacto que piden los servicios de push (Apple rechaza dominios locales).
+  vapidSubject: process.env.VAPID_SUBJECT || 'mailto:soporte@neuronpos.app',
 
   // Instaladores de las apps (deploy/instaladores.sh) servidos en /api/descargas.
   downloadsDir: process.env.DOWNLOADS_DIR

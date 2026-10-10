@@ -3,12 +3,14 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { AuthCard } from '../components/AuthCard';
+import { PushBell } from '../components/PushBell';
 import { Alert, Button, Field, Modal, Spinner, Toggle } from '../components/ui';
 import { DELIVERY_STATUS_STYLE, NEXT_DRIVER_STEP, telHref, useLocationSharing, type GeoFix } from '../delivery/lib';
 import type { DeliveryStatus, DriverJob, FleetOffer } from '../delivery/types';
 import { ApiError, api, errorMessage, fleetApi } from '../lib/api';
 import { applyBranding, resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
+import { disablePush } from '../lib/push';
 import { session } from '../lib/session';
 import { formatTime } from '../pos/lib';
 import { useSite } from '../restaurant/useSite';
@@ -26,14 +28,17 @@ type Kind = 'propio' | 'flota';
  */
 export default function DriverApp() {
   const [kind, setKind] = useState<Kind | null>(() => (session.getToken('fleet') ? 'flota' : session.getToken('restaurant') ? 'propio' : null));
-  const logout = () => {
+  const logout = async () => {
     if (kind === 'flota') session.setToken('fleet', null);
-    else session.setToken('restaurant', null);
+    else {
+      await disablePush({ realm: 'restaurant' }).catch(() => {});
+      session.setToken('restaurant', null);
+    }
     setKind(null);
   };
   useEffect(() => { document.title = 'Repartidor'; }, []);
   if (!kind) return <DriverLogin onLogged={setKind} />;
-  return <DriverHome kind={kind} onLogout={logout} />;
+  return <DriverHome kind={kind} onLogout={() => void logout()} />;
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +157,7 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   const call = useMemo(() => (fleet ? fleetApi : api), [fleet]);
   const base = fleet ? '/fleet' : '/delivery/driver';
   const [name, setName] = useState('');
+  const [push, setPush] = useState(false);
   const [jobs, setJobs] = useState<DriverJob[] | null>(null);
   const [offers, setOffers] = useState<FleetOffer[]>([]);
   const [onDuty, setOnDuty] = useState(false);
@@ -191,8 +197,12 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   useEffect(() => {
     if (fleet) resetBranding();
     else {
-      api<{ user: { name: string }; restaurant: { primary_color: string; secondary_color: string; name: string } }>('/me')
-        .then((m) => { setName(m.user.name); applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color); })
+      api<{ user: { name: string }; restaurant: { primary_color: string; secondary_color: string; name: string }; modules: { code: string; enabled: boolean }[] }>('/me')
+        .then((m) => {
+          setName(m.user.name);
+          setPush(m.modules.some((x) => x.code === 'push' && x.enabled));
+          applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
+        })
         .catch(() => {});
     }
   }, [fleet]);
@@ -241,6 +251,7 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             <div className="text-xs text-gray-500">{fleet ? 'Flota NeuronPOS' : 'Repartidor del restaurante'}</div>
           </div>
           <div className="flex items-center gap-3">
+            {push && <PushBell target={{ realm: 'restaurant' }} className="[&_svg]:h-5 [&_svg]:w-5" />}
             <button onClick={() => void load()} className="text-gray-400 hover:text-white" aria-label="Actualizar"><RefreshCw className="h-5 w-5" /></button>
             <button onClick={onLogout} className="text-gray-400 hover:text-white" aria-label="Salir"><LogOut className="h-5 w-5" /></button>
           </div>
