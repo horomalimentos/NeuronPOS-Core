@@ -166,7 +166,10 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
     point = null;
   }
 
-  const pos = await getSettings(db, rid);
+  const posSettings = await getSettings(db, rid);
+  // La sucursal puede tener su propio impuesto (ej. 8 % en la frontera).
+  const branchTax = (await db.query('SELECT tax_rate_pct FROM branches WHERE id = $1 AND restaurant_id = $2', [branch.id, rid])).rows[0]?.tax_rate_pct;
+  const pos = { ...posSettings, tax_rate_pct: branchTax ?? posSettings.tax_rate_pct };
   // Las mismas promociones que se guardaran en la orden (recalcOrder).
   const promosOn = await moduleActive(db, rid, 'promociones');
   const promotions = promosOn ? await promotionsFor(db, rid, { branchId: branch.id, source: 'web', lines }) : [];

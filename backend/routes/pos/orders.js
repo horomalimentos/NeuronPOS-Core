@@ -415,7 +415,7 @@ router.post('/orders', can('orders'), ah(async (req, res) => {
   try {
     const order = await withTenant(req.tenant.id, async (db) => {
       const settings = await getSettings(db, req.tenant.id);
-      const branch = await db.query('SELECT active FROM branches WHERE id = $1 AND restaurant_id = $2', [branchId, req.tenant.id]);
+      const branch = await db.query('SELECT active, tax_rate_pct FROM branches WHERE id = $1 AND restaurant_id = $2', [branchId, req.tenant.id]);
       if (!branch.rows[0]) throw badRequest('La sucursal no existe', 'BRANCH_NOT_FOUND');
       if (!branch.rows[0].active) throw badRequest('La sucursal esta inactiva', 'BRANCH_INACTIVE');
       if (tableId) await checkTable(db, req.tenant.id, branchId, tableId);
@@ -446,7 +446,7 @@ router.post('/orders', can('orders'), ah(async (req, res) => {
                              channel_id, channel_order_number, channel_commission_pct, source, dine_in)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING *`,
         [req.tenant.id, branchId, folio, orderType, tableId, f.guests, f.customer_name, f.customer_phone,
-          f.customer_address, f.notes, settings.tax_rate_pct, settings.prices_include_tax, req.user.id,
+          f.customer_address, f.notes, branch.rows[0].tax_rate_pct ?? settings.tax_rate_pct, settings.prices_include_tax, req.user.id,
           channelId, channelId ? f.channel_order_number : null, commission, kiosk ? 'kiosko' : 'pos', kiosk && body.dine_in === true],
       );
       await insertItems(db, req.tenant.id, rows[0].id, req.user.id, lines);

@@ -155,6 +155,10 @@ export interface Branch {
   phone: string | null;
   timezone: string;
   active: boolean;
+  /** Impuesto propio de la sucursal (ej. 8 % en la frontera); null = el del restaurante. */
+  tax_rate_pct?: string | null;
+  ticket_header?: string | null;
+  ticket_footer?: string | null;
 }
 
 export interface User {

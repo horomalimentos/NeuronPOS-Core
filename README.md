@@ -301,7 +301,9 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
   la tenga. Al cobrar, lo no enviado se manda a cocina.
 - Totales en centavos (`services/posMath.js`): IVA configurable, incluido en
   el precio (se desglosa) o encima del subtotal; la tasa se fija al crear la
-  orden. Descuento por porcentaje o cantidad: admin/gerente sin límite, cajero
+  orden. Cada **sucursal** puede tener su propia tasa (ej. 8 % en la franja
+  fronteriza; vacío = la del restaurante) y su propio encabezado y pie del ticket
+  (razón social, RFC...), en Sucursales; aplica en caja, kiosko y portal. Descuento por porcentaje o cantidad: admin/gerente sin límite, cajero
   hasta `cashier_max_discount_pct` (0 = no puede), mesero no.
 - Pagos: uno o varios (cuenta dividida), cada uno con propina; solo el
   efectivo da cambio. Requieren un turno de caja abierto de la sucursal.

@@ -40,7 +40,7 @@ function header(restaurant: Restaurant, branch: Branch | null, settings: PosSett
     ${restaurant.logo_url ? `<img src="${esc(restaurant.logo_url)}" alt="">` : ''}
     <h1>${esc(restaurant.name)}</h1>
     ${branch ? `<div class="muted">${esc(branch.name)}${branch.address ? `<br>${esc(branch.address)}` : ''}${branch.phone ? `<br>Tel. ${esc(branch.phone)}` : ''}</div>` : ''}
-    ${settings?.ticket_header ? `<div class="pre muted">${esc(settings.ticket_header)}</div>` : ''}
+    ${branch?.ticket_header || settings?.ticket_header ? `<div class="pre muted">${esc(branch?.ticket_header || settings?.ticket_header || '')}</div>` : ''}
   </div><hr>`;
 }
 
@@ -94,7 +94,7 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
       ${num(order.tip_amount) ? row('Propina', formatMXN(order.tip_amount)) : ''}
       ${changeTotal ? row('Cambio', formatMXN(changeTotal)) : ''}</table>` : ''}
     ${order.status === 'pagada' ? '' : `<hr><div class="center"><b>${order.status === 'cancelada' ? 'CANCELADA' : 'CUENTA - NO ES COMPROBANTE DE PAGO'}</b></div>`}
-    <hr><div class="center pre muted">${esc(settings?.ticket_footer || '¡Gracias por su visita!')}</div>`;
+    <hr><div class="center pre muted">${esc(branch?.ticket_footer || settings?.ticket_footer || '¡Gracias por su visita!')}</div>`;
   return page(`Ticket ${order.folio}`, safeColor(restaurant.primary_color)!, body);
 }
 

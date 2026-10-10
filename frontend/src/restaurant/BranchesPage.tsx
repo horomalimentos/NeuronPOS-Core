@@ -82,6 +82,8 @@ function BranchModal({ branch, onClose, onSaved }: { branch: Branch | null; onCl
   const [form, setForm] = useState({
     name: branch?.name || '', address: branch?.address || '', phone: branch?.phone || '',
     timezone: branch?.timezone || 'America/Ciudad_Juarez', active: branch?.active ?? true,
+    tax_rate_pct: branch?.tax_rate_pct != null ? String(Number(branch.tax_rate_pct)) : '',
+    ticket_header: branch?.ticket_header || '', ticket_footer: branch?.ticket_footer || '',
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -91,7 +93,11 @@ function BranchModal({ branch, onClose, onSaved }: { branch: Branch | null; onCl
     setSaving(true);
     setError('');
     try {
-      const body = { ...form, address: form.address || null, phone: form.phone || null };
+      const body = {
+        ...form, address: form.address || null, phone: form.phone || null,
+        tax_rate_pct: form.tax_rate_pct === '' ? null : Number(form.tax_rate_pct),
+        ticket_header: form.ticket_header || null, ticket_footer: form.ticket_footer || null,
+      };
       await api(branch ? `/branches/${branch.id}` : '/branches', { method: branch ? 'PATCH' : 'POST', body });
       onSaved();
     } catch (err) {
@@ -111,6 +117,18 @@ function BranchModal({ branch, onClose, onSaved }: { branch: Branch | null; onCl
           <select className="input" value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })}>
             {[...new Set([form.timezone, ...TIMEZONES])].map((tz) => <option key={tz} value={tz}>{tz}</option>)}
           </select>
+        </Field>
+        <Field label="Impuesto (IVA) de esta sucursal" hint="Vacío = el del restaurante. En la franja fronteriza suele ser 8 %.">
+          <div className="flex gap-2">
+            <input className="input w-28" type="number" min="0" max="100" step="0.01" value={form.tax_rate_pct} placeholder="Igual" onChange={(e) => setForm({ ...form, tax_rate_pct: e.target.value })} />
+            {['8', '16'].map((v) => <button key={v} type="button" className="rounded-lg bg-gray-800 px-3 text-sm text-gray-300 hover:bg-gray-700" onClick={() => setForm({ ...form, tax_rate_pct: v })}>{v} %</button>)}
+          </div>
+        </Field>
+        <Field label="Encabezado del ticket (opcional)" hint="Razón social, RFC, dirección fiscal… Si lo dejas vacío se usa el del restaurante.">
+          <textarea className="input min-h-16" maxLength={500} value={form.ticket_header} onChange={(e) => setForm({ ...form, ticket_header: e.target.value })} />
+        </Field>
+        <Field label="Pie del ticket (opcional)">
+          <textarea className="input min-h-12" maxLength={500} value={form.ticket_footer} onChange={(e) => setForm({ ...form, ticket_footer: e.target.value })} />
         </Field>
         <div className="flex items-center gap-3 text-sm text-gray-300">
           <Toggle label="Sucursal activa" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} /> Sucursal activa

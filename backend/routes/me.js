@@ -15,7 +15,7 @@ router.get('/', authenticateUser, ah(async (req, res) => {
   const data = await withTenant(tenant.id, async (db) => {
     const modules = await listRestaurantModules(db, tenant.id);
     const branches = await db.query(
-      `SELECT id, name, address, phone, timezone, active FROM branches
+      `SELECT id, name, address, phone, timezone, active, tax_rate_pct, ticket_header, ticket_footer FROM branches
         WHERE restaurant_id = $1 AND ($2 OR id = ANY($3::uuid[]))
         ORDER BY name`,
       [tenant.id, ['admin', 'gerente'].includes(user.role), user.branch_ids],
