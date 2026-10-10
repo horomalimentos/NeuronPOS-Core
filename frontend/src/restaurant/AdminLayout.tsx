@@ -56,7 +56,7 @@ export default function AdminLayout() {
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && has('reportes') && posCan.manage(role) },
-    { to: '/admin/clientes', label: 'Clientes', icon: HeartHandshake, end: false, show: has('lealtad') && posCan.cashier(role) },
+    { to: '/admin/clientes', label: 'Clientes', icon: HeartHandshake, end: false, show: (has('lealtad') || has('monedero')) && posCan.cashier(role) },
     { to: '/admin/inventario', label: 'Inventario', icon: Boxes, end: false, show: has('inventario') && invCan.staff(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },

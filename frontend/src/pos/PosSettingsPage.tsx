@@ -115,7 +115,7 @@ export default function PosSettingsPage() {
 function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | null; onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({ name: method?.name || '', kind: method?.kind || ('otro' as MethodKind), active: method?.active ?? true });
   // "Clip en línea" lo usa el pago en línea del portal: solo se renombra.
-  const online = method?.kind === 'en_linea' || method?.kind === 'puntos';
+  const online = method?.kind === 'en_linea' || method?.kind === 'puntos' || method?.kind === 'monedero';
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent) {
@@ -141,7 +141,9 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
             <p className="text-sm text-gray-400">
               {method?.kind === 'puntos'
                 ? `${METHOD_KIND_LABEL.puntos}: lo registra el canje de puntos en caja; en el corte no se cuenta.`
-                : `${METHOD_KIND_LABEL.en_linea}: lo registra el pago en línea del portal y no entra al corte de caja.`}
+                : method?.kind === 'monedero'
+                  ? `${METHOD_KIND_LABEL.monedero}: lo registra el cobro con monedero; en el corte no se cuenta.`
+                  : `${METHOD_KIND_LABEL.en_linea}: lo registra el pago en línea del portal y no entra al corte de caja.`}
             </p>
           ) : (
             <select className="input" value={form.kind} onChange={(e) => setForm({ ...form, kind: e.target.value as MethodKind })}>

@@ -20,6 +20,9 @@ import { checkModuleAccess } from '../services/access.js';
 import { customerDeliveryView } from '../services/delivery/tenant.js';
 import { activeLoyalty, customerCode, pointsValue, resetCustomerCode } from '../services/loyalty.js';
 import {
+  activeWallet, checkTopupAmount, createTopupCheckout, reconcileCustomerTopups, refundOrderWallet,
+} from '../services/wallet.js';
+import {
   acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches, publicBranch,
 } from '../services/online.js';
 import { DEFAULT_PROVIDER, getPaymentProvider, publicPaymentOptions } from '../services/onlinePayments.js';
@@ -47,6 +50,11 @@ const brand = (t) => ({
   slug: t.slug, name: t.name, logo_url: t.logo_url, primary_color: t.primary_color, secondary_color: t.secondary_color,
 });
 
+/** Pago de pedidos con monedero: modulo vigente y encendido en sus ajustes. */
+async function walletPayAvailable(db, restaurantId) {
+  return Boolean((await activeWallet(db, restaurantId))?.web_enabled);
+}
+
 /** Modulos que el portal necesita ademas de si mismo. */
 async function moduleState(tenant) {
   const [pos, domicilios] = await Promise.all([loadModuleRow(tenant.id, 'pos'), loadModuleRow(tenant.id, 'domicilios')]);
@@ -66,6 +74,7 @@ router.get('/config', ah(async (req, res) => {
     settings: await getOnlineSettings(db, req.tenant.id),
     branches: await loadBranches(db, req.tenant.id),
     clipAvailable: onlinePaymentAvailable(await getPaymentSettings(db, req.tenant.id)),
+    walletAvailable: await walletPayAvailable(db, req.tenant.id),
   }));
   const s = data.settings;
   const delivery = s.allow_delivery && !mods.domicilios;
@@ -84,7 +93,7 @@ router.get('/config', ah(async (req, res) => {
       delivery_available: delivery && b.delivery_enabled,
       delivery_fee: b.delivery_fee,
     })),
-    payment_options: publicPaymentOptions({ clipAvailable: data.clipAvailable }),
+    payment_options: publicPaymentOptions({ clipAvailable: data.clipAvailable, walletAvailable: data.walletAvailable }),
   });
 }));
 
@@ -284,6 +293,103 @@ router.post('/me/loyalty/reset-code', authenticateCustomer, ah(async (req, res) 
   res.set('Cache-Control', 'no-store').json({ code });
 }));
 
+// Codigo de 6 digitos para pagar en caja con puntos o con monedero.
+async function codeNeeded(db, rid) {
+  const [loyalty, wallet] = await Promise.all([activeLoyalty(db, rid), activeWallet(db, rid)]);
+  return Boolean((loyalty?.redeem_enabled && loyalty.require_code) || wallet?.require_code);
+}
+
+router.get('/me/pos-code', authenticateCustomer, ah(async (req, res) => {
+  const data = await withTenant(req.tenant.id, async (db) => {
+    if (!(await codeNeeded(db, req.tenant.id))) return { needed: false };
+    const c = (await db.query('SELECT pos_code_locked FROM customers WHERE id = $1 AND restaurant_id = $2',
+      [req.customer.id, req.tenant.id])).rows[0];
+    return {
+      needed: true,
+      code_locked: c.pos_code_locked,
+      code: c.pos_code_locked ? null : await customerCode(db, req.tenant.id, req.customer.id),
+    };
+  });
+  res.set('Cache-Control', 'no-store').json(data);
+}));
+
+router.post('/me/pos-code/reset', authenticateCustomer, ah(async (req, res) => {
+  const code = await withTenant(req.tenant.id, async (db) => {
+    if (!(await codeNeeded(db, req.tenant.id))) throw notFound('Este restaurante no usa código de caja', 'CODE_DISABLED');
+    await resetCustomerCode(db, req.tenant.id, req.customer.id);
+    return customerCode(db, req.tenant.id, req.customer.id);
+  });
+  res.set('Cache-Control', 'no-store').json({ code });
+}));
+
+// Monedero: saldo, movimientos y recargas con tarjeta (Clip del restaurante).
+async function walletView(db, req) {
+  const rid = req.tenant.id;
+  const s = await activeWallet(db, rid);
+  if (!s) return { enabled: false };
+  const c = (await db.query(
+    'SELECT wallet_balance, wallet_loaded, wallet_spent FROM customers WHERE id = $1 AND restaurant_id = $2',
+    [req.customer.id, rid],
+  )).rows[0];
+  const transactions = (await db.query(
+    `SELECT kind, amount, balance_after, reason, created_at FROM wallet_transactions
+      WHERE restaurant_id = $1 AND customer_id = $2 ORDER BY created_at DESC LIMIT 30`,
+    [rid, req.customer.id],
+  )).rows;
+  const pending = (await db.query(
+    `SELECT id, amount, payment_url, created_at FROM clip_checkouts
+      WHERE restaurant_id = $1 AND customer_id = $2 AND purpose = 'recarga' AND status = 'pending'
+        AND (expires_at IS NULL OR expires_at > now()) AND created_at > now() - interval '1 day'
+      ORDER BY created_at DESC LIMIT 3`,
+    [rid, req.customer.id],
+  )).rows;
+  const clip = onlinePaymentAvailable(await getPaymentSettings(db, rid));
+  return {
+    enabled: true,
+    settings: {
+      topups_available: s.topups_enabled && clip,
+      min_topup: s.min_topup,
+      max_topup: s.max_topup,
+      suggested_amounts: s.suggested_amounts,
+      max_balance: s.max_balance,
+      web_enabled: s.web_enabled,
+    },
+    balance: Number(c.wallet_balance),
+    loaded: Number(c.wallet_loaded),
+    spent: Number(c.wallet_spent),
+    pending_topups: pending,
+    transactions,
+  };
+}
+
+router.get('/me/wallet', authenticateCustomer, ah(async (req, res) => {
+  res.set('Cache-Control', 'no-store').json(await withTenant(req.tenant.id, (db) => walletView(db, req)));
+}));
+
+router.post('/me/wallet/topup', authenticateCustomer, orderLimiter, ah(async (req, res) => {
+  const rid = req.tenant.id;
+  const creds = await loadRestaurantClipCredentials(rid);
+  const payment = await withTenant(rid, async (db) => {
+    const s = await activeWallet(db, rid);
+    if (!s) throw notFound('Este restaurante no tiene monedero', 'WALLET_DISABLED');
+    if (!s.topups_enabled || !onlinePaymentAvailable(await getPaymentSettings(db, rid))) {
+      throw conflict('Las recargas en línea no están disponibles', 'TOPUPS_UNAVAILABLE');
+    }
+    const c = (await db.query('SELECT id, wallet_balance, active FROM customers WHERE id = $1 AND restaurant_id = $2 FOR UPDATE',
+      [req.customer.id, rid])).rows[0];
+    if (!c?.active) throw notFound('Cuenta no encontrada', 'CUSTOMER_NOT_FOUND');
+    const amount = checkTopupAmount(s, (req.body || {}).amount, c.wallet_balance);
+    return createTopupCheckout(db, req.tenant, c, amount, creds);
+  });
+  res.status(201).json({ payment });
+}));
+
+// Al volver de Clip: se concilia con Clip (no se cree en la URL de regreso).
+router.post('/me/wallet/verify', authenticateCustomer, ah(async (req, res) => {
+  await reconcileCustomerTopups(req.tenant.id, req.customer.id);
+  res.set('Cache-Control', 'no-store').json(await withTenant(req.tenant.id, (db) => walletView(db, req)));
+}));
+
 router.post('/me/addresses', authenticateCustomer, ah(async (req, res) => {
   const f = addressFields(req.body || {}, true);
   const address = await withTenant(req.tenant.id, async (db) => {
@@ -413,7 +519,11 @@ async function prepareOrder(db, req, input, mods) {
     taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee,
   });
   const clipAvailable = onlinePaymentAvailable(await getPaymentSettings(db, rid));
-  const provider = getPaymentProvider(input.payment.provider || DEFAULT_PROVIDER, { clipAvailable });
+  const walletAvailable = input.payment.provider === 'monedero' && await walletPayAvailable(db, rid);
+  const provider = getPaymentProvider(input.payment.provider || DEFAULT_PROVIDER, { clipAvailable, walletAvailable });
+  if (provider.needsCustomer && !req.customer) {
+    throw badRequest('Inicia sesión para pagar con tu monedero', 'LOGIN_REQUIRED');
+  }
   const payment = provider.validate(input.payment, { total: totals.total });
   return { settings, branch, lines, totals, pos, provider, payment, address, reference };
 }
@@ -489,7 +599,9 @@ router.post('/orders', orderLimiter, optionalCustomer, ah(async (req, res) => {
       );
     }
     const totals = await loadOrder(db, rid, order.id);
-    const next = await p.provider.start({ db, restaurantId: rid, tenant: req.tenant, order: totals, creds });
+    const next = await p.provider.start({
+      db, restaurantId: rid, tenant: req.tenant, order: totals, creds, customer: req.customer,
+    });
     const full = await loadOrder(db, rid, order.id);
     return { order: customerOrderView(full, p.branch), payment: next };
   });
@@ -554,8 +666,9 @@ router.post('/track/:token/cancel', ah(async (req, res) => {
     if (o.online_status !== 'pendiente' || !['abierta', 'enviada', 'lista'].includes(o.status)) {
       throw badRequest('El restaurante ya esta preparando tu pedido: llama a la sucursal para cancelarlo', 'CANNOT_CANCEL');
     }
-    // Ya pagado en linea: cancelarlo implica un reembolso, lo hace la sucursal.
-    if (o.online_payment_status === 'pagado') {
+    // Pagado con monedero: se cancela y el dinero regresa al monedero.
+    // Pagado con Clip: cancelarlo implica un reembolso, lo hace la sucursal.
+    if (o.online_payment_status === 'pagado' && o.payment_provider !== 'monedero') {
       throw badRequest('Tu pedido ya esta pagado: llama a la sucursal para cancelarlo y gestionar tu reembolso', 'CANNOT_CANCEL');
     }
     await db.query(
@@ -569,6 +682,7 @@ router.post('/track/:token/cancel', ah(async (req, res) => {
         WHERE order_id = $1 AND restaurant_id = $2 AND status = 'pending'`,
       [o.id, req.tenant.id],
     );
+    await refundOrderWallet(db, req.tenant.id, o, { reason: `Pedido #${o.folio} cancelado por ti` });
     return (await customerViews(db, req.tenant.id, [await findByToken(db, req.tenant.id, req.params.token)]))[0];
   });
   res.json({ order });

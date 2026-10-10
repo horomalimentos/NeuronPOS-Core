@@ -112,8 +112,8 @@ export default function App() {
               <Route path="reportes" element={<ReportsPage />} />
             </Route>
           </Route>
-          {/* Clientes y lealtad (modulo lealtad) */}
-          <Route element={<ModuleGate code="lealtad" name="Clientes y lealtad" />}>
+          {/* Clientes: modulos lealtad y monedero */}
+          <Route element={<ModuleGate code={['lealtad', 'monedero']} name="Clientes y lealtad" />}>
             <Route path="clientes" element={<CustomersPage />} />
           </Route>
           {/* Inventario y compras (modulo inventario) */}

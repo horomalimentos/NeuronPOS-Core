@@ -33,6 +33,7 @@ export const METHOD_KIND_LABEL: Record<MethodKind, string> = {
   otro: 'Otro',
   en_linea: 'En línea (Clip)',
   puntos: 'Puntos de lealtad',
+  monedero: 'Monedero del cliente',
 };
 
 /** Tipos que se pueden elegir al crear o editar un método (el de Clip lo pone el sistema). */

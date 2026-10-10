@@ -13,6 +13,9 @@ export interface LoyaltyCustomer {
   points_redeemed: number;
   points_value: number;
   code_locked: boolean;
+  wallet_balance: number;
+  wallet_loaded: number;
+  wallet_spent: number;
   orders: number;
   spent: number;
   last_order_at: string | null;
@@ -42,7 +45,30 @@ export interface CustomerOrder {
   total: string; created_at: string; paid_at: string | null; points_earned: number | null; points_redeemed: number | null;
 }
 
-export interface CustomerDetail { customer: LoyaltyCustomer; orders: CustomerOrder[]; transactions: LoyaltyTransaction[] }
+export interface WalletSettings {
+  topups_enabled: boolean;
+  min_topup: number;
+  max_topup: number;
+  suggested_amounts: number[];
+  max_balance: number;
+  web_enabled: boolean;
+  require_code: boolean;
+}
+
+export type WalletKind = 'topup' | 'purchase' | 'refund' | 'adjust';
+
+export interface WalletTransaction {
+  id: string; kind: WalletKind; amount: string; balance_after: string; order_id: string | null;
+  reason: string | null; created_at: string; created_by_name: string | null;
+}
+
+export const WALLET_KIND_LABEL: Record<WalletKind, string> = {
+  topup: 'Recarga', purchase: 'Pago', refund: 'Devolución', adjust: 'Ajuste',
+};
+
+export interface CustomerDetail {
+  customer: LoyaltyCustomer; orders: CustomerOrder[]; transactions: LoyaltyTransaction[]; wallet_transactions: WalletTransaction[];
+}
 
 export const KIND_LABEL: Record<LoyaltyKind, string> = {
   earn: 'Compra', redeem: 'Canje', reverse: 'Devolución', adjust: 'Ajuste',

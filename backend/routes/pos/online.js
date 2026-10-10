@@ -10,6 +10,7 @@ import { earnForOrder } from '../../services/loyalty.js';
 import { requireRole } from '../../middleware/auth.js';
 import { acceptOnlineOrder, getOnlineSettings } from '../../services/online.js';
 import { toCents } from '../../services/posMath.js';
+import { refundOrderWallet } from '../../services/wallet.js';
 import { HttpError, ah, badRequest, oneOf, str } from '../../utils/http.js';
 import { ROLES, int, requireBranch } from './common.js';
 import { assertActive, loadItems, loadOrder, lockOrder } from './orders.js';
@@ -89,13 +90,15 @@ router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async
     if (o.online_status !== 'pendiente') {
       throw badRequest('El pedido ya fue aceptado: cancelalo desde la orden si es necesario', 'ALREADY_ACCEPTED');
     }
-    // Si ya estaba pagado en linea, el reembolso se hace desde el panel de Clip.
+    // Si ya estaba pagado con Clip, el reembolso se hace desde el panel de
+    // Clip; lo pagado con monedero regresa solo al monedero.
     await db.query(
       `UPDATE orders SET status = 'cancelada', online_status = 'rechazada', cancelled_at = now(), cancelled_by = $3,
               cancel_reason = $4, updated_at = now()
         WHERE id = $1 AND restaurant_id = $2`,
       [o.id, req.tenant.id, req.user.id, reason],
     );
+    await refundOrderWallet(db, req.tenant.id, o, { reason: `Pedido #${o.folio} rechazado`, userId: req.user.id });
     return loadOrder(db, req.tenant.id, o.id);
   });
   res.json({ order });

@@ -1,4 +1,4 @@
-import { Gift, KeyRound, Plus, Search, Settings2, Users } from 'lucide-react';
+import { Gift, KeyRound, Plus, Search, Settings2, Users, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -7,24 +7,36 @@ import { formatDateTime } from '../pos/lib';
 import { Stat } from '../pos/ReportsPage';
 import { canManage, useAdmin } from '../restaurant/context';
 import CustomerPicker from './CustomerPicker';
-import { KIND_LABEL, fmtPoints, type CustomerDetail, type LoyaltyCustomer, type LoyaltySettings } from './types';
+import {
+  KIND_LABEL, WALLET_KIND_LABEL, fmtPoints, type CustomerDetail, type LoyaltyCustomer, type LoyaltySettings, type WalletSettings,
+} from './types';
 
 interface Stats {
   customers: number; with_account: number; new_this_month: number; points_outstanding: number; points_outstanding_value: number;
   last_30_days: { earned: number; redeemed: number; redeemed_amount: number };
 }
 
+interface WalletStats { outstanding: number; with_balance: number; last_30_days: { loaded: number; spent: number; refunded: number } }
+
 const SORTS = [
-  ['recientes', 'Recientes'], ['compras', 'Más compras'], ['puntos', 'Más puntos'], ['ultima', 'Última compra'], ['nombre', 'Nombre'],
+  ['recientes', 'Recientes'], ['compras', 'Más compras'], ['puntos', 'Más puntos'], ['monedero', 'Más saldo'],
+  ['ultima', 'Última compra'], ['nombre', 'Nombre'],
 ] as const;
 
-/** Clientes del restaurante (fichas, historial y puntos) y ajustes del programa de lealtad. */
+/**
+ * Clientes del restaurante (fichas, historial, puntos y monedero) y ajustes
+ * del programa de lealtad y del monedero. Cada parte aparece con su modulo.
+ */
 export default function CustomersPage() {
   const { me } = useAdmin();
   const manager = canManage(me.user.role);
-  const [tab, setTab] = useState<'clientes' | 'programa'>('clientes');
+  const has = (code: string) => me.modules.some((m) => m.code === code && m.enabled);
+  const loyalty = has('lealtad');
+  const wallet = has('monedero');
+  const [tab, setTab] = useState<'clientes' | 'programa' | 'monedero'>('clientes');
   const [list, setList] = useState<LoyaltyCustomer[] | null>(null);
   const [stats, setStats] = useState<Stats | null>(null);
+  const [wstats, setWstats] = useState<WalletStats | null>(null);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState('recientes');
   const [error, setError] = useState('');
@@ -34,8 +46,12 @@ export default function CustomersPage() {
   const load = useCallback(() => {
     api<{ customers: LoyaltyCustomer[] }>(`/loyalty/customers?limit=200&sort=${sort}&q=${encodeURIComponent(q.trim())}`)
       .then((r) => setList(r.customers)).catch((e) => setError(errorMessage(e)));
-    if (manager) api<{ stats: Stats }>('/loyalty/stats').then((r) => setStats(r.stats)).catch(() => {});
-  }, [q, sort, manager]);
+    if (manager && loyalty) api<{ stats: Stats }>('/loyalty/stats').then((r) => setStats(r.stats)).catch(() => {});
+    if (manager && wallet) api<{ stats: WalletStats }>('/wallet/stats').then((r) => setWstats(r.stats)).catch(() => {});
+  }, [q, sort, manager, loyalty, wallet]);
+  const tabs = [
+    ['clientes', 'Clientes', Users, true], ['programa', 'Programa de puntos', Settings2, loyalty], ['monedero', 'Monedero', Wallet, wallet],
+  ] as const;
   useEffect(() => {
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
@@ -43,11 +59,11 @@ export default function CustomersPage() {
 
   return (
     <>
-      <PageHeader title="Clientes" subtitle="Quién te compra, cuánto y sus puntos."
+      <PageHeader title="Clientes" subtitle={`Quién te compra, cuánto${loyalty ? ', sus puntos' : ''}${wallet ? ' y su monedero' : ''}.`}
         actions={tab === 'clientes' && <Button onClick={() => setAdding(true)}><Plus className="h-4 w-4" /> Nuevo cliente</Button>} />
       {manager && (
         <div className="mb-6 flex gap-1 border-b border-gray-800">
-          {([['clientes', 'Clientes', Users], ['programa', 'Programa de puntos', Settings2]] as const).map(([k, label, Icon]) => (
+          {tabs.filter((t) => t[3]).map(([k, label, Icon]) => (
             <button key={k} type="button" onClick={() => setTab(k)}
               className={`-mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-sm ${tab === k ? 'border-brand text-white' : 'border-transparent text-gray-400 hover:text-white'}`}>
               <Icon className="h-4 w-4" /> {label}
@@ -57,7 +73,7 @@ export default function CustomersPage() {
       )}
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
 
-      {tab === 'programa' ? <ProgramSettings /> : (
+      {tab === 'programa' ? <ProgramSettings /> : tab === 'monedero' ? <WalletSettingsForm /> : (
         <>
           {stats && (
             <div className="mb-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -67,6 +83,14 @@ export default function CustomersPage() {
               <Stat label="Canjeado (30 días)" value={formatMXN(stats.last_30_days.redeemed_amount)} extra={<span className="text-xs text-gray-500">{fmtPoints(stats.last_30_days.redeemed)} puntos</span>} />
             </div>
           )}
+          {wstats && (
+            <div className="mb-6 grid gap-3 sm:grid-cols-3">
+              <Stat label="Saldo en monederos" value={formatMXN(wstats.outstanding)} extra={<span className="text-xs text-gray-500">{wstats.with_balance} clientes con saldo · ya cobrado</span>} />
+              <Stat label="Recargado (30 días)" value={formatMXN(wstats.last_30_days.loaded)} />
+              <Stat label="Pagado con monedero (30 días)" value={formatMXN(wstats.last_30_days.spent)}
+                extra={wstats.last_30_days.refunded > 0 ? <span className="text-xs text-gray-500">{formatMXN(wstats.last_30_days.refunded)} devuelto</span> : undefined} />
+            </div>
+          )}
           <section className="card overflow-hidden">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-800 p-3">
               <label className="relative min-w-[12rem] flex-1">
@@ -74,7 +98,7 @@ export default function CustomersPage() {
                 <input className="input pl-9" placeholder="Nombre, teléfono o correo" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar cliente" />
               </label>
               <select className="input w-auto" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Ordenar">
-                {SORTS.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                {SORTS.filter(([k]) => (k !== 'puntos' || loyalty) && (k !== 'monedero' || wallet)).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
               </select>
             </div>
             {!list ? <Spinner /> : list.length === 0 ? (
@@ -88,7 +112,8 @@ export default function CustomersPage() {
                       <th className="px-4 py-2 text-right font-medium">Compras</th>
                       <th className="px-4 py-2 text-right font-medium">Gastado</th>
                       <th className="px-4 py-2 text-right font-medium">Última</th>
-                      <th className="px-4 py-2 text-right font-medium">Puntos</th>
+                      {loyalty && <th className="px-4 py-2 text-right font-medium">Puntos</th>}
+                      {wallet && <th className="px-4 py-2 text-right font-medium">Monedero</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-800/70">
@@ -102,7 +127,8 @@ export default function CustomersPage() {
                         <td className="px-4 py-2 text-right tabular-nums">{c.orders}</td>
                         <td className="px-4 py-2 text-right tabular-nums">{formatMXN(c.spent)}</td>
                         <td className="px-4 py-2 text-right text-gray-400">{c.last_order_at ? formatDate(c.last_order_at) : '—'}</td>
-                        <td className="px-4 py-2 text-right tabular-nums">{fmtPoints(c.points_balance)}</td>
+                        {loyalty && <td className="px-4 py-2 text-right tabular-nums">{fmtPoints(c.points_balance)}</td>}
+                        {wallet && <td className="px-4 py-2 text-right tabular-nums">{c.wallet_balance > 0 ? formatMXN(c.wallet_balance) : '—'}</td>}
                       </tr>
                     ))}
                   </tbody>
@@ -113,16 +139,19 @@ export default function CustomersPage() {
         </>
       )}
       {adding && <CustomerPicker onClose={() => setAdding(false)} onPick={(c) => { setAdding(false); load(); setOpenId(c.id); }} />}
-      {openId && <CustomerModal id={openId} manager={manager} onClose={() => setOpenId(null)} onChanged={load} />}
+      {openId && <CustomerModal id={openId} manager={manager} loyalty={loyalty} wallet={wallet} onClose={() => setOpenId(null)} onChanged={load} />}
     </>
   );
 }
 
-function CustomerModal({ id, manager, onClose, onChanged }: { id: string; manager: boolean; onClose: () => void; onChanged: () => void }) {
+function CustomerModal({ id, manager, loyalty, wallet, onClose, onChanged }: {
+  id: string; manager: boolean; loyalty: boolean; wallet: boolean; onClose: () => void; onChanged: () => void;
+}) {
   const [d, setD] = useState<CustomerDetail | null>(null);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(false);
   const [adjust, setAdjust] = useState({ points: '', reason: '' });
+  const [wadjust, setWadjust] = useState({ amount: '', reason: '' });
   const [form, setForm] = useState({ name: '', phone: '', email: '', notes: '', active: true });
   const [busy, setBusy] = useState(false);
 
@@ -154,6 +183,15 @@ function CustomerModal({ id, manager, onClose, onChanged }: { id: string; manage
     if (await run(() => api(`/loyalty/customers/${id}/points`, { method: 'POST', body: { points: sign * n, reason: adjust.reason.trim() } }))) {
       setAdjust({ points: '', reason: '' });
     }
+  };
+  const doWalletAdjust = async (sign: 1 | -1) => {
+    const n = Math.round(Number(wadjust.amount) * 100) / 100;
+    if (!(n > 0) || !wadjust.reason.trim()) { setError('Escribe el monto y el motivo'); return; }
+    const ok = await run(async () => {
+      await api(`/wallet/customers/${id}/adjust`, { method: 'POST', body: { amount: sign * n, reason: wadjust.reason.trim() } });
+      return api<CustomerDetail>(`/loyalty/customers/${id}`);
+    });
+    if (ok) setWadjust({ amount: '', reason: '' });
   };
 
   if (!d) return <Modal title="Cliente" onClose={onClose}>{error ? <Alert>{error}</Alert> : <Spinner />}</Modal>;
@@ -191,12 +229,26 @@ function CustomerModal({ id, manager, onClose, onChanged }: { id: string; manage
         )}
 
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {[['Compras', String(c.orders)], ['Gastado', formatMXN(c.spent)], ['Puntos', fmtPoints(c.points_balance)], ['Valen', formatMXN(c.points_value)]].map(([k, v]) => (
+          {([['Compras', String(c.orders)], ['Gastado', formatMXN(c.spent)],
+            ...(loyalty ? [['Puntos', fmtPoints(c.points_balance)], ['Valen', formatMXN(c.points_value)]] : []),
+            ...(wallet ? [['Monedero', formatMXN(c.wallet_balance)], ['Recargado', formatMXN(c.wallet_loaded)]] : []),
+          ] as [string, string][]).map(([k, v]) => (
             <div key={k} className="rounded-xl bg-gray-800/70 p-3"><p className="text-xs text-gray-400">{k}</p><p className="text-lg font-semibold tabular-nums text-white">{v}</p></div>
           ))}
         </div>
 
-        {manager && (
+        {manager && wallet && (
+          <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-800 p-3">
+            <label className="block"><span className="label">Ajustar monedero ($)</span>
+              <input className="input w-28" type="number" min="0.01" step="0.01" value={wadjust.amount} onChange={(e) => setWadjust({ ...wadjust, amount: e.target.value })} /></label>
+            <label className="block min-w-[10rem] flex-1"><span className="label">Motivo</span>
+              <input className="input" maxLength={200} value={wadjust.reason} onChange={(e) => setWadjust({ ...wadjust, reason: e.target.value })} placeholder="Compensación, corrección…" /></label>
+            <Button variant="secondary" onClick={() => doWalletAdjust(1)} disabled={busy}>Abonar</Button>
+            <Button variant="secondary" onClick={() => doWalletAdjust(-1)} disabled={busy}>Descontar</Button>
+          </div>
+        )}
+
+        {manager && loyalty && (
           <div className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-800 p-3">
             <label className="block"><span className="label">Ajustar puntos</span>
               <input className="input w-24" type="number" min="1" step="1" value={adjust.points} onChange={(e) => setAdjust({ ...adjust, points: e.target.value })} /></label>
@@ -222,7 +274,25 @@ function CustomerModal({ id, manager, onClose, onChanged }: { id: string; manage
             </div>
           )}
         </section>
-        <section>
+        {wallet && (
+          <section>
+            <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-gray-500">Movimientos del monedero</h3>
+            {d.wallet_transactions.length === 0 ? <p className="text-sm text-gray-500">Sin movimientos.</p> : (
+              <div className="max-h-56 divide-y divide-gray-800/70 overflow-y-auto rounded-xl border border-gray-800 text-sm">
+                {d.wallet_transactions.map((t) => (
+                  <div key={t.id} className="flex justify-between gap-2 px-3 py-2">
+                    <span className="text-gray-200">{WALLET_KIND_LABEL[t.kind]}
+                      <span className="block text-xs text-gray-500">{[formatDateTime(t.created_at), t.reason, t.created_by_name].filter(Boolean).join(' · ')}</span></span>
+                    <span className="text-right tabular-nums">
+                      <span className={Number(t.amount) < 0 ? 'text-red-300' : 'text-emerald-300'}>{Number(t.amount) > 0 ? '+' : '−'}{formatMXN(Math.abs(Number(t.amount)))}</span>
+                      <span className="block text-xs text-gray-500">queda {formatMXN(t.balance_after)}</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+        {loyalty && <section>
           <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-gray-500">Movimientos de puntos</h3>
           {d.transactions.length === 0 ? <p className="text-sm text-gray-500">Sin movimientos.</p> : (
             <div className="max-h-56 divide-y divide-gray-800/70 overflow-y-auto rounded-xl border border-gray-800 text-sm">
@@ -237,7 +307,7 @@ function CustomerModal({ id, manager, onClose, onChanged }: { id: string; manage
               ))}
             </div>
           )}
-        </section>
+        </section>}
       </div>
     </Modal>
   );
@@ -307,6 +377,75 @@ function ProgramSettings() {
         ))}
         <p className="flex items-start gap-2 text-xs text-gray-500"><KeyRound className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           Si el cliente se equivoca 5 veces el código se bloquea, y él mismo lo renueva desde su cuenta.</p>
+        {error && <Alert>{error}</Alert>}
+        <div className="flex items-center justify-end gap-3">
+          {saved && <span className="text-sm text-emerald-300">Guardado</span>}
+          <Button type="submit" loading={busy}>Guardar</Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function WalletSettingsForm() {
+  const [s, setS] = useState<WalletSettings | null>(null);
+  const [suggested, setSuggested] = useState('');
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const show = (w: WalletSettings) => { setS(w); setSuggested(w.suggested_amounts.join(', ')); };
+  useEffect(() => {
+    api<{ settings: WalletSettings }>('/wallet/settings').then((r) => show(r.settings)).catch((e) => setError(errorMessage(e)));
+  }, []);
+  if (!s) return error ? <Alert>{error}</Alert> : <Spinner />;
+  const set = (patch: Partial<WalletSettings>) => { setS({ ...s, ...patch }); setSaved(false); };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const amounts = suggested.split(/[,\s]+/).filter(Boolean).map(Number);
+      const r = await api<{ settings: WalletSettings }>('/wallet/settings', { method: 'PATCH', body: { ...s, suggested_amounts: amounts } });
+      show(r.settings);
+      setSaved(true);
+    } catch (err) { setError(errorMessage(err)); }
+    setBusy(false);
+  };
+  const toggles: [keyof WalletSettings, string, string][] = [
+    ['topups_enabled', 'Recargas en línea', 'El cliente recarga desde su cuenta del sitio con tarjeta (tu cuenta de Clip de Pedidos en línea).'],
+    ['web_enabled', 'Pagar pedidos en línea con monedero', 'Solo si el saldo cubre todo el pedido.'],
+    ['require_code', 'Pedir el código del cliente en caja', 'El mismo código de 6 dígitos de los puntos; cambia cada 5 minutos.'],
+  ];
+  return (
+    <form onSubmit={save} className="grid gap-6 lg:grid-cols-2">
+      <div className="card space-y-4 p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Recarga mínima ($)">
+            <input className="input" type="number" min="10" step="1" value={s.min_topup} onChange={(e) => set({ min_topup: Number(e.target.value) })} />
+          </Field>
+          <Field label="Recarga máxima ($)">
+            <input className="input" type="number" min="10" step="1" value={s.max_topup} onChange={(e) => set({ max_topup: Number(e.target.value) })} />
+          </Field>
+          <Field label="Saldo máximo por cliente ($)">
+            <input className="input" type="number" min="10" step="1" value={s.max_balance} onChange={(e) => set({ max_balance: Number(e.target.value) })} />
+          </Field>
+          <Field label="Montos sugeridos" hint="Separados por coma">
+            <input className="input" value={suggested} onChange={(e) => { setSuggested(e.target.value); setSaved(false); }} placeholder="100, 200, 500" />
+          </Field>
+        </div>
+        <Alert kind="success">
+          <Wallet className="mr-1 inline h-4 w-4" />
+          El dinero de las recargas llega a tu cuenta de Clip al momento. Lo que pagan con monedero sale aparte en el corte y no se cuenta en caja.
+        </Alert>
+      </div>
+      <div className="card space-y-4 p-5">
+        {toggles.map(([k, label, hint]) => (
+          <label key={k} className="flex items-center justify-between gap-3 text-sm text-gray-300">
+            <span>{label}<span className="block text-xs text-gray-500">{hint}</span></span>
+            <Toggle checked={Boolean(s[k])} onChange={(v) => set({ [k]: v } as Partial<WalletSettings>)} label={label} />
+          </label>
+        ))}
+        <p className="text-xs text-gray-500">Si rechazas un pedido en línea pagado con monedero, o el cliente lo cancela antes de que lo aceptes, el dinero regresa solo a su monedero.</p>
         {error && <Alert>{error}</Alert>}
         <div className="flex items-center justify-end gap-3">
           {saved && <span className="text-sm text-emerald-300">Guardado</span>}

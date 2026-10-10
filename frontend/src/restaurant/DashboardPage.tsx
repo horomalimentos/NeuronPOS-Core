@@ -17,6 +17,7 @@ export default function DashboardPage() {
     reportes: { to: '/admin/reportes', label: 'Ver reportes' },
     inventario: { to: '/admin/inventario', label: 'Abrir inventario' },
     lealtad: { to: '/admin/clientes', label: 'Ver clientes' },
+    monedero: { to: '/admin/clientes', label: 'Ver monederos' },
     rh: manager ? { to: '/admin/rh', label: 'Abrir recursos humanos' } : { to: '/admin/mi-nomina', label: 'Ver mi nómina' },
     empleado_mes: manager ? { to: '/admin/empleado-del-mes', label: 'Ver ranking del mes' } : { to: '/admin/muro', label: 'Ver el muro' },
   };

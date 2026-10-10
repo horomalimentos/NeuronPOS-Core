@@ -1,4 +1,4 @@
-import { ArrowLeft, Banknote, CreditCard, Globe, Loader2, MapPin, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
+import { ArrowLeft, Banknote, CreditCard, Globe, Loader2, MapPin, PiggyBank, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { errorMessage, portalApi } from '../lib/api';
@@ -34,7 +34,8 @@ export default function CheckoutPage() {
   const [reference, setReference] = useState('');
   const [saveAddress, setSaveAddress] = useState(true);
   const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
-  const [provider, setProvider] = useState<'contra_entrega' | 'clip'>('contra_entrega');
+  const [provider, setProvider] = useState<'contra_entrega' | 'clip' | 'monedero'>('contra_entrega');
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [payWith, setPayWith] = useState('');
   const [notes, setNotes] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -65,7 +66,18 @@ export default function CheckoutPage() {
 
   const branch = config?.branches.find((b) => b.id === cart.branch_id) || null;
   const clipOption = config?.payment_options.find((o) => o.code === 'clip') || null;
+  const walletOption = config?.payment_options.find((o) => o.code === 'monedero') || null;
   const payOnline = provider === 'clip' && Boolean(clipOption);
+  const payWallet = provider === 'monedero' && Boolean(walletOption);
+  const walletShort = payWallet && quote !== null && (walletBalance ?? 0) < quote.total;
+
+  // Saldo del monedero (si el restaurante lo ofrece y hay sesion).
+  const walletOffered = Boolean(walletOption);
+  useEffect(() => {
+    if (!customer || !walletOffered) { setWalletBalance(null); return; }
+    portalApi<{ enabled: boolean; balance?: number }>('/portal/me/wallet', { noRedirect: true })
+      .then((r) => setWalletBalance(r.enabled ? r.balance ?? 0 : null)).catch(() => setWalletBalance(null));
+  }, [customer, walletOffered]);
   const deliveryOk = Boolean(config?.settings.allow_delivery && branch?.delivery_available);
   const type: OrderType = orderType === 'domicilio' && !deliveryOk ? 'para_llevar' : orderType;
   const items = useMemo(() => cart.lines.map((l) => ({
@@ -123,7 +135,7 @@ export default function CheckoutPage() {
           notes: notes.trim() || null,
           payment: payOnline
             ? { provider: 'clip' }
-            : { provider: 'contra_entrega', method, pay_with: method === 'efectivo' && payWith ? Number(payWith) : null },
+            : payWallet ? { provider: 'monedero' } : { provider: 'contra_entrega', method, pay_with: method === 'efectivo' && payWith ? Number(payWith) : null },
         },
       });
       cartStore.clear();
@@ -229,20 +241,42 @@ export default function CheckoutPage() {
           )}
 
           <section className="card-light p-5">
-            {clipOption && (
+            {(clipOption || walletOption) && (
               <>
                 <h2 className="mb-3 font-bold">¿Cómo quieres pagar?</h2>
                 <div className="mb-4 flex flex-col gap-3 sm:flex-row">
-                  <button type="button" className={choice(!payOnline)} onClick={() => setProvider('contra_entrega')}>
+                  <button type="button" className={choice(!payOnline && !payWallet)} onClick={() => setProvider('contra_entrega')}>
                     <Wallet className="h-5 w-5" /> Al {type === 'domicilio' ? 'recibir' : 'recoger'}
                   </button>
-                  <button type="button" className={choice(payOnline)} onClick={() => setProvider('clip')}>
-                    <Globe className="h-5 w-5" /> {clipOption.name}
-                  </button>
+                  {clipOption && (
+                    <button type="button" className={choice(payOnline)} onClick={() => setProvider('clip')}>
+                      <Globe className="h-5 w-5" /> {clipOption.name}
+                    </button>
+                  )}
+                  {walletOption && (
+                    <button type="button" className={choice(payWallet)} onClick={() => setProvider('monedero')}>
+                      <PiggyBank className="h-5 w-5" /> Mi monedero{walletBalance !== null && ` (${formatMXN(walletBalance)})`}
+                    </button>
+                  )}
                 </div>
               </>
             )}
-            {payOnline ? (
+            {payWallet ? (
+              !customer ? (
+                <p className="text-sm text-gray-600">
+                  <Link to="/cuenta/entrar?volver=/pedir/checkout" className="font-semibold text-brand underline">Inicia sesión</Link> para pagar con tu monedero.
+                </p>
+              ) : walletShort ? (
+                <p className="text-sm text-red-600">
+                  Tu saldo de {formatMXN(walletBalance ?? 0)} no cubre el total. <Link to="/cuenta" className="font-semibold underline">Recarga tu monedero</Link> o elige otra forma de pago.
+                </p>
+              ) : (
+                <p className="text-sm text-gray-600">
+                  Se paga con tu saldo y el pedido llega al restaurante ya pagado.
+                  {quote && walletBalance !== null && ` Te quedarán ${formatMXN(walletBalance - quote.total)}.`}
+                </p>
+              )
+            ) : payOnline ? (
               <p className="text-sm text-gray-600">
                 Te llevaremos a la página segura de Clip para pagar con tarjeta de crédito o débito. Tu pedido se envía al restaurante en cuanto se confirme el pago.
               </p>
@@ -256,7 +290,7 @@ export default function CheckoutPage() {
                 </div>
               </>
             )}
-            {!payOnline && method === 'efectivo' && (
+            {!payOnline && !payWallet && method === 'efectivo' && (
               <label className="mt-3 block"><span className="label-light">¿Con cuánto pagas? (opcional, para llevar cambio)</span>
                 <input className="input-light" type="number" min={0} step="0.01" inputMode="decimal" value={payWith} onChange={(e) => setPayWith(e.target.value)} />
               </label>
@@ -283,8 +317,8 @@ export default function CheckoutPage() {
               ) : quoting ? <p className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</p> : null}
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
-              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available}>
-                {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
+              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort))}>
+                {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : payWallet ? 'Pagar con monedero' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
               </button>
             </div>
           </div>

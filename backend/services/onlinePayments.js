@@ -8,15 +8,19 @@
 //   de Clip; el webhook o el reconciliador registran el pago
 //   (services/restaurantPayments.js). Solo se ofrece si el restaurante
 //   configuro sus credenciales y encendio "pago en linea".
+// - "monedero": todo el pedido con el saldo del monedero del cliente (modulo
+//   'monedero'; necesita sesion). Se cobra al crear el pedido, que nace pagado.
 //
 // Cada proveedor tiene la misma forma:
 //   {
 //     code, name, online (true = se paga antes de preparar),
 //     validate(input, { total }) -> { payment_preference, pay_with },
-//     async start({ db, tenant, order, creds }) -> { action: 'none' | 'redirect', url? },
+//     async start({ db, tenant, order, creds, customer }) -> { action: 'none' | 'redirect', url? },
 //   }
 import { HttpError } from '../utils/http.js';
+import { acceptOnlineOrder, getOnlineSettings } from './online.js';
 import { createOrderCheckout } from './restaurantPayments.js';
+import { payWebOrderWithWallet } from './wallet.js';
 
 const invalid = (msg) => new HttpError(400, msg, 'INVALID_PAYMENT');
 
@@ -58,17 +62,41 @@ const clipOnline = {
   },
 };
 
-export const ONLINE_PROVIDERS = { [payOnDelivery.code]: payOnDelivery, [clipOnline.code]: clipOnline };
+const walletPay = {
+  code: 'monedero',
+  name: 'Pagar con mi monedero',
+  online: true,
+  needsCustomer: true,
+  methods: [{ code: 'monedero', name: 'Saldo del monedero' }],
+  validate() {
+    return { payment_preference: null, pay_with: null };
+  },
+  async start({ db, tenant, order, customer }) {
+    await payWebOrderWithWallet(db, tenant.id, order, customer.id);
+    const settings = await getOnlineSettings(db, tenant.id);
+    if (settings.auto_accept) await acceptOnlineOrder(db, tenant.id, order.id, { prepMinutes: settings.prep_time_minutes });
+    return { action: 'none', paid: true };
+  },
+};
+
+export const ONLINE_PROVIDERS = {
+  [payOnDelivery.code]: payOnDelivery, [clipOnline.code]: clipOnline, [walletPay.code]: walletPay,
+};
 export const DEFAULT_PROVIDER = payOnDelivery.code;
 
-/** clipAvailable: el restaurante tiene Clip configurado y "pago en linea" encendido. */
-export function getPaymentProvider(code = DEFAULT_PROVIDER, { clipAvailable = false } = {}) {
+/**
+ * clipAvailable: el restaurante tiene Clip configurado y "pago en linea"
+ * encendido. walletAvailable: modulo monedero vigente con pago en linea.
+ */
+export function getPaymentProvider(code = DEFAULT_PROVIDER, { clipAvailable = false, walletAvailable = false } = {}) {
   const p = ONLINE_PROVIDERS[code];
-  if (!p || (p.code === 'clip' && !clipAvailable)) throw invalid('Forma de pago no disponible');
+  if (!p || (p.code === 'clip' && !clipAvailable) || (p.code === 'monedero' && !walletAvailable)) {
+    throw invalid('Forma de pago no disponible');
+  }
   return p;
 }
 
 /** Lo que el portal muestra en el checkout. */
-export const publicPaymentOptions = ({ clipAvailable = false } = {}) => Object.values(ONLINE_PROVIDERS)
-  .filter((p) => p.code !== 'clip' || clipAvailable)
-  .map((p) => ({ code: p.code, name: p.name, online: p.online, methods: p.methods }));
+export const publicPaymentOptions = ({ clipAvailable = false, walletAvailable = false } = {}) => Object.values(ONLINE_PROVIDERS)
+  .filter((p) => (p.code !== 'clip' || clipAvailable) && (p.code !== 'monedero' || walletAvailable))
+  .map((p) => ({ code: p.code, name: p.name, online: p.online, methods: p.methods, needs_customer: Boolean(p.needsCustomer) }));

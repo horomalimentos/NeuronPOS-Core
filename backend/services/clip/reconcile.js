@@ -5,7 +5,7 @@
 // disparan esta funcion, que pregunta a Clip server-to-server
 // (GET /v2/checkout/{id}) con las credenciales DUENAS del checkout:
 //   - suscripcion -> cuenta de Clip de la plataforma
-//   - pedido      -> cuenta de Clip del restaurante del checkout
+//   - pedido y recarga (monedero) -> cuenta de Clip del restaurante del checkout
 // Valida id, monto y moneda, normaliza el estado y, si esta pagado, aplica el
 // pago una sola vez (applied_at, con la fila bloqueada).
 //
@@ -21,6 +21,7 @@ import { checkoutMismatch, normalizeClipStatus, rawStatusOf } from './status.js'
 const appliers = {
   suscripcion: async () => (await import('../subscriptions.js')).applyInvoiceCheckout,
   pedido: async () => (await import('../restaurantPayments.js')).applyOrderCheckout,
+  recarga: async () => (await import('../wallet.js')).applyTopupCheckout,
 };
 
 const runIn = (checkout) => (checkout.purpose === 'suscripcion'
@@ -43,7 +44,7 @@ export async function findCheckout(scope, checkoutId) {
     )).rows[0] || null);
   }
   return withTenant(scope.restaurantId, async (db) => (await db.query(
-    `SELECT * FROM clip_checkouts WHERE checkout_id = $1 AND restaurant_id = $2 AND purpose = 'pedido'`,
+    `SELECT * FROM clip_checkouts WHERE checkout_id = $1 AND restaurant_id = $2 AND purpose IN ('pedido', 'recarga')`,
     [checkoutId, scope.restaurantId],
   )).rows[0] || null);
 }

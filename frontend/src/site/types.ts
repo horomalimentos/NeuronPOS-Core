@@ -56,11 +56,13 @@ export interface PortalBranch extends PublicBranch {
 }
 
 export interface PaymentOption {
-  code: 'contra_entrega' | 'clip';
+  code: 'contra_entrega' | 'clip' | 'monedero';
   name: string;
   /** true = se paga en linea antes de que el restaurante lo prepare. */
   online: boolean;
-  methods: { code: 'efectivo' | 'tarjeta'; name: string }[];
+  methods: { code: string; name: string }[];
+  /** Pide sesion del cliente (monedero). */
+  needs_customer?: boolean;
 }
 
 /** Lo que regresa POST /portal/orders: a donde mandar al cliente para pagar. */
