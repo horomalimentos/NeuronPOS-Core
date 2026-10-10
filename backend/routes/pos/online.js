@@ -33,6 +33,7 @@ const LIST_SQL = `
          o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.subtotal, o.delivery_fee, o.tax_amount, o.total, o.paid_amount,
          o.payment_preference, o.pay_with, o.payment_provider, o.online_payment_status, o.created_at, o.accepted_at, o.estimated_ready_at,
+         o.scheduled_for, o.sent_at,
          o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason
     FROM orders o`;
 

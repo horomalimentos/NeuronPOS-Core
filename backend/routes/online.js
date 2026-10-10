@@ -31,13 +31,16 @@ async function snapshot(req, db) {
 router.get('/settings', ah(async (req, res) => {
   const data = await withTenant(req.tenant.id, (db) => snapshot(req, db));
   // Para avisar en pantalla si faltan modulos que el portal necesita.
-  const [pos, domicilios, zonas] = await Promise.all(['pos', 'domicilios', 'zonas_entrega'].map((c) => loadModuleRow(req.tenant.id, c)));
+  const [pos, domicilios, zonas, programados] = await Promise.all(
+    ['pos', 'domicilios', 'zonas_entrega', 'pedidos_programados'].map((c) => loadModuleRow(req.tenant.id, c)),
+  );
   res.json({
     ...data,
     modules: {
       pos: !checkModuleAccess(req.tenant, 'pos', pos),
       domicilios: !checkModuleAccess(req.tenant, 'domicilios', domicilios),
       zonas_entrega: !checkModuleAccess(req.tenant, 'zonas_entrega', zonas),
+      pedidos_programados: !checkModuleAccess(req.tenant, 'pedidos_programados', programados),
     },
   });
 }));
@@ -52,6 +55,10 @@ router.patch('/settings', ah(async (req, res) => {
     allow_pickup: bool(body.allow_pickup, 'allow_pickup'),
     allow_delivery: bool(body.allow_delivery, 'allow_delivery'),
     order_email_alerts: bool(body.order_email_alerts, 'order_email_alerts'),
+    // Pedidos programados (modulo 'pedidos_programados').
+    schedule_max_days: int(body.schedule_max_days, { field: 'schedule_max_days', min: 0, max: 14 }),
+    schedule_min_lead_minutes: int(body.schedule_min_lead_minutes, { field: 'schedule_min_lead_minutes', min: 15, max: 1440 }),
+    schedule_kitchen_minutes: int(body.schedule_kitchen_minutes, { field: 'schedule_kitchen_minutes', min: 5, max: 600 }),
   }, 2);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const data = await withTenant(req.tenant.id, async (db) => {

@@ -10,6 +10,7 @@ export function pickBranch(config: PortalConfig, current: string | null) {
 export const STATUS_STYLE: Record<CustomerStatus, string> = {
   esperando_pago: 'bg-violet-100 text-violet-800',
   recibido: 'bg-sky-100 text-sky-800',
+  programado: 'bg-teal-100 text-teal-800',
   preparando: 'bg-amber-100 text-amber-800',
   listo: 'bg-emerald-100 text-emerald-800',
   en_camino: 'bg-indigo-100 text-indigo-800',
@@ -23,6 +24,10 @@ export const isFinal = (s: CustomerStatus) => ['entregado', 'rechazado', 'cancel
 
 export const formatTimeShort = (iso: string | null | undefined) =>
   (iso ? new Date(iso).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' }) : '');
+
+/** "sábado 11 oct, 14:00" */
+export const formatScheduled = (iso: string | null | undefined) =>
+  (iso ? new Date(iso).toLocaleString('es-MX', { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
 export const formatDateTimeShort = (iso: string | null | undefined) =>
   (iso ? new Date(iso).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');

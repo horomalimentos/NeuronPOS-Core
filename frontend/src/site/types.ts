@@ -84,7 +84,11 @@ export interface PaymentStart {
 export interface PortalConfig {
   restaurant: LandingData['restaurant'];
   ordering_available: boolean;
-  settings: { min_order: Money; prep_time_minutes: number; allow_pickup: boolean; allow_delivery: boolean };
+  settings: {
+    min_order: Money; prep_time_minutes: number; allow_pickup: boolean; allow_delivery: boolean;
+    /** Pedidos para mas tarde (modulo pedidos_programados). */
+    scheduling: { max_days: number; min_lead_minutes: number } | null;
+  };
   branches: PortalBranch[];
   payment_options: PaymentOption[];
 }
@@ -137,7 +141,7 @@ export interface Address {
   longitude: string | null;
 }
 
-export type CustomerStatus = 'esperando_pago' | 'recibido' | 'preparando' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
+export type CustomerStatus = 'esperando_pago' | 'recibido' | 'programado' | 'preparando' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
 
 export interface CustomerOrder {
   id: string;
@@ -178,6 +182,7 @@ export interface CustomerOrder {
   created_at: string;
   accepted_at: string | null;
   estimated_ready_at: string | null;
+  scheduled_for: string | null;
   ready_at: string | null;
   dispatched_at: string | null;
   paid_at: string | null;

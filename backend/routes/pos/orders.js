@@ -43,7 +43,8 @@ const ORDER_SELECT = `
          o.cancelled_at, o.cancel_reason, o.created_at, o.updated_at,
          o.source, o.online_status, o.customer_id, o.delivery_fee, o.delivery_reference,
          o.payment_provider, o.payment_preference, o.pay_with, o.accepted_at, o.estimated_ready_at,
-         o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at
+         o.dispatched_at, o.public_token, o.online_payment_status, o.payment_due_at, o.scheduled_for,
+         o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km
     FROM orders o
     LEFT JOIN restaurant_tables t ON t.id = o.table_id AND t.restaurant_id = o.restaurant_id
     LEFT JOIN users u ON u.id = o.created_by AND u.restaurant_id = o.restaurant_id`;

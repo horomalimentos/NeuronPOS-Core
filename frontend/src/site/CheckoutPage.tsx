@@ -1,4 +1,4 @@
-import { ArrowLeft, Banknote, CreditCard, Globe, Loader2, MapPin, PiggyBank, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
+import { ArrowLeft, Banknote, CalendarClock, Clock, CreditCard, Globe, Loader2, MapPin, PiggyBank, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
@@ -12,6 +12,7 @@ import { pickBranch } from './portalLib';
 import type { Address, CustomerOrder, PaymentStart, PortalConfig, Quote } from './types';
 
 type OrderType = 'para_llevar' | 'domicilio';
+interface ScheduleDay { date: string; label: string; times: { at: string; label: string }[] }
 
 /**
  * Checkout: sucursal, recoger o domicilio, datos de contacto (cuenta o
@@ -37,6 +38,11 @@ export default function CheckoutPage() {
   // Pin del domicilio (zonas de entrega); null = el de la direccion guardada.
   const [location, setLocation] = useState<Point | null>(null);
   const [moveSaved, setMoveSaved] = useState(false);
+  // Para mas tarde (modulo pedidos_programados): horarios del servidor.
+  const [when, setWhen] = useState<'ahora' | 'despues'>('ahora');
+  const [slots, setSlots] = useState<ScheduleDay[] | null>(null);
+  const [slotDay, setSlotDay] = useState('');
+  const [slotAt, setSlotAt] = useState('');
   const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
   const [provider, setProvider] = useState<'contra_entrega' | 'clip' | 'monedero'>('contra_entrega');
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -84,6 +90,22 @@ export default function CheckoutPage() {
   }, [customer, walletOffered]);
   const deliveryOk = Boolean(config?.settings.allow_delivery && branch?.delivery_available);
   const type: OrderType = orderType === 'domicilio' && !deliveryOk ? 'para_llevar' : orderType;
+  const scheduling = config?.settings.scheduling ?? null;
+  const branchId = branch?.id;
+  const branchOpen = Boolean(branch?.open_now);
+  useEffect(() => {
+    if (!scheduling || !branchId) { setSlots(null); return; }
+    portalApi<{ days: ScheduleDay[] }>(`/portal/schedule?branch_id=${branchId}`, { noRedirect: true })
+      .then((r) => {
+        setSlots(r.days);
+        setSlotDay(r.days[0]?.date || '');
+        setSlotAt(r.days[0]?.times[0]?.at || '');
+      })
+      .catch(() => setSlots([]));
+    // Sucursal cerrada ahora: solo se puede programar.
+    if (!branchOpen) setWhen('despues');
+  }, [scheduling, branchId, branchOpen]);
+  const scheduledFor = scheduling && when === 'despues' ? slotAt || null : null;
   const zone = type === 'domicilio' ? branch?.delivery_zone ?? null : null;
   const usingSavedAddress = type === 'domicilio' && Boolean(customer) && addressId !== 'new' && addresses.length > 0;
   const saved = usingSavedAddress ? addresses.find((a) => a.id === addressId) : undefined;
@@ -107,6 +129,7 @@ export default function CheckoutPage() {
         body: {
           branch_id: cart.branch_id, order_type: type, items, payment: { method },
           address_id: usingSavedAddress ? addressId : undefined, location: sendPoint ?? undefined,
+          scheduled_for: scheduledFor ?? undefined,
         },
       })
         .then((q) => { if (!cancelled) { setQuote(q); setQuoteError(''); } })
@@ -114,7 +137,7 @@ export default function CheckoutPage() {
         .finally(() => { if (!cancelled) setQuoting(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [config, cart.branch_id, type, items, method, usingSavedAddress, addressId, sendPoint?.latitude, sendPoint?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, cart.branch_id, type, items, method, usingSavedAddress, addressId, sendPoint?.latitude, sendPoint?.longitude, scheduledFor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!hasModule(site, 'portal')) return <p className="px-6 py-24 text-center text-gray-500">Este restaurante no tiene pedidos en línea.</p>;
   if (!config) {
@@ -148,6 +171,7 @@ export default function CheckoutPage() {
           address: type === 'domicilio' && !usingSaved ? { address: address.trim(), reference: reference.trim() || null } : undefined,
           save_address: Boolean(customer && saveAddress && type === 'domicilio' && !usingSaved),
           location: sendPoint ?? undefined,
+          scheduled_for: scheduledFor ?? undefined,
           notes: notes.trim() || null,
           payment: payOnline
             ? { provider: 'clip' }
@@ -210,6 +234,42 @@ export default function CheckoutPage() {
               <p className="mt-2 text-sm text-gray-500">Costo de envío: {formatMXN(branch.delivery_fee)}</p>
             ))}
           </section>
+
+          {scheduling && (
+            <section className="card-light p-5">
+              <h2 className="mb-3 font-bold">¿Para cuándo?</h2>
+              <div className="flex gap-3">
+                <button type="button" className={choice(when === 'ahora')} onClick={() => setWhen('ahora')} disabled={!branchOpen}>
+                  <Clock className="h-5 w-5" /> Lo antes posible
+                </button>
+                <button type="button" className={choice(when === 'despues')} onClick={() => setWhen('despues')}>
+                  <CalendarClock className="h-5 w-5" /> Programar
+                </button>
+              </div>
+              {!branchOpen && <p className="mt-2 text-sm text-gray-500">La sucursal está cerrada ahora: programa tu pedido para cuando abra.</p>}
+              {when === 'despues' && (slots === null ? (
+                <p className="mt-3 flex items-center gap-2 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Cargando horarios…</p>
+              ) : slots.length === 0 ? (
+                <p className="mt-3 text-sm text-gray-500">No hay horarios disponibles en los próximos días.</p>
+              ) : (
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <label className="block"><span className="label-light">Día</span>
+                    <select className="input-light" value={slotDay} onChange={(e) => {
+                      setSlotDay(e.target.value);
+                      setSlotAt(slots.find((d) => d.date === e.target.value)?.times[0]?.at || '');
+                    }}>
+                      {slots.map((d) => <option key={d.date} value={d.date}>{d.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="block"><span className="label-light">Hora</span>
+                    <select className="input-light" value={slotAt} onChange={(e) => setSlotAt(e.target.value)}>
+                      {(slots.find((d) => d.date === slotDay)?.times || []).map((t) => <option key={t.at} value={t.at}>{t.label}</option>)}
+                    </select>
+                  </label>
+                </div>
+              ))}
+            </section>
+          )}
 
           <section className="card-light p-5">
             <div className="mb-3 flex items-baseline justify-between gap-3">
@@ -357,7 +417,7 @@ export default function CheckoutPage() {
               ) : quoting ? <p className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</p> : null}
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
-              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort)) || Boolean(zone && !point)}>
+              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort)) || Boolean(zone && !point) || (when === 'despues' && Boolean(scheduling) && !scheduledFor)}>
                 {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : payWallet ? 'Pagar con monedero' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
               </button>
             </div>
