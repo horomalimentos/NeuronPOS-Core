@@ -5,9 +5,10 @@ import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
-import { formatDateTime, num, posPrefs, round2 } from './lib';
+import DenominationModal from './DenominationModal';
+import { formatDateTime, formatMoney, num, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
-import type { CashSession, CashSessionDetail } from './types';
+import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
 
 /**
@@ -114,6 +115,14 @@ export default function CashPage() {
 
 function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal: string; onOpened: () => void }) {
   const [cash, setCash] = useState('');
+  const [rate, setRate] = useState('');
+  const [usd, setUsd] = useState(false);
+  useEffect(() => {
+    api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => {
+      setUsd(r.payment_methods.some((m) => m.active && m.currency === 'USD'));
+    }).catch(() => undefined);
+    api<{ settings: PosSettings }>('/pos/settings').then((r) => setRate(String(num(r.settings.usd_rate)))).catch(() => undefined);
+  }, []);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent) {
@@ -121,7 +130,7 @@ function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal
     setSaving(true);
     setError('');
     try {
-      await api('/pos/cash-sessions/open', { method: 'POST', body: { branch_id: branchId, terminal, opening_cash: num(cash) } });
+      await api('/pos/cash-sessions/open', { method: 'POST', body: { branch_id: branchId, terminal, opening_cash: num(cash), usd_rate: rate ? num(rate) : undefined } });
       onOpened();
     } catch (err) {
       setError(errorMessage(err));
@@ -136,6 +145,11 @@ function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal
       <Field label="Fondo inicial en efectivo">
         <input className="input text-lg font-semibold" type="number" inputMode="decimal" min="0" step="0.01" value={cash} onChange={(e) => setCash(e.target.value)} placeholder="0.00" autoFocus />
       </Field>
+      {usd && (
+        <Field label="Tipo de cambio del dólar" hint="Pesos por dólar para cobrar en este turno">
+          <input className="input" type="number" inputMode="decimal" min="0.01" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} />
+        </Field>
+      )}
       <Button type="submit" loading={saving} className="w-full py-3">Abrir caja</Button>
     </form>
   );
@@ -147,7 +161,21 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
   const { session, cut, movements } = detail;
   const [mv, setMv] = useState({ kind: 'salida' as 'entrada' | 'salida', amount: '', reason: '' });
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [countDetail, setCountDetail] = useState<Record<string, Record<string, number>>>({});
+  const [counting, setCounting] = useState<CutLine | null>(null);
+  const [rate, setRate] = useState(session.usd_rate ? String(num(session.usd_rate)) : '');
+  const hasUsd = cut.methods.some((m) => m.currency === 'USD');
   const [notes, setNotes] = useState('');
+
+  async function saveRate() {
+    setError('');
+    try {
+      await api(`/pos/cash-sessions/${session.id}`, { method: 'PATCH', body: { usd_rate: num(rate) } });
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -178,6 +206,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
           counts: cut.methods.filter((m) => counts[m.payment_method_id] !== undefined && counts[m.payment_method_id] !== '')
             .map((m) => ({ payment_method_id: m.payment_method_id, counted: num(counts[m.payment_method_id]) })),
           notes: notes || null,
+          count_detail: Object.keys(countDetail).length ? countDetail : undefined,
         },
       });
       onClosed(r);
@@ -202,6 +231,14 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
         <Stat label="Propinas" value={formatMXN(cut.total_tips)} />
         <Stat label="Efectivo esperado" value={formatMXN(cut.expected_cash)} strong />
       </div>
+      {hasUsd && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Tipo de cambio del dólar (este turno)">
+            <input className="input w-32" type="number" inputMode="decimal" min="0.01" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} />
+          </Field>
+          <Button variant="secondary" onClick={saveRate} disabled={!rate || num(rate) === num(session.usd_rate)}>Guardar tipo de cambio</Button>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
@@ -240,8 +277,12 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
                 const diff = v === undefined || v === '' ? null : round2(num(v) - m.expected);
                 return (
                   <tr key={m.payment_method_id}>
-                    <td className="py-2 text-gray-200">{m.name}<span className="block text-xs text-gray-500">{m.payments} pagos{m.tips ? ` · propinas ${formatMXN(m.tips)}` : ''}</span></td>
-                    <td className="py-2 text-right text-gray-300">{formatMXN(m.expected)}</td>
+                    <td className="py-2 text-gray-200">{m.name}<span className="block text-xs text-gray-500">{m.payments} pagos{m.tips ? ` · propinas ${formatMXN(m.tips)}` : ''}</span>
+                      {m.kind === 'efectivo' && (
+                        <button type="button" className="text-xs text-brand hover:underline" onClick={() => setCounting(m)}>Contar billetes</button>
+                      )}
+                    </td>
+                    <td className="py-2 text-right text-gray-300">{formatMoney(m.expected, m.currency)}</td>
                     <td className="py-2 pl-2 text-right">
                       {m.kind === 'puntos' || m.kind === 'monedero' ? <span className="text-xs text-gray-500">No se cuenta</span> : (
                         <input className="input w-28 py-1.5 text-right" type="number" inputMode="decimal" min="0" step="0.01"
@@ -250,7 +291,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
                       )}
                     </td>
                     <td className={`py-2 text-right font-semibold ${diff === null ? 'text-gray-600' : diff < 0 ? 'text-red-400' : diff > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
-                      {diff === null ? '—' : formatMXN(diff)}
+                      {diff === null ? '—' : formatMoney(diff, m.currency)}
                     </td>
                   </tr>
                 );
@@ -260,6 +301,15 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
           <Field label="Notas del corte"><textarea className="input" rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           <Button type="submit" variant="danger" loading={busy} className="mt-4 w-full">Cerrar caja</Button>
         </form>
+        {counting && (
+          <DenominationModal currency={counting.currency || 'MXN'} initial={countDetail[counting.currency || 'MXN']}
+            onClose={() => setCounting(null)}
+            onDone={(total, detail) => {
+              setCounts({ ...counts, [counting.payment_method_id]: total.toFixed(2) });
+              setCountDetail({ ...countDetail, [counting.currency || 'MXN']: detail });
+              setCounting(null);
+            }} />
+        )}
       </div>
     </div>
   );
@@ -299,9 +349,9 @@ function CutSummary({ detail }: { detail: CashSessionDetail }) {
               <td className="py-2 text-gray-200">{m.name}</td>
               <td className="py-2 text-right">{formatMXN(m.sales)}</td>
               <td className="py-2 text-right">{formatMXN(m.tips)}</td>
-              <td className="py-2 text-right">{formatMXN(m.expected)}</td>
-              <td className="py-2 text-right">{m.counted === undefined ? '—' : formatMXN(m.counted)}</td>
-              <td className={`py-2 text-right font-semibold ${num(m.difference) < 0 ? 'text-red-400' : num(m.difference) > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>{m.difference === undefined ? '—' : formatMXN(m.difference)}</td>
+              <td className="py-2 text-right">{formatMoney(m.expected, m.currency)}</td>
+              <td className="py-2 text-right">{m.counted === undefined ? '—' : formatMoney(m.counted, m.currency)}</td>
+              <td className={`py-2 text-right font-semibold ${num(m.difference) < 0 ? 'text-red-400' : num(m.difference) > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>{m.difference === undefined ? '—' : formatMoney(m.difference, m.currency)}</td>
             </tr>
           ))}
         </tbody>

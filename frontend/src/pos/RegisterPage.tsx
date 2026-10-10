@@ -464,7 +464,7 @@ export default function RegisterPage() {
           groups={pickItem.modifier_group_ids.map((id) => groupsById.get(id)).filter((g) => g !== undefined)} />
       )}
       {showPay && order && session && (
-        <PaymentModal order={order} methods={payMethods} sessionId={session.id} onClose={() => setShowPay(false)}
+        <PaymentModal order={order} methods={payMethods} sessionId={session.id} usdRate={num(session.usd_rate)} onClose={() => setShowPay(false)}
           loyalty={me.modules.some((m) => m.code === 'lealtad' && m.enabled)}
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}

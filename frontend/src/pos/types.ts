@@ -248,6 +248,8 @@ export interface PaymentMethod {
   id: string;
   name: string;
   kind: MethodKind;
+  /** Efectivo en dolares: se cobra con el tipo de cambio del turno. */
+  currency?: 'MXN' | 'USD';
   active: boolean;
   sort_order: number;
 }
@@ -258,6 +260,8 @@ export interface PosSettings {
   cashier_max_discount_pct: Money;
   ticket_header: string | null;
   ticket_footer: string | null;
+  /** Tipo de cambio por omision (pesos por dolar). */
+  usd_rate: Money;
 }
 
 export interface CashSession {
@@ -278,6 +282,8 @@ export interface CashSession {
   closed_by_name: string | null;
   closed_at: string | null;
   notes: string | null;
+  usd_rate?: Money | null;
+  count_detail?: Record<string, Record<string, number>> | null;
 }
 
 export interface CashMovement {
@@ -296,6 +302,7 @@ export interface CutLine {
   payments: number;
   sales: number;
   tips: number;
+  currency?: 'MXN' | 'USD';
   expected: number;
   counted?: number;
   difference?: number;

@@ -8,6 +8,7 @@ import {
   HttpError, ah, badRequest, forbidden, money, notFound, oneOf, requireUuid, str,
 } from '../../utils/http.js';
 import { ROLES, assertBranchExists, canAccessBranch, int, isManager, requireBranch } from './common.js';
+import { getSettings, usdRate } from './settings.js';
 
 const router = Router();
 const cashier = requireRole(...ROLES.cashier);
@@ -16,7 +17,7 @@ const SESSION_SELECT = `
   SELECT s.id, s.branch_id, b.name AS branch_name, s.terminal, s.status, s.opening_cash,
          s.opened_by, uo.name AS opened_by_name, s.opened_at,
          s.expected_cash, s.counted_cash, s.difference, s.total_sales, s.total_tips, s.orders_count,
-         s.closed_by, uc.name AS closed_by_name, s.closed_at, s.notes
+         s.closed_by, uc.name AS closed_by_name, s.closed_at, s.notes, s.usd_rate, s.count_detail
     FROM cash_sessions s
     JOIN branches b ON b.id = s.branch_id AND b.restaurant_id = s.restaurant_id
     JOIN users uo ON uo.id = s.opened_by AND uo.restaurant_id = s.restaurant_id
@@ -36,7 +37,7 @@ async function getSession(db, req, id, { lock = false } = {}) {
 /** Datos para el corte: metodos, pagos y movimientos del turno. */
 async function cutInputs(db, restaurantId, sessionId) {
   const payments = (await db.query(
-    `SELECT payment_method_id, amount, tip, order_id FROM order_payments
+    `SELECT payment_method_id, amount, tip, order_id, currency, foreign_received, change_given FROM order_payments
       WHERE restaurant_id = $1 AND cash_session_id = $2`,
     [restaurantId, sessionId],
   )).rows;
@@ -49,7 +50,7 @@ async function cutInputs(db, restaurantId, sessionId) {
   // Metodos activos y cualquier otro que se haya usado en el turno. Los pagos
   // en linea (Clip) no pasan por caja: no tienen turno y no entran al corte.
   const methods = (await db.query(
-    `SELECT id, name, kind FROM payment_methods
+    `SELECT id, name, kind, currency FROM payment_methods
       WHERE restaurant_id = $1 AND kind <> 'en_linea' AND (active OR id = ANY($2::uuid[]))
       ORDER BY sort_order, name`,
     [restaurantId, [...new Set(payments.map((p) => p.payment_method_id))]],
@@ -76,13 +77,16 @@ router.post('/cash-sessions/open', cashier, ah(async (req, res) => {
   const branchId = requireBranch(req, body.branch_id);
   const terminal = str(body.terminal, { field: 'terminal', max: 40 }) || 'Caja 1';
   const openingCash = money(body.opening_cash ?? 0, { field: 'opening_cash' });
+  const rate = usdRate(body.usd_rate);
   try {
     const session = await withTenant(req.tenant.id, async (db) => {
       await assertBranchExists(db, req.tenant.id, branchId);
+      // Tipo de cambio del turno: el dado al abrir o el de la configuracion.
+      const usd = rate ?? (await getSettings(db, req.tenant.id)).usd_rate;
       const { rows } = await db.query(
-        `INSERT INTO cash_sessions (restaurant_id, branch_id, terminal, opening_cash, opened_by)
-         VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        [req.tenant.id, branchId, terminal, openingCash, req.user.id],
+        `INSERT INTO cash_sessions (restaurant_id, branch_id, terminal, opening_cash, opened_by, usd_rate)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [req.tenant.id, branchId, terminal, openingCash, req.user.id, usd],
       );
       return getSession(db, req, rows[0].id);
     });
@@ -108,7 +112,7 @@ router.get('/cash-sessions/:id', cashier, ah(async (req, res) => {
       )).rows;
       counts = Object.fromEntries(rows.map((r) => [r.payment_method_id, r.counted]));
     }
-    const cut = calculateCashCut({ methods, payments, movements, openingCash: session.opening_cash, counts });
+    const cut = calculateCashCut({ methods, payments, movements, openingCash: session.opening_cash, counts, usdRate: session.usd_rate });
     cut.orders_count = new Set(payments.map((p) => p.order_id)).size;
     return { session, movements, cut };
   });
@@ -134,6 +138,19 @@ router.post('/cash-sessions/:id/movements', cashier, ah(async (req, res) => {
   res.status(201).json({ movement });
 }));
 
+// Cambiar el tipo de cambio del turno abierto (aplica a los cobros siguientes).
+router.patch('/cash-sessions/:id', cashier, ah(async (req, res) => {
+  const rate = usdRate((req.body || {}).usd_rate);
+  if (rate === undefined) throw badRequest('No hay cambios', 'NO_CHANGES');
+  const session = await withTenant(req.tenant.id, async (db) => {
+    const s = await getSession(db, req, req.params.id, { lock: true });
+    if (s.status !== 'abierta') throw badRequest('El turno ya esta cerrado', 'CASH_SESSION_CLOSED');
+    await db.query('UPDATE cash_sessions SET usd_rate = $3 WHERE id = $1 AND restaurant_id = $2', [s.id, req.tenant.id, rate]);
+    return getSession(db, req, s.id);
+  });
+  res.json({ session });
+}));
+
 // Cierre con corte: counts = [{ payment_method_id, counted }]. Es obligatorio
 // capturar el efectivo y cada metodo que tenga movimientos en el turno.
 router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
@@ -144,6 +161,9 @@ router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
     counts[requireUuid(c?.payment_method_id, 'payment_method_id')] = money(c.counted, { field: 'counted' });
   }
   const notes = str(body.notes, { field: 'notes', max: 500 }) || null;
+  // Conteo de billetes y monedas (opcional, para consulta): { MXN: { "500": 2, ... }, USD: {...} }.
+  const detail = body.count_detail && typeof body.count_detail === 'object' && JSON.stringify(body.count_detail).length < 4000
+    ? body.count_detail : null;
 
   const data = await withTenant(req.tenant.id, async (db) => {
     const s = await getSession(db, req, req.params.id, { lock: true });
@@ -152,13 +172,13 @@ router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
       throw forbidden('Solo quien abrio el turno o un gerente puede cerrarlo', 'ROLE_REQUIRED');
     }
     const { payments, movements, methods } = await cutInputs(db, req.tenant.id, s.id);
-    const preview = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash });
+    const preview = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash, usdRate: s.usd_rate });
     const missing = preview.methods.filter((m) => counts[m.payment_method_id] === undefined && m.kind !== 'puntos' && m.kind !== 'monedero'
       && (m.kind === 'efectivo' || m.expected !== 0));
     if (missing.length) {
       throw badRequest(`Captura lo contado en: ${missing.map((m) => m.name).join(', ')}`, 'MISSING_COUNTS');
     }
-    const cut = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash, counts });
+    const cut = calculateCashCut({ methods, payments, movements, openingCash: s.opening_cash, counts, usdRate: s.usd_rate });
     cut.orders_count = new Set(payments.map((p) => p.order_id)).size;
     for (const m of cut.methods) {
       await db.query(
@@ -170,10 +190,10 @@ router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
     await db.query(
       `UPDATE cash_sessions SET status = 'cerrada', closed_at = now(), closed_by = $3,
               expected_cash = $4, counted_cash = $5, difference = $6, total_sales = $7,
-              total_tips = $8, orders_count = $9, notes = $10
+              total_tips = $8, orders_count = $9, notes = $10, count_detail = $11
         WHERE id = $1 AND restaurant_id = $2`,
       [s.id, req.tenant.id, req.user.id, cut.expected_cash, cut.counted_cash, cut.cash_difference,
-        cut.total_sales, cut.total_tips, cut.orders_count, notes],
+        cut.total_sales, cut.total_tips, cut.orders_count, notes, detail],
     );
     return { session: await getSession(db, req, s.id), movements, cut };
   });

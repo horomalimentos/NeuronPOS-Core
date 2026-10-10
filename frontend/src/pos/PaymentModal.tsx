@@ -6,7 +6,7 @@ import { Alert, Button, Modal } from '../components/ui';
 import { getNative, nativeInfo } from '../lib/native';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { num, round2 } from './lib';
+import { formatMoney, num, round2 } from './lib';
 import type { Order, PaymentMethod } from './types';
 
 interface Line {
@@ -25,7 +25,7 @@ let nextKey = 1;
  * Cobro con uno o varios metodos (cuenta dividida), propina por pago y
  * calculo de cambio en efectivo. Adaptado de POSPaymentModal de NeuronPOS.
  */
-export default function PaymentModal({ order, methods, sessionId, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
+export default function PaymentModal({ order, methods, sessionId, usdRate, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
   order: Order;
   /** El restaurante tiene el modulo de clientes y lealtad. */
   loyalty?: boolean;
@@ -33,6 +33,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   wallet?: boolean;
   methods: PaymentMethod[];
   sessionId: string;
+  /** Tipo de cambio del turno (para el efectivo en dolares). */
+  usdRate?: number;
   onClose: () => void;
   onPaid: (order: Order, change: number) => void;
   onPrint: (order: Order, change: number, opts?: { openDrawer?: boolean }) => void;
@@ -96,10 +98,14 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   const [done, setDone] = useState<{ order: Order; change: number } | null>(null);
 
   const kindOf = (id: string) => active.find((m) => m.id === id)?.kind;
+  const isUsd = (id: string) => active.find((m) => m.id === id)?.currency === 'USD';
+  const rate = num(usdRate) || 0;
+  // Lo recibido en pesos (si es en dolares, al tipo de cambio del turno).
+  const receivedMxn = (l: Line) => (isUsd(l.methodId) ? round2(num(l.received) * rate) : num(l.received));
   const applied = round2(lines.reduce((s, l) => s + num(l.amount), 0));
   const tips = round2(lines.reduce((s, l) => s + num(l.tip), 0));
   const change = round2(lines.reduce((s, l) => (kindOf(l.methodId) === 'efectivo' && l.received
-    ? s + Math.max(0, num(l.received) - num(l.amount) - num(l.tip)) : s), 0));
+    ? s + Math.max(0, receivedMxn(l) - num(l.amount) - num(l.tip)) : s), 0));
   const pending = round2(remaining - applied);
   const update = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
@@ -113,7 +119,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   if (applied > remaining + 0.001) problems.push('Los pagos exceden el saldo');
   for (const l of lines) {
     if (!l.methodId) problems.push('Elige el método de pago');
-    if (kindOf(l.methodId) === 'efectivo' && l.received && num(l.received) < num(l.amount) + num(l.tip)) {
+    if (isUsd(l.methodId) && !(num(l.received) > 0)) problems.push('Escribe cuántos dólares recibiste');
+    if (kindOf(l.methodId) === 'efectivo' && l.received && receivedMxn(l) < num(l.amount) + num(l.tip)) {
       problems.push('El efectivo recibido no cubre el pago');
     }
   }
@@ -135,7 +142,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
             payment_method_id: l.methodId,
             amount: num(l.amount),
             tip: num(l.tip),
-            received: kindOf(l.methodId) === 'efectivo' && l.received ? num(l.received) : undefined,
+            received: kindOf(l.methodId) === 'efectivo' && !isUsd(l.methodId) && l.received ? num(l.received) : undefined,
+            received_usd: isUsd(l.methodId) ? num(l.received) : undefined,
             reference: l.reference || null,
           }))],
         },
@@ -251,7 +259,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
 
         {lines.map((l) => {
           const isCash = kindOf(l.methodId) === 'efectivo';
-          const lineChange = isCash && l.received ? num(l.received) - num(l.amount) - num(l.tip) : 0;
+          const usd = isUsd(l.methodId);
+          const lineChange = isCash && l.received ? receivedMxn(l) - num(l.amount) - num(l.tip) : 0;
           return (
             <div key={l.key} className="space-y-3 rounded-xl border border-gray-800 p-3">
               <div className="flex flex-wrap gap-2">
@@ -281,9 +290,10 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
                   </span>
                 </label>
                 {isCash ? (
-                  <label className="block"><span className="label">Recibido</span>
-                    <input className="input" type="number" inputMode="decimal" min="0" step="0.01" value={l.received} placeholder="Exacto"
+                  <label className="block"><span className="label">{usd ? 'Recibido (dólares)' : 'Recibido'}</span>
+                    <input className="input" type="number" inputMode="decimal" min="0" step="0.01" value={l.received} placeholder={usd ? 'US$' : 'Exacto'}
                       onChange={(e) => update(l.key, { received: e.target.value })} />
+                    {usd && <span className="mt-1 block text-xs text-gray-400">= {formatMXN(receivedMxn(l))} a ${rate} por dólar</span>}
                   </label>
                 ) : (
                   <label className="block"><span className="label">Referencia</span>
@@ -295,10 +305,10 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
               {isCash && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
-                    onClick={() => update(l.key, { received: (num(l.amount) + num(l.tip)).toFixed(2) })}>Exacto</button>
-                  {QUICK_CASH.filter((q) => q >= num(l.amount) + num(l.tip)).slice(0, 4).map((q) => (
+                    onClick={() => update(l.key, { received: usd && rate ? (Math.ceil(((num(l.amount) + num(l.tip)) / rate) * 100) / 100).toFixed(2) : (num(l.amount) + num(l.tip)).toFixed(2) })}>Exacto</button>
+                  {(usd ? [1, 5, 10, 20, 50, 100].filter((q) => q * rate >= num(l.amount) + num(l.tip)) : QUICK_CASH.filter((q) => q >= num(l.amount) + num(l.tip))).slice(0, 4).map((q) => (
                     <button key={q} type="button" className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
-                      onClick={() => update(l.key, { received: String(q) })}>{formatMXN(q)}</button>
+                      onClick={() => update(l.key, { received: String(q) })}>{usd ? formatMoney(q, 'USD') : formatMXN(q)}</button>
                   ))}
                   {lineChange > 0 && <span className="ml-auto text-sm text-amber-300">Cambio {formatMXN(lineChange)}</span>}
                 </div>

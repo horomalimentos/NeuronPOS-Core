@@ -8,8 +8,8 @@ import { ROLES, insertSql, int, uuidList } from './common.js';
 
 const router = Router();
 
-const SETTINGS_COLS = 'tax_rate_pct, prices_include_tax, cashier_max_discount_pct, ticket_header, ticket_footer';
-const METHOD_COLS = 'id, name, kind, active, sort_order';
+const SETTINGS_COLS = 'tax_rate_pct, prices_include_tax, cashier_max_discount_pct, ticket_header, ticket_footer, usd_rate';
+const METHOD_COLS = 'id, name, kind, currency, active, sort_order';
 const CHANNEL_COLS = 'id, name, color, commission_pct, payment_method_ids, requires_order_number, requires_address, sort_order, active';
 export const METHOD_KINDS = ['efectivo', 'tarjeta', 'transferencia', 'otro'];
 
@@ -19,6 +19,16 @@ export async function getSettings(db, restaurantId) {
   // Por si el restaurante se creo antes de sembrar valores: se crean ahora.
   await db.query('SELECT seed_pos_defaults($1)', [restaurantId]);
   return (await db.query(`SELECT ${SETTINGS_COLS} FROM pos_settings WHERE restaurant_id = $1`, [restaurantId])).rows[0];
+}
+
+/** Tipo de cambio (pesos por dolar). */
+export function usdRate(value) {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (value === null || value === '' || !Number.isFinite(n) || n <= 0 || n >= 1000) {
+    throw badRequest('El tipo de cambio no es valido', 'INVALID_FIELD');
+  }
+  return Math.round(n * 10000) / 10000;
 }
 
 function percent(value, field) {
@@ -43,6 +53,7 @@ router.patch('/settings', requireRole(...ROLES.manage), ah(async (req, res) => {
     cashier_max_discount_pct: percent(body.cashier_max_discount_pct, 'cashier_max_discount_pct'),
     ticket_header: str(body.ticket_header, { field: 'ticket_header', max: 500 }),
     ticket_footer: str(body.ticket_footer, { field: 'ticket_footer', max: 500 }),
+    usd_rate: usdRate(body.usd_rate),
   }, 2);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const settings = await withTenant(req.tenant.id, async (db) => {
@@ -71,10 +82,12 @@ function methodFields(body, creating) {
   const f = {
     name: str(body.name, { field: 'name', required: creating, max: 60 }),
     kind: oneOf(body.kind, METHOD_KINDS, 'kind'),
+    currency: oneOf(body.currency, ['MXN', 'USD'], 'currency'),
     active: bool(body.active, 'active'),
     sort_order: int(body.sort_order, { field: 'sort_order', max: 100000 }),
   };
   if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
+  if (f.currency === 'USD' && f.kind && f.kind !== 'efectivo') throw badRequest('Solo el efectivo puede ser en dolares', 'INVALID_FIELD');
   return f;
 }
 

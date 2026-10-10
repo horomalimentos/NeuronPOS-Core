@@ -90,7 +90,8 @@ export async function loadOrder(db, restaurantId, id) {
   )).rows;
   order.payments = (await db.query(
     `SELECT p.id, p.payment_method_id, pm.name AS method_name, pm.kind AS method_kind, p.cash_session_id,
-            p.amount, p.tip, p.received, p.change_given, p.reference, p.created_at
+            p.amount, p.tip, p.received, p.change_given, p.reference, p.created_at,
+            p.currency, p.foreign_received, p.exchange_rate
        FROM order_payments p
        JOIN payment_methods pm ON pm.id = p.payment_method_id AND pm.restaurant_id = p.restaurant_id
       WHERE p.restaurant_id = $1 AND p.order_id = $2 ORDER BY p.created_at`,
@@ -764,6 +765,9 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     tip: money(p.tip ?? 0, { field: 'tip' }),
     received: p.received === undefined || p.received === null || p.received === ''
       ? undefined : money(p.received, { field: 'received' }),
+    // Efectivo en dolares: lo recibido en USD (se convierte con el tipo de cambio del turno).
+    received_usd: p.received_usd === undefined || p.received_usd === null || p.received_usd === ''
+      ? undefined : money(p.received_usd, { field: 'received_usd' }),
     reference: str(p.reference, { field: 'reference', max: 100 }) || null,
   }));
 
@@ -778,7 +782,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     if (!live.rows[0].n) throw badRequest('La orden no tiene articulos', 'EMPTY_ORDER');
 
     const session = (await db.query(
-      'SELECT id, branch_id, status FROM cash_sessions WHERE id = $1 AND restaurant_id = $2',
+      'SELECT id, branch_id, status, usd_rate FROM cash_sessions WHERE id = $1 AND restaurant_id = $2',
       [sessionId, req.tenant.id],
     )).rows[0];
     if (!session || session.status !== 'abierta' || session.branch_id !== o.branch_id) {
@@ -801,7 +805,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       Object.assign(p, { payment_method_id: p.walletPay.methodId, amount: p.walletPay.amount, tip: 0, received: undefined });
     }
     const methods = new Map((await db.query(
-      'SELECT id, kind, active FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
+      'SELECT id, kind, currency, active FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
       [req.tenant.id, inputs.map((p) => p.payment_method_id)],
     )).rows.map((m) => [m.id, m]));
     // Una plataforma puede limitar con que se cobra (ej. solo "Rappi pagado").
@@ -811,7 +815,7 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     )).rows[0]?.payment_method_ids || [] : [];
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
-      if (p.redemption || p.walletPay) return { ...p, kind: m.kind };
+      if (p.redemption || p.walletPay) return { ...p, kind: m.kind, currency: 'MXN' };
       if (m?.kind === 'puntos') throw badRequest('Los puntos se canjean con el botón de puntos', 'POINTS_METHOD_NOT_ALLOWED');
       if (m?.kind === 'monedero') throw badRequest('El monedero se cobra con el botón de monedero', 'WALLET_METHOD_NOT_ALLOWED');
       if (!m || !m.active) throw badRequest('Metodo de pago no valido', 'PAYMENT_METHOD_NOT_FOUND');
@@ -819,7 +823,14 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       if (allowed.length && !allowed.includes(p.payment_method_id)) {
         throw badRequest('Ese metodo de pago no aplica para esta plataforma', 'PAYMENT_METHOD_NOT_ALLOWED');
       }
-      return { ...p, kind: m.kind };
+      if (m.currency === 'USD') {
+        if (!(p.received_usd > 0)) throw badRequest('Indica cuantos dolares se recibieron', 'MISSING_FIELD');
+        const rate = Number(session.usd_rate);
+        if (!(rate > 0)) throw badRequest('El turno no tiene tipo de cambio', 'USD_RATE_REQUIRED');
+        // Lo recibido en pesos; el cambio se da en pesos.
+        return { ...p, kind: m.kind, currency: 'USD', rate, received: Math.round(p.received_usd * rate * 100) / 100 };
+      }
+      return { ...p, kind: m.kind, currency: 'MXN' };
     });
     const remaining = (toCents(o.total) - toCents(o.paid_amount)) / 100;
     if (!lines.length && remaining > 0) throw badRequest('Agrega al menos un pago', 'MISSING_PAYMENTS');
@@ -830,10 +841,11 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     for (const [i, p] of norm.lines.entries()) {
       const { rows: [pay] } = await db.query(
         `INSERT INTO order_payments (restaurant_id, order_id, payment_method_id, cash_session_id, amount, tip,
-                                     received, change_given, reference, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
+                                     received, change_given, reference, created_by, currency, foreign_received, exchange_rate)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING id`,
         [req.tenant.id, o.id, lines[i].payment_method_id, sessionId, p.amount, p.tip, p.received,
-          p.change_given, lines[i].reference, req.user.id],
+          p.change_given, lines[i].reference, req.user.id, lines[i].currency,
+          lines[i].currency === 'USD' ? lines[i].received_usd : null, lines[i].currency === 'USD' ? lines[i].rate : null],
       );
       if (lines[i].redemption) {
         await commitRedemption(db, req.tenant.id, o, lines[i].redemption, { paymentId: pay.id, code: lines[i].loyalty.code, userId: req.user.id, verified });

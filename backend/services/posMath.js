@@ -145,15 +145,22 @@ export function normalizePayments(lines, remaining) {
  * Esperado por metodo = suma(amount + tip). Para efectivo ademas:
  *   fondo + entradas - salidas.
  */
-export function calculateCashCut({ methods, payments, movements, openingCash = 0, counts = null }) {
-  const byMethod = new Map(methods.map((m) => [m.id, { sales: 0, tips: 0, count: 0 }]));
+export function calculateCashCut({ methods, payments, movements, openingCash = 0, counts = null, usdRate = null }) {
+  const byMethod = new Map(methods.map((m) => [m.id, { sales: 0, tips: 0, count: 0, usd: 0 }]));
+  // Cambio en pesos que se dio al cobrar en dolares: sale del cajon de pesos.
+  let usdChangeMxn = 0;
   for (const p of payments || []) {
-    if (!byMethod.has(p.payment_method_id)) byMethod.set(p.payment_method_id, { sales: 0, tips: 0, count: 0 });
+    if (!byMethod.has(p.payment_method_id)) byMethod.set(p.payment_method_id, { sales: 0, tips: 0, count: 0, usd: 0 });
     const acc = byMethod.get(p.payment_method_id);
     acc.sales += toCents(p.amount);
     acc.tips += toCents(p.tip);
     acc.count += 1;
+    if (p.currency === 'USD') {
+      acc.usd += toCents(p.foreign_received);
+      usdChangeMxn += toCents(p.change_given);
+    }
   }
+  const firstMxnCash = methods.find((m) => m.kind === 'efectivo' && m.currency !== 'USD')?.id;
   const entradas = (movements || []).filter((m) => m.kind === 'entrada').reduce((s, m) => s + toCents(m.amount), 0);
   const salidas = (movements || []).filter((m) => m.kind === 'salida').reduce((s, m) => s + toCents(m.amount), 0);
   const opening = toCents(openingCash);
@@ -164,8 +171,11 @@ export function calculateCashCut({ methods, payments, movements, openingCash = 0
   let countedCash = null;
   const lines = methods.map((m) => {
     const acc = byMethod.get(m.id);
-    let expected = acc.sales + acc.tips;
-    if (m.kind === 'efectivo') expected += opening + entradas - salidas;
+    const usd = m.currency === 'USD';
+    // Dolares: se espera en USD lo recibido. Pesos: ventas + propinas, y el
+    // primer metodo de efectivo lleva fondo, movimientos y el cambio de USD.
+    let expected = usd ? acc.usd : acc.sales + acc.tips;
+    if (m.id === firstMxnCash) expected += opening + entradas - salidas - usdChangeMxn;
     totalSales += acc.sales;
     totalTips += acc.tips;
     const line = {
@@ -175,6 +185,7 @@ export function calculateCashCut({ methods, payments, movements, openingCash = 0
       payments: acc.count,
       sales: fromCents(acc.sales),
       tips: fromCents(acc.tips),
+      currency: usd ? 'USD' : 'MXN',
       expected: fromCents(expected),
     };
     if (counts) {
@@ -182,11 +193,13 @@ export function calculateCashCut({ methods, payments, movements, openingCash = 0
       const counted = m.kind === 'puntos' || m.kind === 'monedero' ? expected : toCents(counts[m.id] ?? 0);
       line.counted = fromCents(counted);
       line.difference = fromCents(counted - expected);
-      if (m.kind === 'efectivo') countedCash = (countedCash ?? 0) + counted;
+      if (m.kind === 'efectivo' && !usd) countedCash = (countedCash ?? 0) + counted;
     }
-    if (m.kind === 'efectivo') expectedCash += expected;
+    if (m.kind === 'efectivo' && !usd) expectedCash += expected;
     return line;
   });
+  // Diferencia total en pesos (los dolares al tipo de cambio del turno).
+  const toMxn = (l) => (l.currency === 'USD' ? Math.round(toCents(l.difference) * Number(usdRate || 0)) : toCents(l.difference));
 
   const result = {
     opening_cash: fromCents(opening),
@@ -200,7 +213,7 @@ export function calculateCashCut({ methods, payments, movements, openingCash = 0
   if (counts) {
     result.counted_cash = fromCents(countedCash ?? 0);
     result.cash_difference = fromCents((countedCash ?? 0) - expectedCash);
-    result.total_difference = fromCents(lines.reduce((s, l) => s + toCents(l.difference), 0));
+    result.total_difference = fromCents(lines.reduce((s, l) => s + toMxn(l), 0));
   }
   return result;
 }

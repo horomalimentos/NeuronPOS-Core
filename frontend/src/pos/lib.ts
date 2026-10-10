@@ -77,3 +77,9 @@ export const formatTime = (iso: string | null | undefined) =>
 
 export const formatDateTime = (iso: string | null | undefined) =>
   iso ? new Date(iso).toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—';
+
+const usdFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'USD' });
+const mxnFmt = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' });
+/** Monto en pesos o dolares (USD se muestra como "US$"). */
+export const formatMoney = (v: number | string | null | undefined, currency: 'MXN' | 'USD' = 'MXN') =>
+  (currency === 'USD' ? usdFmt : mxnFmt).format(Number(v || 0));

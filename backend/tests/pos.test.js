@@ -655,6 +655,49 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       await api(A, 'PATCH', '/api/pos/settings', { cashier_max_discount_pct: 0 });
     });
 
+    test('cobro en dolares: tipo de cambio del turno, cambio en pesos y corte en USD', async () => {
+      assert.equal((await api(A, 'POST', '/api/pos/payment-methods', { name: 'Tarjeta USD', kind: 'tarjeta', currency: 'USD' })).status, 400);
+      const usd = (await api(A, 'POST', '/api/pos/payment-methods', { name: 'Dólares', kind: 'efectivo', currency: 'USD' })).body.payment_method;
+      assert.equal(usd.currency, 'USD');
+      await api(A, 'PATCH', '/api/pos/settings', { usd_rate: 17.5 });
+      const s = (await api(cajero, 'POST', '/api/pos/cash-sessions/open', { branch_id: branchA.id, terminal: 'Caja USD', opening_cash: 500 })).body.session;
+      assert.equal(Number(s.usd_rate), 17.5, 'toma el de la configuracion');
+      const upd = await api(cajero, 'PATCH', `/api/pos/cash-sessions/${s.id}`, { usd_rate: 18 });
+      assert.equal(Number(upd.body.session.usd_rate), 18);
+
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 2 }],
+      })).body.order;
+      const sinUsd = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: s.id, payments: [{ payment_method_id: usd.id, amount: 100 }],
+      });
+      assert.equal(sinUsd.body.code, 'MISSING_FIELD');
+      // 10 dolares a 18 = 180 pesos; cuenta de 100 -> cambio 80 pesos.
+      const paid = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: s.id, payments: [{ payment_method_id: usd.id, amount: 100, received_usd: 10 }],
+      });
+      assert.equal(paid.body.order.status, 'pagada', JSON.stringify(paid.body));
+      assert.equal(paid.body.change, 80);
+      const pay = paid.body.order.payments[0];
+      assert.equal(pay.currency, 'USD');
+      assert.equal(Number(pay.foreign_received), 10);
+      assert.equal(Number(pay.exchange_rate), 18);
+
+      const cut = (await api(cajero, 'GET', `/api/pos/cash-sessions/${s.id}`)).body.cut;
+      const byName = Object.fromEntries(cut.methods.map((m) => [m.name, m]));
+      assert.equal(byName['Dólares'].expected, 10);
+      assert.equal(byName['Dólares'].currency, 'USD');
+      assert.equal(byName.Efectivo.expected, 420, 'fondo 500 menos 80 de cambio');
+      const closed = await api(cajero, 'POST', `/api/pos/cash-sessions/${s.id}/close`, {
+        counts: [{ payment_method_id: byKind('efectivo'), counted: 420 }, { payment_method_id: usd.id, counted: 9 }],
+        count_detail: { MXN: { 200: 2, 20: 1 }, USD: { 5: 1, 1: 4 } },
+      });
+      assert.equal(closed.status, 200, JSON.stringify(closed.body));
+      assert.equal(closed.body.cut.total_difference, -18, 'falta 1 dolar = 18 pesos');
+      assert.deepEqual(closed.body.session.count_detail.USD, { 5: 1, 1: 4 });
+      await api(A, 'PATCH', `/api/pos/payment-methods/${usd.id}`, { active: false });
+    });
+
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {
       const del = await api(A, 'DELETE', `/api/pos/items/${aguaA.id}`);
       assert.equal(del.status, 200);

@@ -39,6 +39,7 @@ export default function PosSettingsPage() {
           tax_rate_pct: num(settings.tax_rate_pct),
           prices_include_tax: settings.prices_include_tax,
           cashier_max_discount_pct: num(settings.cashier_max_discount_pct),
+          usd_rate: num(settings.usd_rate),
           ticket_header: settings.ticket_header || null,
           ticket_footer: settings.ticket_footer || null,
         },
@@ -78,6 +79,9 @@ export default function PosSettingsPage() {
                 <input className="input" type="number" min="0" max="100" step="0.01" value={String(settings.cashier_max_discount_pct)} onChange={(e) => setSettings({ ...settings, cashier_max_discount_pct: e.target.value })} />
               </Field>
             </div>
+            <Field label="Tipo de cambio del dólar" hint="Pesos por dólar. Cada turno de caja lo puede ajustar al abrir.">
+              <input className="input" type="number" min="0.01" step="0.0001" value={String(settings.usd_rate)} onChange={(e) => setSettings({ ...settings, usd_rate: e.target.value })} />
+            </Field>
             <div className="flex items-center gap-3 text-sm text-gray-300">
               <Toggle label="Precios con IVA incluido" checked={settings.prices_include_tax} onChange={(v) => setSettings({ ...settings, prices_include_tax: v })} />
               Los precios del menú ya incluyen IVA
@@ -115,7 +119,9 @@ export default function PosSettingsPage() {
 }
 
 function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | null; onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ name: method?.name || '', kind: method?.kind || ('otro' as MethodKind), active: method?.active ?? true });
+  const [form, setForm] = useState({
+    name: method?.name || '', kind: method?.kind || ('otro' as MethodKind), currency: method?.currency || 'MXN', active: method?.active ?? true,
+  });
   // "Clip en línea" lo usa el pago en línea del portal: solo se renombra.
   const online = method?.kind === 'en_linea' || method?.kind === 'puntos' || method?.kind === 'monedero';
   const [error, setError] = useState('');
@@ -125,7 +131,7 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
     setSaving(true);
     setError('');
     try {
-      const body = online ? { name: form.name, active: form.active } : form;
+      const body = online ? { name: form.name, active: form.active } : { ...form, currency: form.kind === 'efectivo' ? form.currency : 'MXN' };
       await api(method ? `/pos/payment-methods/${method.id}` : '/pos/payment-methods', { method: method ? 'PATCH' : 'POST', body });
       onSaved();
     } catch (err) {
@@ -153,6 +159,14 @@ function MethodModal({ method, onClose, onSaved }: { method: PaymentMethod | nul
             </select>
           )}
         </Field>
+        {form.kind === 'efectivo' && !online && (
+          <Field label="Moneda" hint="Dólares: se cobra con el tipo de cambio del turno y el cambio se da en pesos.">
+            <select className="input" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value as 'MXN' | 'USD' })}>
+              <option value="MXN">Pesos</option>
+              <option value="USD">Dólares</option>
+            </select>
+          </Field>
+        )}
         <div className="flex items-center gap-3 text-sm text-gray-300">
           <Toggle label="Activo" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} /> Activo
         </div>
