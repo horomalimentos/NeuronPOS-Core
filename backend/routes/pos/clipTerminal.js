@@ -14,6 +14,7 @@ import { loadRestaurantClipCredentials } from '../../services/restaurantPayments
 import { HttpError, ah, badRequest, money, notFound, requireUuid, str } from '../../utils/http.js';
 import { ROLES, canAccessBranch, requireBranch } from './common.js';
 import { can } from '../../services/permissions.js';
+import { requireDevice } from '../../services/devices.js';
 
 const router = Router();
 router.use('/clip', requireModule('terminal_clip'));
@@ -58,7 +59,7 @@ router.put('/clip/terminal', can('manage'), ah(async (req, res) => {
 }));
 
 // Pedir un cobro en la terminal: { order_id, amount, terminal }.
-router.post('/clip/cobros', can('cashier'), ah(async (req, res) => {
+router.post('/clip/cobros', can('cashier'), requireDevice, ah(async (req, res) => {
   const body = req.body || {};
   const orderId = requireUuid(body.order_id, 'order_id');
   const amount = money(body.amount, { field: 'amount' });

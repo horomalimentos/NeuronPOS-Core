@@ -17,6 +17,7 @@ import { commitWalletPayment, prepareWalletPayment } from '../../services/wallet
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { verifyApprovalPin, pinExpiresAt, pinFor, pinLocked } from '../../services/approvalPin.js';
 import { calculateOrderTotals, discountCents, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
+import { assertDeviceBranch, requireDevice } from '../../services/devices.js';
 import { promotionsFor } from '../../services/promotions.js';
 import { findVoucher, redeemOrderVoucher, voucherDiscountCents, voucherProblem } from '../../services/vouchers.js';
 import {
@@ -806,7 +807,7 @@ router.post('/orders/:id/cancel', can('orders'), ah(async (req, res) => {
 // Cobro: uno o varios pagos (dividir cuenta). Se registran en el turno de
 // caja indicado (abierto y de la misma sucursal). Cuando el saldo llega a 0
 // la orden queda pagada.
-router.post('/orders/:id/payments', can('cashier'), ah(async (req, res) => {
+router.post('/orders/:id/payments', can('cashier'), requireDevice, ah(async (req, res) => {
   const body = req.body || {};
   const sessionId = requireUuid(body.cash_session_id, 'cash_session_id');
   if (!Array.isArray(body.payments)) throw badRequest('payments debe ser una lista', 'INVALID_FIELD');
@@ -846,6 +847,7 @@ router.post('/orders/:id/payments', can('cashier'), ah(async (req, res) => {
     if (!session || session.status !== 'abierta' || session.branch_id !== o.branch_id) {
       throw badRequest('Abre la caja de esta sucursal antes de cobrar', 'CASH_SESSION_REQUIRED');
     }
+    assertDeviceBranch(req, session.branch_id);
 
     for (const p of inputs.filter((x) => x.loyalty)) {
       if (inputs.filter((x) => x.loyalty).length > 1) throw badRequest('Solo un canje de puntos por cobro', 'INVALID_FIELD');

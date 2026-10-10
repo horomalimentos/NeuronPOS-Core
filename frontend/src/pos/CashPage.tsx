@@ -8,7 +8,8 @@ import BranchSelect from './BranchSelect';
 import DenominationModal from './DenominationModal';
 import { formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
-import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
+import DeviceBanner from './DeviceBanner';
+import type { CashCut, CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
 
 /**
@@ -54,6 +55,7 @@ export default function CashPage() {
         actions={<BranchSelect branches={branches} value={branchId} onChange={setBranchId} />}
       />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <DeviceBanner branchId={branchId} onActive={(d) => { setTerminal(d.terminal); posPrefs.setTerminal(d.terminal); }} />
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <Field label="Terminal de este dispositivo">
           <input className="input w-48" value={terminal} maxLength={40}

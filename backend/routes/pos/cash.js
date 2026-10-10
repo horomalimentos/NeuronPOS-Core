@@ -9,6 +9,7 @@ import {
 import { ROLES, assertBranchExists, canAccessBranch, int, isManager, requireBranch } from './common.js';
 import { getSettings, usdRate } from './settings.js';
 import { can } from '../../services/permissions.js';
+import { assertDeviceBranch, requireDevice } from '../../services/devices.js';
 
 const router = Router();
 const cashier = can('cashier');
@@ -72,10 +73,12 @@ router.get('/cash-sessions', cashier, ah(async (req, res) => {
   res.json({ sessions });
 }));
 
-router.post('/cash-sessions/open', cashier, ah(async (req, res) => {
+router.post('/cash-sessions/open', cashier, requireDevice, ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
-  const terminal = str(body.terminal, { field: 'terminal', max: 40 }) || 'Caja 1';
+  assertDeviceBranch(req, branchId);
+  // Con control de dispositivos, el turno es de la caja del equipo.
+  const terminal = req.device?.terminal || str(body.terminal, { field: 'terminal', max: 40 }) || 'Caja 1';
   const openingCash = money(body.opening_cash ?? 0, { field: 'opening_cash' });
   const rate = usdRate(body.usd_rate);
   try {
@@ -119,7 +122,7 @@ router.get('/cash-sessions/:id', cashier, ah(async (req, res) => {
   res.json(data);
 }));
 
-router.post('/cash-sessions/:id/movements', cashier, ah(async (req, res) => {
+router.post('/cash-sessions/:id/movements', cashier, requireDevice, ah(async (req, res) => {
   const body = req.body || {};
   const kind = oneOf(body.kind, ['entrada', 'salida'], 'kind');
   if (!kind) throw badRequest('Indica si es entrada o salida', 'MISSING_FIELD');
@@ -128,6 +131,7 @@ router.post('/cash-sessions/:id/movements', cashier, ah(async (req, res) => {
   const reason = str(body.reason, { field: 'reason', required: true, max: 200 });
   const movement = await withTenant(req.tenant.id, async (db) => {
     const s = await getSession(db, req, req.params.id, { lock: true });
+    assertDeviceBranch(req, s.branch_id);
     if (s.status !== 'abierta') throw badRequest('El turno ya esta cerrado', 'CASH_SESSION_CLOSED');
     return (await db.query(
       `INSERT INTO cash_movements (restaurant_id, session_id, kind, amount, reason, created_by)
@@ -139,11 +143,12 @@ router.post('/cash-sessions/:id/movements', cashier, ah(async (req, res) => {
 }));
 
 // Cambiar el tipo de cambio del turno abierto (aplica a los cobros siguientes).
-router.patch('/cash-sessions/:id', cashier, ah(async (req, res) => {
+router.patch('/cash-sessions/:id', cashier, requireDevice, ah(async (req, res) => {
   const rate = usdRate((req.body || {}).usd_rate);
   if (rate === undefined) throw badRequest('No hay cambios', 'NO_CHANGES');
   const session = await withTenant(req.tenant.id, async (db) => {
     const s = await getSession(db, req, req.params.id, { lock: true });
+    assertDeviceBranch(req, s.branch_id);
     if (s.status !== 'abierta') throw badRequest('El turno ya esta cerrado', 'CASH_SESSION_CLOSED');
     await db.query('UPDATE cash_sessions SET usd_rate = $3 WHERE id = $1 AND restaurant_id = $2', [s.id, req.tenant.id, rate]);
     return getSession(db, req, s.id);
@@ -153,7 +158,7 @@ router.patch('/cash-sessions/:id', cashier, ah(async (req, res) => {
 
 // Cierre con corte: counts = [{ payment_method_id, counted }]. Es obligatorio
 // capturar el efectivo y cada metodo que tenga movimientos en el turno.
-router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
+router.post('/cash-sessions/:id/close', cashier, requireDevice, ah(async (req, res) => {
   const body = req.body || {};
   if (!Array.isArray(body.counts)) throw badRequest('counts debe ser una lista', 'INVALID_FIELD');
   const counts = {};
@@ -167,6 +172,7 @@ router.post('/cash-sessions/:id/close', cashier, ah(async (req, res) => {
 
   const data = await withTenant(req.tenant.id, async (db) => {
     const s = await getSession(db, req, req.params.id, { lock: true });
+    assertDeviceBranch(req, s.branch_id);
     if (s.status !== 'abierta') throw badRequest('El turno ya esta cerrado', 'CASH_SESSION_CLOSED');
     if (s.opened_by !== req.user.id && !isManager(req.user)) {
       throw forbidden('Solo quien abrio el turno o un gerente puede cerrarlo', 'ROLE_REQUIRED');

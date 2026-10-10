@@ -6,6 +6,7 @@ import { api, errorMessage } from '../lib/api';
 import { meHas, useAdmin } from '../restaurant/context';
 import ClipPaymentsCard from '../restaurant/ClipPaymentsCard';
 import ChannelsCard from './ChannelsCard';
+import DevicesCard from './DevicesCard';
 import { EDITABLE_METHOD_KINDS, METHOD_KIND_LABEL, num, posCan } from './lib';
 import type { MethodKind, PaymentMethod, PosSettings } from './types';
 
@@ -110,6 +111,7 @@ export default function PosSettingsPage() {
             <p className="mt-3 text-xs text-gray-500">El tipo “Efectivo” permite dar cambio y cuenta para el efectivo esperado en el corte.</p>
           </section>
           {meHas(me, 'plataformas') && <ChannelsCard methods={methods} />}
+          {meHas(me, 'dispositivos') && <DevicesCard />}
           {/* La cuenta de Clip vive en Pedidos en linea; sin ese modulo, aqui para la terminal. */}
           {meHas(me, 'terminal_clip') && !meHas(me, 'portal') && <div className="lg:col-span-2"><ClipPaymentsCard isAdmin={me.user.role === 'admin'} /></div>}
         </div>

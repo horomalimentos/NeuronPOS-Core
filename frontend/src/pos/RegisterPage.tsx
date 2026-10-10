@@ -23,6 +23,7 @@ import type {
 import { usePosBranch } from './usePosBranch';
 import ChannelBadge from './ChannelBadge';
 import VoucherModal from './VoucherModal';
+import DeviceBanner from './DeviceBanner';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -285,6 +286,7 @@ export default function RegisterPage() {
       <>
         {header}
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+        {posCan.cashier(role) && <DeviceBanner branchId={branchId} />}
         {/* En celular las 4 pestanas van en 2 renglones (meseros con el telefono). */}
         <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:flex">
           {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe]] as const)

@@ -9,6 +9,7 @@ import { resolveTenant } from './middleware/tenant.js';
 import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
 import permissionsRouter from './routes/permissions.js';
+import devicesRouter from './routes/devices.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
@@ -43,7 +44,7 @@ export function createApp() {
   app.use(helmet());
   app.use(cors({
     origin: env.corsOrigins.length ? env.corsOrigins : !env.isProduction,
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Restaurant-Slug'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Restaurant-Slug', 'X-Device-Token'],
   }));
   // Los webhooks de Clip se firman sobre el cuerpo crudo: se guarda en req.rawBody.
   app.use(express.json({
@@ -114,6 +115,8 @@ export function createApp() {
   // Fase 5: domicilios (reparto en caja, app del repartidor propio, cortes).
   app.use('/api/delivery', deliveryRouter);
   app.use('/api/permissions', permissionsRouter);
+  // Control de dispositivos (modulo dispositivos).
+  app.use('/api/devices', devicesRouter);
   // Inventario y compras (modulo 'inventario').
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);

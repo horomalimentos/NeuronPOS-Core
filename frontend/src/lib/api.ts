@@ -23,6 +23,24 @@ interface Options {
   noRedirect?: boolean;
 }
 
+/**
+ * Llave de este equipo (control de dispositivos): aleatoria, se crea la primera
+ * vez y se queda en el navegador o la app. El servidor solo guarda su hash.
+ */
+export function deviceToken(): string {
+  try {
+    let t = localStorage.getItem('npc_device');
+    if (!t || !/^[A-Za-z0-9_-]{32,128}$/.test(t)) {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      t = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      localStorage.setItem('npc_device', t);
+    }
+    return t;
+  } catch {
+    return '';
+  }
+}
+
 const LOGIN_PATH: Record<Realm, string> = {
   platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor',
 };
@@ -38,6 +56,10 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
   if (slug && realm !== 'platform' && realm !== 'fleet') headers['X-Restaurant-Slug'] = slug;
+  if (realm === 'restaurant') {
+    const device = deviceToken();
+    if (device) headers['X-Device-Token'] = device;
+  }
 
   let res: Response;
   try {

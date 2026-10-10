@@ -33,6 +33,7 @@ export default function DashboardPage() {
       multimoneda: { to: '/admin/pos/ajustes', label: 'Tipo de cambio' },
       terminal_clip: { to: '/admin/caja', label: 'Abrir caja' },
       lealtad: { to: '/admin/clientes', label: 'Ver clientes' },
+      dispositivos: { to: '/admin/pos/ajustes', label: 'Ver dispositivos' },
     });
   }
   if (['admin', 'gerente', 'cajero', 'cocina'].includes(me.user.role)) links.inventario = { to: '/admin/inventario', label: 'Abrir inventario' };
