@@ -261,8 +261,11 @@ export async function prepareRedemption(db, restaurantId, order, loyalty) {
 }
 
 /** Verifica el codigo, liga el cliente a la orden y descuenta los puntos. */
-export async function commitRedemption(db, restaurantId, order, prep, { paymentId, code, userId }) {
-  if (prep.requireCode) await verifyCustomerCode(db, restaurantId, prep.customerId, code);
+export async function commitRedemption(db, restaurantId, order, prep, { paymentId, code, userId, verified }) {
+  if (prep.requireCode && !verified?.has(prep.customerId)) {
+    await verifyCustomerCode(db, restaurantId, prep.customerId, code);
+    verified?.add(prep.customerId);
+  }
   if (!order.customer_id) {
     await db.query(
       `UPDATE orders o SET customer_id = c.id, customer_name = coalesce(o.customer_name, c.name),
@@ -270,6 +273,7 @@ export async function commitRedemption(db, restaurantId, order, prep, { paymentI
          FROM customers c WHERE o.id = $1 AND o.restaurant_id = $2 AND c.id = $3 AND c.restaurant_id = $2`,
       [order.id, restaurantId, prep.customerId],
     );
+    order.customer_id = prep.customerId;
   }
   await applyPoints(db, restaurantId, {
     customerId: prep.customerId, kind: 'redeem', points: -prep.points, amount: prep.amount,

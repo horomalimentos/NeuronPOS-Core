@@ -1,10 +1,11 @@
 // Clientes y lealtad (modulo 'lealtad'): fichas de clientes con historial,
 // ajustes del programa de puntos, ajustes manuales y ligar un cliente a una
 // orden en caja. El canje se hace como pago en POST /api/pos/orders/:id/payments.
+// Las fichas de clientes tambien las usa el modulo 'monedero' (basta uno).
 import { Router } from 'express';
 import { withTenant } from '../config/database.js';
 import { authenticateUser, requireRole } from '../middleware/auth.js';
-import { requireModule } from '../middleware/requireModule.js';
+import { requireAnyModule, requireModule } from '../middleware/requireModule.js';
 import { applyPoints, loadLoyaltySettings, pointsValue } from '../services/loyalty.js';
 import {
   EMAIL_RE, HttpError, ah, badRequest, bool, buildSet, notFound, oneOf, requireUuid, str,
@@ -13,9 +14,10 @@ import { ROLES, int } from './pos/common.js';
 import { ACTIVE_STATUSES, lockOrder } from './pos/orders.js';
 
 const router = Router();
-router.use(authenticateUser, requireModule('lealtad'));
+router.use(authenticateUser, requireAnyModule('lealtad', 'monedero'));
 const staff = requireRole(...ROLES.orders);
 const manage = requireRole(...ROLES.manage);
+const loyaltyOnly = requireModule('lealtad');
 
 // ---------------------------------------------------------------------------
 // Ajustes del programa
@@ -34,7 +36,7 @@ const ratio = (v, field, { positive = false } = {}) => {
   return Math.round(n * 10000) / 10000;
 };
 
-router.patch('/settings', manage, ah(async (req, res) => {
+router.patch('/settings', loyaltyOnly, manage, ah(async (req, res) => {
   const b = req.body || {};
   const f = {
     program_name: str(b.program_name, { field: 'program_name', max: 40 }) ?? undefined,
@@ -64,7 +66,7 @@ router.patch('/settings', manage, ah(async (req, res) => {
 const CUSTOMER_SELECT = `
   SELECT c.id, c.name, c.email, c.phone, c.notes, c.active, c.created_at, c.last_login_at,
          c.password_hash IS NOT NULL AS has_account, c.points_balance, c.points_earned, c.points_redeemed,
-         c.pos_code_locked AS code_locked,
+         c.pos_code_locked AS code_locked, c.wallet_balance, c.wallet_loaded, c.wallet_spent,
          coalesce(s.orders, 0)::int AS orders, coalesce(s.spent, 0) AS spent, s.last_order_at
     FROM customers c
     LEFT JOIN LATERAL (
@@ -72,9 +74,16 @@ const CUSTOMER_SELECT = `
         FROM orders o WHERE o.restaurant_id = c.restaurant_id AND o.customer_id = c.id AND o.status = 'pagada'
     ) s ON true`;
 
-const publicRow = (r, settings) => ({ ...r, spent: Number(r.spent), points_value: pointsValue(settings, r.points_balance) });
+const publicRow = (r, settings) => ({
+  ...r,
+  spent: Number(r.spent),
+  points_value: pointsValue(settings, r.points_balance),
+  wallet_balance: Number(r.wallet_balance),
+  wallet_loaded: Number(r.wallet_loaded),
+  wallet_spent: Number(r.wallet_spent),
+});
 
-const SORTS = { recientes: 'c.created_at DESC', nombre: 'c.name', puntos: 'c.points_balance DESC', compras: 'coalesce(s.spent, 0) DESC', ultima: 's.last_order_at DESC NULLS LAST' };
+const SORTS = { recientes: 'c.created_at DESC', nombre: 'c.name', puntos: 'c.points_balance DESC', monedero: 'c.wallet_balance DESC', compras: 'coalesce(s.spent, 0) DESC', ultima: 's.last_order_at DESC NULLS LAST' };
 
 router.get('/customers', staff, ah(async (req, res) => {
   const q = str(req.query.q, { field: 'q', max: 100 }) || '';
@@ -156,7 +165,13 @@ async function customerDetail(db, req, id) {
       WHERE t.restaurant_id = $1 AND t.customer_id = $2 ORDER BY t.created_at DESC LIMIT 100`,
     [req.tenant.id, id],
   )).rows;
-  return { customer: publicRow(row, settings), orders, transactions };
+  const walletTransactions = (await db.query(
+    `SELECT t.id, t.kind, t.amount, t.balance_after, t.order_id, t.reason, t.created_at, u.name AS created_by_name
+       FROM wallet_transactions t LEFT JOIN users u ON u.id = t.created_by AND u.restaurant_id = t.restaurant_id
+      WHERE t.restaurant_id = $1 AND t.customer_id = $2 ORDER BY t.created_at DESC LIMIT 100`,
+    [req.tenant.id, id],
+  )).rows;
+  return { customer: publicRow(row, settings), orders, transactions, wallet_transactions: walletTransactions };
 }
 
 router.get('/customers/:id', staff, ah(async (req, res) => {
@@ -193,7 +208,7 @@ router.patch('/customers/:id', manage, ah(async (req, res) => {
 }));
 
 // Ajuste manual de puntos (+/-), con motivo.
-router.post('/customers/:id/points', manage, ah(async (req, res) => {
+router.post('/customers/:id/points', loyaltyOnly, manage, ah(async (req, res) => {
   requireUuid(req.params.id);
   const b = req.body || {};
   const points = Number(b.points);
@@ -208,7 +223,7 @@ router.post('/customers/:id/points', manage, ah(async (req, res) => {
   res.json(data);
 }));
 
-router.get('/stats', manage, ah(async (req, res) => {
+router.get('/stats', loyaltyOnly, manage, ah(async (req, res) => {
   const data = await withTenant(req.tenant.id, async (db) => {
     const settings = await loadLoyaltySettings(db, req.tenant.id);
     const [c] = (await db.query(
@@ -246,6 +261,8 @@ router.post('/orders/:id/customer', staff, ah(async (req, res) => {
     if (!ACTIVE_STATUSES.includes(o.status)) throw badRequest('La orden ya está cerrada', 'ORDER_CLOSED');
     const redeemed = await db.query("SELECT 1 FROM loyalty_transactions WHERE order_id = $1 AND kind = 'redeem' LIMIT 1", [o.id]);
     if (redeemed.rowCount) throw badRequest('La orden ya tiene un canje de puntos: no se puede cambiar el cliente', 'ORDER_HAS_REDEMPTION');
+    const byWallet = await db.query('SELECT 1 FROM order_payments WHERE order_id = $1 AND wallet_customer_id IS NOT NULL LIMIT 1', [o.id]);
+    if (byWallet.rowCount) throw badRequest('La orden ya tiene un pago con monedero: no se puede cambiar el cliente', 'ORDER_HAS_WALLET_PAYMENT');
     if (o.source === 'web' && o.customer_id) throw badRequest('El pedido en línea ya es de un cliente', 'ONLINE_ORDER_CUSTOMER');
     if (customerId) {
       const c = (await db.query('SELECT name, phone FROM customers WHERE id = $1 AND restaurant_id = $2 AND active', [customerId, req.tenant.id])).rows[0];

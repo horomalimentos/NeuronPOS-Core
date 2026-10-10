@@ -13,6 +13,7 @@ import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
 import { deductOrder } from '../../services/inventory.js';
 import { commitRedemption, countingCodeFailures, earnForOrder, prepareRedemption } from '../../services/loyalty.js';
+import { commitWalletPayment, prepareWalletPayment } from '../../services/wallet.js';
 import { requireRole } from '../../middleware/auth.js';
 import { activeDeliveryOf } from '../../services/delivery/tenant.js';
 import { calculateOrderTotals, discountPercentOf, normalizePayments, toCents } from '../../services/posMath.js';
@@ -600,7 +601,9 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
   const inputs = body.payments.map((p) => ({
     // Pago con puntos: { loyalty: { customer_id, points, code } }; el metodo y el monto los pone el servidor.
     loyalty: p?.loyalty && typeof p.loyalty === 'object' ? p.loyalty : null,
-    payment_method_id: p?.loyalty ? null : requireUuid(p?.payment_method_id, 'payment_method_id'),
+    // Pago con monedero: { wallet: { customer_id, amount, code } }.
+    wallet: p?.wallet && typeof p.wallet === 'object' && !p?.loyalty ? p.wallet : null,
+    payment_method_id: p?.loyalty || p?.wallet ? null : requireUuid(p?.payment_method_id, 'payment_method_id'),
     amount: money(p.amount ?? 0, { field: 'amount' }),
     tip: money(p.tip ?? 0, { field: 'tip' }),
     received: p.received === undefined || p.received === null || p.received === ''
@@ -631,14 +634,25 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       p.redemption = await prepareRedemption(db, req.tenant.id, o, p.loyalty);
       Object.assign(p, { payment_method_id: p.redemption.methodId, amount: p.redemption.amount, tip: 0, received: undefined });
     }
+    const walletLines = inputs.filter((x) => x.wallet);
+    if (walletLines.length > 1) throw badRequest('Solo un pago con monedero por cobro', 'INVALID_FIELD');
+    for (const p of walletLines) {
+      p.walletPay = await prepareWalletPayment(db, req.tenant.id, o, p.wallet);
+      const other = inputs.find((x) => x.redemption);
+      if (other && other.redemption.customerId !== p.walletPay.customerId) {
+        throw badRequest('Los puntos y el monedero deben ser del mismo cliente', 'CUSTOMER_MISMATCH');
+      }
+      Object.assign(p, { payment_method_id: p.walletPay.methodId, amount: p.walletPay.amount, tip: 0, received: undefined });
+    }
     const methods = new Map((await db.query(
       'SELECT id, kind, active FROM payment_methods WHERE restaurant_id = $1 AND id = ANY($2::uuid[])',
       [req.tenant.id, inputs.map((p) => p.payment_method_id)],
     )).rows.map((m) => [m.id, m]));
     const lines = inputs.map((p) => {
       const m = methods.get(p.payment_method_id);
-      if (p.redemption) return { ...p, kind: m.kind };
+      if (p.redemption || p.walletPay) return { ...p, kind: m.kind };
       if (m?.kind === 'puntos') throw badRequest('Los puntos se canjean con el botón de puntos', 'POINTS_METHOD_NOT_ALLOWED');
+      if (m?.kind === 'monedero') throw badRequest('El monedero se cobra con el botón de monedero', 'WALLET_METHOD_NOT_ALLOWED');
       if (!m || !m.active) throw badRequest('Metodo de pago no valido', 'PAYMENT_METHOD_NOT_FOUND');
       if (m.kind === 'en_linea') throw badRequest('Los pagos en linea solo los registra Clip', 'ONLINE_METHOD_NOT_ALLOWED');
       return { ...p, kind: m.kind };
@@ -647,6 +661,8 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     if (!lines.length && remaining > 0) throw badRequest('Agrega al menos un pago', 'MISSING_PAYMENTS');
     const norm = normalizePayments(lines, remaining);
 
+    // El codigo del cliente se pide una vez aunque pague con puntos y monedero.
+    const verified = new Set();
     for (const [i, p] of norm.lines.entries()) {
       const { rows: [pay] } = await db.query(
         `INSERT INTO order_payments (restaurant_id, order_id, payment_method_id, cash_session_id, amount, tip,
@@ -656,7 +672,10 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
           p.change_given, lines[i].reference, req.user.id],
       );
       if (lines[i].redemption) {
-        await commitRedemption(db, req.tenant.id, o, lines[i].redemption, { paymentId: pay.id, code: lines[i].loyalty.code, userId: req.user.id });
+        await commitRedemption(db, req.tenant.id, o, lines[i].redemption, { paymentId: pay.id, code: lines[i].loyalty.code, userId: req.user.id, verified });
+      }
+      if (lines[i].walletPay) {
+        await commitWalletPayment(db, req.tenant.id, o, lines[i].walletPay, { paymentId: pay.id, code: lines[i].wallet.code, userId: req.user.id, verified });
       }
     }
     const tips = norm.lines.reduce((s, p) => s + toCents(p.tip), 0);

@@ -13,6 +13,7 @@ import employeesRouter from './routes/employees.js';
 import fleetRouter from './routes/fleet.js';
 import inventoryRouter from './routes/inventory/index.js';
 import loyaltyRouter from './routes/loyalty.js';
+import walletRouter from './routes/wallet.js';
 import meRouter from './routes/me.js';
 import onlineRouter from './routes/online.js';
 import platformRouter from './routes/platform.js';
@@ -105,6 +106,7 @@ export function createApp() {
   // Inventario y compras (modulo 'inventario').
   app.use('/api/inventory', inventoryRouter);
   app.use('/api/loyalty', loyaltyRouter);
+  app.use('/api/wallet', walletRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));
   app.use(errorHandler);

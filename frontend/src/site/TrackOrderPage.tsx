@@ -82,7 +82,7 @@ export default function TrackOrderPage() {
   const failed = order.status === 'rechazado' || order.status === 'cancelado';
   const awaitingPayment = order.status === 'esperando_pago';
   const paidOnline = order.online_payment_status === 'pagado';
-  const paymentLabel = paidOnline ? 'Pagado en línea con Clip'
+  const paymentLabel = paidOnline ? (order.payment_provider === 'monedero' ? 'Pagado con tu monedero' : 'Pagado en línea con Clip')
     : order.online_payment_status ? 'Pago en línea con Clip pendiente'
       : order.paid ? 'Pagado'
         : `Pago al ${delivery ? 'recibir' : 'recoger'}: ${order.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}`;

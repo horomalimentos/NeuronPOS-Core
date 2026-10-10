@@ -6,7 +6,9 @@ import { formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { recentOrders } from './cart';
 import { hasModule, useSiteCtx } from './context';
+import CodeCard from './CodeCard';
 import LoyaltyCard from './LoyaltyCard';
+import WalletCard from './WalletCard';
 import { Notice } from './OrderPage';
 import { STATUS_STYLE, formatDateTimeShort } from './portalLib';
 import type { Address, Customer, CustomerOrder } from './types';
@@ -167,6 +169,8 @@ export function AccountPage() {
       <Link to="/cuenta/pedidos" className="card-light flex items-center justify-between p-4 font-semibold hover:border-brand/50">
         <span className="flex items-center gap-2"><ClipboardList className="h-5 w-5 text-brand" /> Mis pedidos</span><ChevronRight className="h-5 w-5 text-gray-400" />
       </Link>
+      <CodeCard />
+      <WalletCard />
       <LoyaltyCard />
       <form onSubmit={saveProfile} className="card-light space-y-3 p-5">
         <h2 className="font-bold">Mis datos</h2>

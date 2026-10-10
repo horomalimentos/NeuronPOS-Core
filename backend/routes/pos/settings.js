@@ -90,8 +90,8 @@ router.patch('/payment-methods/:id', requireRole(...ROLES.manage), ah(async (req
   const method = await withTenant(req.tenant.id, async (db) => {
     const cur = (await db.query('SELECT kind FROM payment_methods WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id])).rows[0];
     // "Clip en linea" lo usa el pago en linea: se puede renombrar, no cambiar de tipo.
-    // Igual el de "Puntos" (lo usa el canje de lealtad).
-    if ((cur?.kind === 'en_linea' || cur?.kind === 'puntos') && fields.kind !== undefined) {
+    // Igual los de "Puntos" y "Monedero" (los usan el canje y el monedero).
+    if (['en_linea', 'puntos', 'monedero'].includes(cur?.kind) && fields.kind !== undefined) {
       throw badRequest('El metodo de pago en linea no puede cambiar de tipo', 'ONLINE_METHOD_LOCKED');
     }
     return (await db.query(

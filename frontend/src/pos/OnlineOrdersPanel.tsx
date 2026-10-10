@@ -176,7 +176,7 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
       <div className="flex items-center justify-between text-sm">
         {o.online_payment_status === 'pagado' ? (
           <span className="flex items-center gap-1.5 font-medium text-emerald-300">
-            <BadgeCheck className="h-4 w-4" /> Pagado en línea con Clip
+            <BadgeCheck className="h-4 w-4" /> {o.payment_provider === 'monedero' ? 'Pagado con monedero' : 'Pagado en línea con Clip'}
             {num(o.delivery_fee) > 0 && <span className="font-normal text-gray-400">· envío {formatMXN(o.delivery_fee)}</span>}
           </span>
         ) : (

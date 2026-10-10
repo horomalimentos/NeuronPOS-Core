@@ -201,6 +201,7 @@ tiene tres capas:
 | `reportes` | Reportes de ventas (sugerido $150) |
 | `inventario` | Inventario y compras (sugerido $250) |
 | `lealtad` | Clientes y lealtad (sugerido $200) |
+| `monedero` | Monedero del cliente (sugerido $150) |
 | `landing` | Sitio web |
 | `portal` | Portal de clientes y pedidos en línea |
 | `rh` | Recursos humanos y nómina |
@@ -426,6 +427,46 @@ gerente y cajero; cambios al programa y ajustes de puntos solo admin y gerente).
 Cobro con puntos: `POST /api/pos/orders/:id/payments` acepta una línea
 `{ "loyalty": { "customer_id", "points", "code" } }`. Portal:
 `GET /api/portal/me/loyalty` y `POST /api/portal/me/loyalty/reset-code`.
+
+## Monedero del cliente (módulo `monedero`)
+
+Copiado del monedero de Horom. Usa las mismas fichas de clientes de
+`/admin/clientes` (basta con tener `lealtad` o `monedero`); la pestaña
+"Monedero" tiene sus ajustes.
+
+- **Recargas:** el cliente recarga desde "Mi cuenta" del sitio con tarjeta,
+  en una liga de Clip de la cuenta del restaurante (`clip_checkouts.purpose =
+  'recarga'`). El saldo se acredita cuando Clip confirma el pago (webhook,
+  conciliador o al volver a la cuenta), una sola vez y solo si el monto que
+  reporta Clip coincide. Mínimo, máximo, montos sugeridos y saldo máximo
+  por cliente se configuran. Sin Clip configurado no hay recargas en línea.
+- **Pago en caja:** en el cobro, con el cliente agregado, "Pagar con
+  monedero" registra un pago `monedero` autorizado con el mismo código de 6
+  dígitos de los puntos (si se usan puntos y monedero en el mismo cobro, el
+  código se pide una vez). Puede ser parcial y combinarse con otros pagos.
+- **Pago en línea:** con sesión iniciada, "Mi monedero" paga todo el pedido
+  (el saldo debe cubrir el total); el pedido llega al restaurante ya pagado.
+  Si el restaurante lo rechaza, o el cliente lo cancela antes de que lo
+  acepten, el dinero regresa solo al monedero.
+- **Corte de caja:** lo pagado con monedero sale aparte como "No se cuenta"
+  (el dinero se cobró al recargar).
+- **Ajustes manuales** (admin, gerente) con motivo obligatorio: abonar o
+  descontar saldo (cortesías, compensaciones, abonos en efectivo).
+- El saldo no se devuelve en efectivo ni caduca.
+
+| Método | Ruta | Roles |
+|---|---|---|
+| GET / PATCH | `/api/wallet/settings` | personal / admin, gerente |
+| POST | `/api/wallet/customers/:id/adjust` (`amount` con signo, `reason`) | admin, gerente |
+| GET | `/api/wallet/stats` | admin, gerente |
+| GET | `/api/portal/me/wallet` | cliente |
+| POST | `/api/portal/me/wallet/topup` (`amount`) → liga de Clip | cliente |
+| POST | `/api/portal/me/wallet/verify` (al volver de Clip) | cliente |
+| GET / POST | `/api/portal/me/pos-code` · `/me/pos-code/reset` (código de caja) | cliente |
+
+Cobro en caja: `POST /api/pos/orders/:id/payments` acepta una línea
+`{ "wallet": { "customer_id", "amount", "code" } }`. Pedido en línea:
+`payment: { "provider": "monedero" }`.
 
 ## Sitio web y pedidos en línea (fase 2)
 

@@ -170,8 +170,8 @@ export function calculateCashCut({ methods, payments, movements, openingCash = 0
       expected: fromCents(expected),
     };
     if (counts) {
-      // Los puntos no se cuentan: lo esperado es lo contado.
-      const counted = m.kind === 'puntos' ? expected : toCents(counts[m.id] ?? 0);
+      // Puntos y monedero no se cuentan: lo esperado es lo contado.
+      const counted = m.kind === 'puntos' || m.kind === 'monedero' ? expected : toCents(counts[m.id] ?? 0);
       line.counted = fromCents(counted);
       line.difference = fromCents(counted - expected);
       if (m.kind === 'efectivo') countedCash = (countedCash ?? 0) + counted;

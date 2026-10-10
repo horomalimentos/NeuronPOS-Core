@@ -1,6 +1,6 @@
 import {
   ArrowRight, Award, BarChart3, Boxes, BrainCircuit, HeartHandshake, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone,
-  Truck, Users,
+  Truck, Users, Wallet,
 } from 'lucide-react';
 import { useEffect, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
@@ -31,6 +31,7 @@ const MODULE_INFO: Record<string, { Icon: ComponentType<{ className?: string }>;
   pos: { Icon: Monitor, points: ['Mesas, barra y para llevar', 'Pantalla de cocina en tiempo real', 'Cortes de caja y tickets'] },
   reportes: { Icon: BarChart3, points: ['Ventas por día, hora y producto', 'Comparativo contra el periodo anterior', 'Descarga a Excel'] },
   lealtad: { Icon: HeartHandshake, points: ['Clientes con historial de compras', 'Puntos con el nombre de tu programa', 'Canje en caja con código seguro'] },
+  monedero: { Icon: Wallet, points: ['Tus clientes recargan saldo con tarjeta', 'Pagan en línea o en caja con código', 'Dinero cobrado por adelantado'] },
   inventario: { Icon: Boxes, points: ['Recetas que descuentan insumos al vender', 'Conteos con foto, mermas y faltantes', 'Pedido sugerido y compras por WhatsApp'] },
   landing: { Icon: Globe, points: ['Tu propia dirección web', 'Menú, horarios y sucursales', 'Tus colores y tu logo'] },
   portal: { Icon: Smartphone, points: ['Tus clientes piden desde el celular', 'Pago en línea con tarjeta o al recibir', 'Seguimiento del pedido'] },

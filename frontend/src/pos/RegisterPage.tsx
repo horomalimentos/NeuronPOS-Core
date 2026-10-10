@@ -436,6 +436,7 @@ export default function RegisterPage() {
       {showPay && order && session && (
         <PaymentModal order={order} methods={methods} sessionId={session.id} onClose={() => setShowPay(false)}
           loyalty={me.modules.some((m) => m.code === 'lealtad' && m.enabled)}
+          wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}
           onPaid={(o) => { setShowPay(false); setOrder(o); if (o.status === 'pagada') loadFloor(); }} />
       )}
