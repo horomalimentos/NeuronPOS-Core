@@ -499,6 +499,33 @@ correo de contacto como "Responder a".
 | POST | `/api/portal/auth/forgot` `{email}` · `/api/portal/auth/reset` `{token, password}` | público (cliente) |
 | POST | `/api/auth/forgot` `{email}` · `/api/auth/reset` `{token, password}` | público (personal) |
 
+## Zonas de entrega (módulo `zonas_entrega`)
+
+Adaptado de Horom (zona por sucursal con tramos de distancia). En
+*Pedidos en línea › Zonas de entrega* el administrador pone el centro en el
+mapa (busca la dirección de la sucursal o toca el mapa) y los tramos, p. ej.
+hasta 2 km $30 y hasta 4 km $45, más un pedido mínimo a domicilio opcional.
+
+- En el checkout el cliente marca su domicilio en el mapa (tocando, con
+  "Usar mi ubicación" o buscando la calle). El servidor calcula la distancia
+  en línea recta, cobra el tramo que le toca y rechaza los domicilios fuera
+  del último tramo (`OUT_OF_ZONE`). Sin pin no se puede pedir
+  (`LOCATION_REQUIRED`); la cotización sí responde, con el primer tramo.
+- Las direcciones guardadas conservan su pin; una vieja sin pin lo guarda la
+  primera vez que se usa.
+- El repartidor navega al punto exacto (Google Maps y Waze) y en *Vender ›
+  En línea* aparece "ver en mapa" con los km.
+- Sin el módulo, o sin zona en la sucursal, se cobra el costo de envío fijo
+  de siempre.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/online/zones` | admin, gerente |
+| PUT / DELETE | `/api/online/branches/:id/zone` `{center, tiers: [{radius_km, fee}], min_order, active}` | admin, gerente |
+
+La búsqueda de direcciones usa Nominatim de OpenStreetMap (solo al presionar
+Buscar) y los mapas, sus mosaicos.
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

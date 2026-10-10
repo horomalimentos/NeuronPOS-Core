@@ -8,6 +8,8 @@ import type { PublicBranch } from '../lib/types';
 import { openLabel } from '../site/hours';
 import ClipPaymentsCard from './ClipPaymentsCard';
 import { canManage, useAdmin } from './context';
+import type { DeliveryZone } from '../site/types';
+import ZoneEditor from './ZoneEditor';
 import { ModuleLocked } from './WebsitePage';
 
 interface OnlineSettings {
@@ -30,7 +32,7 @@ interface OnlineBranch extends PublicBranch {
 interface OnlineData {
   settings: OnlineSettings;
   branches: OnlineBranch[];
-  modules?: { pos: boolean; domicilios: boolean };
+  modules?: { pos: boolean; domicilios: boolean; zonas_entrega?: boolean };
 }
 
 /**
@@ -47,6 +49,7 @@ export default function OnlineSettingsPage() {
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
   const [saving, setSaving] = useState(false);
+  const [zones, setZones] = useState<Record<string, DeliveryZone> | null>(null);
 
   const apply = (d: OnlineData) => {
     setData((prev) => ({ ...d, modules: d.modules ?? prev?.modules }));
@@ -57,6 +60,12 @@ export default function OnlineSettingsPage() {
     api<OnlineData>('/online/settings').then(apply).catch((e) => setError(errorMessage(e)));
   }, []);
   useEffect(() => { if (enabled) load(); }, [enabled, load]);
+  const zonesOn = Boolean(data?.modules?.zonas_entrega);
+  useEffect(() => {
+    if (!zonesOn) return;
+    api<{ zones: DeliveryZone[] }>('/online/zones')
+      .then((r) => setZones(Object.fromEntries(r.zones.map((z) => [z.branch_id, z])))).catch((e) => setError(errorMessage(e)));
+  }, [zonesOn]);
 
   if (!canManage(me.user.role)) return <Navigate to="/admin" replace />;
   if (!enabled) return <ModuleLocked name="Portal de clientes" />;
@@ -160,10 +169,34 @@ export default function OnlineSettingsPage() {
               <Button type="button" variant="secondary" disabled={Number(fees[b.id] || 0) === Number(b.delivery_fee)}
                 onClick={() => saveBranch(b, { delivery_fee: Number(fees[b.id] || 0) })}>Guardar</Button>
             </div>
-            <p className="text-xs text-gray-500">Actual: {formatMXN(b.delivery_fee)}</p>
+            <p className="text-xs text-gray-500">
+              Actual: {formatMXN(b.delivery_fee)}
+              {zones?.[b.id]?.active && ' · con zona de entrega se cobra por distancia'}
+            </p>
           </div>
         ))}
       </div>
+
+      {zonesOn && (
+        <>
+          <h2 className="mb-1 mt-8 text-lg font-semibold text-white">Zonas de entrega</h2>
+          <p className="mb-4 text-sm text-gray-400">
+            El cliente marca su domicilio en el mapa y el envío se cobra según la distancia. Fuera del último tramo no se aceptan pedidos a domicilio.
+          </p>
+          {!zones ? <Spinner /> : (
+            <div className="space-y-4">
+              {data.branches.filter((b) => b.active).map((b) => (
+                <ZoneEditor key={b.id} branch={{ id: b.id, name: b.name, address: b.address }} zone={zones[b.id] ?? null}
+                  onSaved={(z) => setZones((prev) => {
+                    const next = { ...(prev || {}) };
+                    if (z) next[b.id] = z; else delete next[b.id];
+                    return next;
+                  })} />
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </>
   );
 }

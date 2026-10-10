@@ -1,6 +1,7 @@
 import { ArrowLeft, Banknote, CreditCard, Globe, Loader2, MapPin, PiggyBank, ShoppingBag, Store, Truck, Wallet } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { errorMessage, portalApi } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { cartStore, recentOrders, useCart } from './cart';
@@ -33,6 +34,9 @@ export default function CheckoutPage() {
   const [address, setAddress] = useState('');
   const [reference, setReference] = useState('');
   const [saveAddress, setSaveAddress] = useState(true);
+  // Pin del domicilio (zonas de entrega); null = el de la direccion guardada.
+  const [location, setLocation] = useState<Point | null>(null);
+  const [moveSaved, setMoveSaved] = useState(false);
   const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
   const [provider, setProvider] = useState<'contra_entrega' | 'clip' | 'monedero'>('contra_entrega');
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -80,6 +84,14 @@ export default function CheckoutPage() {
   }, [customer, walletOffered]);
   const deliveryOk = Boolean(config?.settings.allow_delivery && branch?.delivery_available);
   const type: OrderType = orderType === 'domicilio' && !deliveryOk ? 'para_llevar' : orderType;
+  const zone = type === 'domicilio' ? branch?.delivery_zone ?? null : null;
+  const usingSavedAddress = type === 'domicilio' && Boolean(customer) && addressId !== 'new' && addresses.length > 0;
+  const saved = usingSavedAddress ? addresses.find((a) => a.id === addressId) : undefined;
+  const savedPoint = saved?.latitude != null && saved.longitude != null
+    ? { latitude: Number(saved.latitude), longitude: Number(saved.longitude) } : null;
+  const point = location ?? savedPoint;
+  const sendPoint = zone ? point : null;
+  useEffect(() => { setLocation(null); setMoveSaved(false); }, [addressId]);
   const items = useMemo(() => cart.lines.map((l) => ({
     menu_item_id: l.item_id, quantity: l.quantity, modifier_ids: l.modifier_ids, notes: l.notes || null,
   })), [cart.lines]);
@@ -92,14 +104,17 @@ export default function CheckoutPage() {
     const t = setTimeout(() => {
       portalApi<Quote>('/portal/quote', {
         method: 'POST', noRedirect: true,
-        body: { branch_id: cart.branch_id, order_type: type, items, payment: { method } },
+        body: {
+          branch_id: cart.branch_id, order_type: type, items, payment: { method },
+          address_id: usingSavedAddress ? addressId : undefined, location: sendPoint ?? undefined,
+        },
       })
         .then((q) => { if (!cancelled) { setQuote(q); setQuoteError(''); } })
         .catch((e) => { if (!cancelled) { setQuote(null); setQuoteError(errorMessage(e)); } })
         .finally(() => { if (!cancelled) setQuoting(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [config, cart.branch_id, type, items, method]);
+  }, [config, cart.branch_id, type, items, method, usingSavedAddress, addressId, sendPoint?.latitude, sendPoint?.longitude]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!hasModule(site, 'portal')) return <p className="px-6 py-24 text-center text-gray-500">Este restaurante no tiene pedidos en línea.</p>;
   if (!config) {
@@ -132,6 +147,7 @@ export default function CheckoutPage() {
           address_id: usingSaved ? addressId : undefined,
           address: type === 'domicilio' && !usingSaved ? { address: address.trim(), reference: reference.trim() || null } : undefined,
           save_address: Boolean(customer && saveAddress && type === 'domicilio' && !usingSaved),
+          location: sendPoint ?? undefined,
           notes: notes.trim() || null,
           payment: payOnline
             ? { provider: 'clip' }
@@ -186,9 +202,13 @@ export default function CheckoutPage() {
                 </button>
               )}
             </div>
-            {type === 'domicilio' && branch && Number(branch.delivery_fee) > 0 && (
+            {type === 'domicilio' && branch && (zone ? (
+              <p className="mt-2 text-sm text-gray-500">
+                Envío según la distancia: {zone.tiers.map((t) => `hasta ${t.radius_km} km ${formatMXN(t.fee)}`).join(' · ')}
+              </p>
+            ) : Number(branch.delivery_fee) > 0 && (
               <p className="mt-2 text-sm text-gray-500">Costo de envío: {formatMXN(branch.delivery_fee)}</p>
-            )}
+            ))}
           </section>
 
           <section className="card-light p-5">
@@ -234,6 +254,26 @@ export default function CheckoutPage() {
                     <label className="flex items-center gap-2 text-sm text-gray-700">
                       <input type="checkbox" checked={saveAddress} onChange={(e) => setSaveAddress(e.target.checked)} /> Guardar en mis direcciones
                     </label>
+                  )}
+                </div>
+              )}
+              {zone && (
+                <div className="mt-4 space-y-2">
+                  {savedPoint && !moveSaved ? (
+                    <p className="flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                      <MapPin className="h-4 w-4 text-brand" /> Ubicación guardada en el mapa.
+                      <button type="button" className="font-semibold text-brand" onClick={() => setMoveSaved(true)}>Ajustar</button>
+                    </p>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-gray-800">Marca tu domicilio en el mapa</p>
+                      <MapTools light near={zone.center} onPoint={setLocation} />
+                      <ZoneMap className="h-64 sm:h-72" center={zone.center} tiers={zone.tiers} pin={point} onPick={setLocation} />
+                      <p className="text-xs text-gray-500">Toca el mapa o arrastra el punto naranja hasta tu puerta. Así el repartidor llega directo.</p>
+                    </>
+                  )}
+                  {quote?.delivery_distance_km != null && (
+                    <p className="text-sm text-gray-700">A {Number(quote.delivery_distance_km).toFixed(1)} km · envío {formatMXN(quote.delivery_fee)}</p>
                   )}
                 </div>
               )}
@@ -317,7 +357,7 @@ export default function CheckoutPage() {
               ) : quoting ? <p className="flex items-center gap-2 text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Calculando…</p> : null}
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
-              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort))}>
+              <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort)) || Boolean(zone && !point)}>
                 {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : payWallet ? 'Pagar con monedero' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
               </button>
             </div>

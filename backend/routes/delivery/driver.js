@@ -19,6 +19,7 @@ const SELECT = `
   SELECT d.id, d.order_id, d.status, d.cash_to_collect, d.cash_collected, d.fail_reason, d.assigned_at,
          d.picked_up_at, d.on_way_at, d.delivered_at, d.failed_at,
          o.folio, o.customer_name, o.customer_phone, o.customer_address, o.delivery_reference, o.notes,
+         o.delivery_latitude, o.delivery_longitude,
          o.total, o.paid_amount, o.payment_preference, o.pay_with, o.status AS order_status,
          b.name AS branch_name, b.address AS branch_address, b.phone AS branch_phone
     FROM order_deliveries d
@@ -31,8 +32,16 @@ function view(r, items = []) {
     status_label: DELIVERY_STATUS_LABEL[r.status],
     // Lo que falta por cobrar en la puerta (puede cambiar si la caja cobra antes).
     remaining: fromCents(Math.max(0, toCents(r.total) - toCents(r.paid_amount))),
-    maps_url: mapsUrl(r.customer_address),
-    waze_url: r.customer_address ? `https://waze.com/ul?q=${encodeURIComponent(r.customer_address)}&navigate=yes` : null,
+    // Con el pin del cliente (zonas de entrega) se navega al punto exacto.
+    ...(r.delivery_latitude !== null && r.delivery_latitude !== undefined
+      ? {
+        maps_url: `https://www.google.com/maps/dir/?api=1&destination=${r.delivery_latitude},${r.delivery_longitude}`,
+        waze_url: `https://waze.com/ul?ll=${r.delivery_latitude},${r.delivery_longitude}&navigate=yes`,
+      }
+      : {
+        maps_url: mapsUrl(r.customer_address),
+        waze_url: r.customer_address ? `https://waze.com/ul?q=${encodeURIComponent(r.customer_address)}&navigate=yes` : null,
+      }),
     items: items.filter((i) => i.order_id === r.order_id),
   };
 }

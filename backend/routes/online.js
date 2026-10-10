@@ -7,6 +7,7 @@ import { withTenant } from '../config/database.js';
 import { authenticateUser, requireRole } from '../middleware/auth.js';
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { checkModuleAccess } from '../services/access.js';
+import { loadZones, readPoint, readTiers } from '../services/deliveryZones.js';
 import { getOnlineSettings, loadBranches, publicBranch } from '../services/online.js';
 import { getPaymentSettings, publicPaymentSettings, updatePaymentSettings } from '../services/restaurantPayments.js';
 import { ah, badRequest, bool, buildSet, money, notFound, requireUuid } from '../utils/http.js';
@@ -30,12 +31,13 @@ async function snapshot(req, db) {
 router.get('/settings', ah(async (req, res) => {
   const data = await withTenant(req.tenant.id, (db) => snapshot(req, db));
   // Para avisar en pantalla si faltan modulos que el portal necesita.
-  const [pos, domicilios] = await Promise.all([loadModuleRow(req.tenant.id, 'pos'), loadModuleRow(req.tenant.id, 'domicilios')]);
+  const [pos, domicilios, zonas] = await Promise.all(['pos', 'domicilios', 'zonas_entrega'].map((c) => loadModuleRow(req.tenant.id, c)));
   res.json({
     ...data,
     modules: {
       pos: !checkModuleAccess(req.tenant, 'pos', pos),
       domicilios: !checkModuleAccess(req.tenant, 'domicilios', domicilios),
+      zonas_entrega: !checkModuleAccess(req.tenant, 'zonas_entrega', zonas),
     },
   });
 }));
@@ -92,6 +94,44 @@ router.put('/branches/:id', ah(async (req, res) => {
 // restaurante. Se guardan cifradas y nunca se regresan: solo "configurado".
 // Ver: admin y gerente. Cambiar: solo admin.
 // ---------------------------------------------------------------------------
+
+// Zonas de entrega por distancia (modulo 'zonas_entrega').
+const zones = requireModule('zonas_entrega');
+
+router.get('/zones', zones, ah(async (req, res) => {
+  const map = await withTenant(req.tenant.id, (db) => loadZones(db, req.tenant.id, { onlyActive: false }));
+  res.json({ zones: [...map.values()] });
+}));
+
+router.put('/branches/:id/zone', zones, ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const body = req.body || {};
+  const center = readPoint(body.center, 'center');
+  if (!center) throw badRequest('Marca en el mapa el centro de la zona', 'MISSING_FIELD');
+  const tiers = readTiers(body.tiers);
+  const minOrder = money(body.min_order, { field: 'min_order' }) ?? 0;
+  const active = body.active === undefined ? true : bool(body.active, 'active');
+  const zone = await withTenant(req.tenant.id, async (db) => {
+    const ok = await db.query('SELECT 1 FROM branches WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
+    if (!ok.rowCount) throw notFound('Sucursal no encontrada', 'BRANCH_NOT_FOUND');
+    await db.query(
+      `INSERT INTO branch_delivery_zones (restaurant_id, branch_id, center_latitude, center_longitude, tiers, min_order, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (branch_id) DO UPDATE SET center_latitude = EXCLUDED.center_latitude, center_longitude = EXCLUDED.center_longitude,
+         tiers = EXCLUDED.tiers, min_order = EXCLUDED.min_order, active = EXCLUDED.active, updated_at = now()`,
+      [req.tenant.id, req.params.id, center.latitude, center.longitude, JSON.stringify(tiers), minOrder, active],
+    );
+    return (await loadZones(db, req.tenant.id, { onlyActive: false })).get(req.params.id);
+  });
+  res.json({ zone });
+}));
+
+router.delete('/branches/:id/zone', zones, ah(async (req, res) => {
+  requireUuid(req.params.id);
+  await withTenant(req.tenant.id, (db) =>
+    db.query('DELETE FROM branch_delivery_zones WHERE branch_id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]));
+  res.status(204).end();
+}));
 
 router.get('/payments', ah(async (req, res) => {
   const row = await withTenant(req.tenant.id, (db) => getPaymentSettings(db, req.tenant.id));

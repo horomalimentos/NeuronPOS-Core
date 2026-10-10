@@ -53,6 +53,16 @@ export interface PortalBranch extends PublicBranch {
   accepts_orders: boolean;
   delivery_available: boolean;
   delivery_fee: Money;
+  /** Zona por distancia: el cliente marca su domicilio en el mapa. */
+  delivery_zone: DeliveryZone | null;
+}
+
+export interface DeliveryZone {
+  branch_id: string;
+  center: { latitude: number; longitude: number };
+  tiers: { radius_km: number; fee: number }[];
+  min_order: number;
+  active: boolean;
 }
 
 export interface PaymentOption {
@@ -123,6 +133,8 @@ export interface Address {
   label: string;
   address: string;
   reference: string | null;
+  latitude: string | null;
+  longitude: string | null;
 }
 
 export type CustomerStatus = 'esperando_pago' | 'recibido' | 'preparando' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
@@ -192,5 +204,7 @@ export interface Quote {
   tax_rate_pct: Money;
   prices_include_tax: boolean;
   prep_time_minutes: number;
+  delivery_distance_km?: number | null;
+  delivery_location_required?: boolean;
   items: { menu_item_id: string; name: string; quantity: number; line_total: number }[];
 }

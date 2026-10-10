@@ -30,6 +30,7 @@ function assertNotAwaitingPayment(o) {
 const LIST_SQL = `
   SELECT o.id, o.branch_id, o.folio, o.order_type, o.status, o.online_status, o.customer_id,
          o.customer_name, o.customer_phone, o.customer_address, o.delivery_reference, o.notes,
+         o.delivery_latitude, o.delivery_longitude, o.delivery_distance_km,
          o.subtotal, o.delivery_fee, o.tax_amount, o.total, o.paid_amount,
          o.payment_preference, o.pay_with, o.payment_provider, o.online_payment_status, o.created_at, o.accepted_at, o.estimated_ready_at,
          o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason
