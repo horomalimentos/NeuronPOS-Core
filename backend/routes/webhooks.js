@@ -14,6 +14,7 @@
 import { Router } from 'express';
 import pool, { withPlatform, withTenant } from '../config/database.js';
 import { platformClipCredentials } from '../services/clip/client.js';
+import { refreshCobro } from '../services/clip/pinpad.js';
 import { reconcileCheckoutId } from '../services/clip/reconcile.js';
 import { verifyClipSignature, webhookCheckoutId, webhookEventType } from '../services/clip/status.js';
 import { reconcileMarketplaceCheckoutId } from '../services/marketplaceMoney.js';
@@ -80,6 +81,28 @@ router.post('/clip/r/:ref', ah(async (req, res) => {
     throw new HttpError(503, 'Credenciales de pago no disponibles', 'SECRETS_UNAVAILABLE');
   }
   await handle(req, res, { kind: 'restaurant', restaurantId: restaurant.id }, secret);
+}));
+
+// Terminal Clip (PinPad) de un restaurante: solo trae el id del cobro; el
+// resultado se consulta a Clip con las credenciales del restaurante.
+router.post('/clip/pinpad/:restaurante', ah(async (req, res) => {
+  res.status(200).json({ received: true });
+  const rid = req.params.restaurante;
+  const pinpadId = req.body?.id || req.body?.pinpad_request_id;
+  if (!UUID_RE.test(rid) || !pinpadId) return;
+  try {
+    const creds = await loadRestaurantClipCredentials(rid);
+    if (!creds.apiKey) return;
+    await withTenant(rid, async (db) => {
+      const row = (await db.query(
+        'SELECT * FROM clip_pinpad_requests WHERE restaurant_id = $1 AND pinpad_request_id = $2',
+        [rid, String(pinpadId)],
+      )).rows[0];
+      if (row) await refreshCobro(db, row, creds);
+    });
+  } catch (err) {
+    console.error('[Clip PinPad webhook]', err.message);
+  }
 }));
 
 export default router;

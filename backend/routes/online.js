@@ -5,7 +5,7 @@
 import { Router } from 'express';
 import { withTenant } from '../config/database.js';
 import { authenticateUser, requireRole } from '../middleware/auth.js';
-import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
+import { loadModuleRow, requireAnyModule, requireModule } from '../middleware/requireModule.js';
 import { checkModuleAccess } from '../services/access.js';
 import { loadZones, readPoint, readTiers } from '../services/deliveryZones.js';
 import { getOnlineSettings, loadBranches, publicBranch } from '../services/online.js';
@@ -14,7 +14,10 @@ import { ah, badRequest, bool, buildSet, money, notFound, requireUuid } from '..
 import { int } from './pos/common.js';
 
 const router = Router();
-router.use(authenticateUser, requireModule('portal'), requireRole('admin', 'gerente'));
+// La cuenta de Clip (/payments) tambien la usa la terminal Clip en caja.
+router.use(authenticateUser, (req, res, next) => (req.path === '/payments'
+  ? requireAnyModule('portal', 'terminal_clip')(req, res, next)
+  : requireModule('portal')(req, res, next)), requireRole('admin', 'gerente'));
 
 async function snapshot(req, db) {
   const settings = await getOnlineSettings(db, req.tenant.id);

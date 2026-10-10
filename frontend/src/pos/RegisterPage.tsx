@@ -7,7 +7,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import DiscountModal from './DiscountModal';
 import ModifierModal, { type CartSelection } from './ModifierModal';
@@ -59,6 +59,12 @@ export default function RegisterPage() {
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
   const [channels, setChannels] = useState<SalesChannel[]>([]);
+  const [clipTerminal, setClipTerminal] = useState<string | null>(null);
+  useEffect(() => {
+    if (!branchId || !meHas(me, 'terminal_clip')) { setClipTerminal(null); return; }
+    api<{ enabled: boolean }>(`/pos/clip/terminal?branch_id=${branchId}&terminal=${encodeURIComponent(terminal)}`)
+      .then((r) => setClipTerminal(r.enabled ? terminal : null)).catch(() => setClipTerminal(null));
+  }, [branchId, terminal, me]);
   const [settings, setSettings] = useState<PosSettings | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
@@ -464,7 +470,7 @@ export default function RegisterPage() {
           groups={pickItem.modifier_group_ids.map((id) => groupsById.get(id)).filter((g) => g !== undefined)} />
       )}
       {showPay && order && session && (
-        <PaymentModal order={order} methods={payMethods} sessionId={session.id} usdRate={num(session.usd_rate)} onClose={() => setShowPay(false)}
+        <PaymentModal order={order} methods={payMethods} sessionId={session.id} usdRate={num(session.usd_rate)} clipTerminal={clipTerminal} onClose={() => setShowPay(false)}
           loyalty={me.modules.some((m) => m.code === 'lealtad' && m.enabled)}
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}

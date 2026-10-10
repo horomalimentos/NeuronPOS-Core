@@ -770,6 +770,8 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
     received_usd: p.received_usd === undefined || p.received_usd === null || p.received_usd === ''
       ? undefined : money(p.received_usd, { field: 'received_usd' }),
     reference: str(p.reference, { field: 'reference', max: 100 }) || null,
+    // Cobro aprobado en la terminal Clip (se verifica y se marca usado).
+    clip_cobro_id: p.clip_cobro_id ? requireUuid(p.clip_cobro_id, 'clip_cobro_id') : null,
   }));
 
   const result = await countingCodeFailures(req.tenant.id, () => withTenant(req.tenant.id, async (db) => {
@@ -835,6 +837,23 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       }
       return { ...p, kind: m.kind, currency: 'MXN' };
     });
+    // Pagos con la terminal Clip: el cobro debe estar aprobado, ser de esta
+    // orden, no haberse usado y cuadrar con monto + propina; el metodo, tarjeta.
+    for (const l of lines) {
+      if (!l.clip_cobro_id) continue;
+      const c = (await db.query(
+        'SELECT * FROM clip_pinpad_requests WHERE id = $1 AND restaurant_id = $2 FOR UPDATE',
+        [l.clip_cobro_id, req.tenant.id],
+      )).rows[0];
+      if (!c || c.order_id !== o.id || c.status !== 'COMPLETED' || c.used_payment_id) {
+        throw badRequest('El cobro de la terminal no esta aprobado para esta orden', 'PINPAD_NOT_APPROVED');
+      }
+      if (l.kind !== 'tarjeta') throw badRequest('Un cobro de la terminal se registra como pago con tarjeta', 'PINPAD_METHOD');
+      if (toCents(c.amount) !== toCents(l.amount) + toCents(l.tip)) {
+        throw badRequest('El pago no coincide con lo cobrado en la terminal', 'PINPAD_AMOUNT_MISMATCH');
+      }
+      l.reference = l.reference || `Clip ${c.card_brand || ''} ****${c.card_last_digits || ''}`.replace(/\s+/g, ' ').trim();
+    }
     const remaining = (toCents(o.total) - toCents(o.paid_amount)) / 100;
     if (!lines.length && remaining > 0) throw badRequest('Agrega al menos un pago', 'MISSING_PAYMENTS');
     const norm = normalizePayments(lines, remaining);
@@ -855,6 +874,9 @@ router.post('/orders/:id/payments', requireRole(...ROLES.cashier), ah(async (req
       }
       if (lines[i].walletPay) {
         await commitWalletPayment(db, req.tenant.id, o, lines[i].walletPay, { paymentId: pay.id, code: lines[i].wallet.code, userId: req.user.id, verified });
+      }
+      if (lines[i].clip_cobro_id) {
+        await db.query('UPDATE clip_pinpad_requests SET used_payment_id = $2 WHERE id = $1', [lines[i].clip_cobro_id, pay.id]);
       }
     }
     const tips = norm.lines.reduce((s, p) => s + toCents(p.tip), 0);

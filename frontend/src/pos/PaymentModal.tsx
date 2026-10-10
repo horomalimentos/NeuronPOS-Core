@@ -6,12 +6,15 @@ import { Alert, Button, Modal } from '../components/ui';
 import { getNative, nativeInfo } from '../lib/native';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
+import ClipTerminalButton from './ClipTerminalButton';
 import { formatMoney, num, round2 } from './lib';
 import type { Order, PaymentMethod } from './types';
 
 interface Line {
   key: number;
   methodId: string;
+  /** Cobro aprobado en la terminal Clip para esta linea. */
+  clipCobroId?: string;
   amount: string;
   tip: string;
   received: string;
@@ -25,7 +28,7 @@ let nextKey = 1;
  * Cobro con uno o varios metodos (cuenta dividida), propina por pago y
  * calculo de cambio en efectivo. Adaptado de POSPaymentModal de NeuronPOS.
  */
-export default function PaymentModal({ order, methods, sessionId, usdRate, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
+export default function PaymentModal({ order, methods, sessionId, usdRate, clipTerminal, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
   order: Order;
   /** El restaurante tiene el modulo de clientes y lealtad. */
   loyalty?: boolean;
@@ -35,6 +38,8 @@ export default function PaymentModal({ order, methods, sessionId, usdRate, loyal
   sessionId: string;
   /** Tipo de cambio del turno (para el efectivo en dolares). */
   usdRate?: number;
+  /** Nombre de esta caja si tiene terminal Clip configurada. */
+  clipTerminal?: string | null;
   onClose: () => void;
   onPaid: (order: Order, change: number) => void;
   onPrint: (order: Order, change: number, opts?: { openDrawer?: boolean }) => void;
@@ -145,6 +150,7 @@ export default function PaymentModal({ order, methods, sessionId, usdRate, loyal
             received: kindOf(l.methodId) === 'efectivo' && !isUsd(l.methodId) && l.received ? num(l.received) : undefined,
             received_usd: isUsd(l.methodId) ? num(l.received) : undefined,
             reference: l.reference || null,
+            clip_cobro_id: l.clipCobroId || undefined,
           }))],
         },
       });
@@ -295,6 +301,8 @@ export default function PaymentModal({ order, methods, sessionId, usdRate, loyal
                       onChange={(e) => update(l.key, { received: e.target.value })} />
                     {usd && <span className="mt-1 block text-xs text-gray-400">= {formatMXN(receivedMxn(l))} a ${rate} por dólar</span>}
                   </label>
+                ) : l.clipCobroId ? (
+                  <div />
                 ) : (
                   <label className="block"><span className="label">Referencia</span>
                     <input className="input" value={l.reference} maxLength={100} placeholder="Opcional"
@@ -302,6 +310,10 @@ export default function PaymentModal({ order, methods, sessionId, usdRate, loyal
                   </label>
                 )}
               </div>
+              {clipTerminal && kindOf(l.methodId) === 'tarjeta' && (
+                <ClipTerminalButton orderId={order.id} amount={round2(num(l.amount) + num(l.tip))} terminal={clipTerminal}
+                  onApproved={(c) => update(l.key, { clipCobroId: c.id })} onReset={() => update(l.key, { clipCobroId: undefined })} />
+              )}
               {isCash && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"

@@ -3,10 +3,13 @@ import { session, type Realm } from './session';
 export class ApiError extends Error {
   status: number;
   code?: string;
-  constructor(status: number, message: string, code?: string) {
+  /** Cuerpo completo de la respuesta (algunos errores traen datos extra). */
+  data?: Record<string, unknown>;
+  constructor(status: number, message: string, code?: string, data?: Record<string, unknown>) {
     super(message);
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -52,7 +55,7 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
       session.setToken(realm, null);
       window.location.assign(loginPath(realm));
     }
-    throw new ApiError(res.status, data?.error || `Error ${res.status}`, data?.code);
+    throw new ApiError(res.status, data?.error || `Error ${res.status}`, data?.code, data || undefined);
   }
   return data as T;
 }

@@ -3,10 +3,10 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Modal, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import DenominationModal from './DenominationModal';
-import { formatDateTime, formatMoney, num, posPrefs, round2 } from './lib';
+import { formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
 import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
@@ -60,6 +60,7 @@ export default function CashPage() {
             onChange={(e) => setTerminal(e.target.value)}
             onBlur={() => { const t = terminal.trim() || 'Caja 1'; setTerminal(t); posPrefs.setTerminal(t); }} />
         </Field>
+        {meHas(me, 'terminal_clip') && posCan.manage(me.user.role) && <ClipSerialField branchId={branchId} terminal={terminal} />}
         {openOthers.length > 0 && (
           <p className="pb-2 text-sm text-gray-400">Otras cajas abiertas: {openOthers.map((s) => (
             <button key={s.id} className="ml-1 text-brand underline" onClick={() => { setTerminal(s.terminal); posPrefs.setTerminal(s.terminal); }}>{s.terminal}</button>
@@ -362,6 +363,38 @@ function CutSummary({ detail }: { detail: CashSessionDetail }) {
         </ul>
       )}
       {session.notes && <p className="rounded-lg bg-gray-800 p-3 text-gray-300">{session.notes}</p>}
+    </div>
+  );
+}
+
+/** Numero de serie de la terminal Clip de esta caja (lo configura el gerente). */
+function ClipSerialField({ branchId, terminal }: { branchId: string; terminal: string }) {
+  const [serial, setSerial] = useState('');
+  const [saved, setSaved] = useState('');
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    if (!branchId) return;
+    api<{ serial_number: string | null }>(`/pos/clip/terminal?branch_id=${branchId}&terminal=${encodeURIComponent(terminal)}`)
+      .then((r) => { setSerial(r.serial_number || ''); setSaved(r.serial_number || ''); }).catch(() => undefined);
+  }, [branchId, terminal]);
+  async function save() {
+    setMsg('');
+    try {
+      const r = await api<{ serial_number: string | null }>('/pos/clip/terminal', { method: 'PUT', body: { branch_id: branchId, terminal, serial_number: serial || null } });
+      setSaved(r.serial_number || '');
+      setSerial(r.serial_number || '');
+      setMsg(r.serial_number ? 'Terminal guardada' : 'Terminal quitada');
+    } catch (err) {
+      setMsg(errorMessage(err));
+    }
+  }
+  return (
+    <div className="flex items-end gap-2">
+      <Field label="Terminal Clip de esta caja (número de serie)">
+        <input className="input w-48 uppercase" value={serial} maxLength={40} placeholder="Ej. P8XXXXXXXX" onChange={(e) => setSerial(e.target.value)} />
+      </Field>
+      <Button variant="secondary" onClick={save} disabled={serial.toUpperCase() === saved}>Guardar</Button>
+      {msg && <span className="pb-2 text-sm text-gray-400">{msg}</span>}
     </div>
   );
 }

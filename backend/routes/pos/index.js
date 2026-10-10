@@ -5,6 +5,7 @@ import { Router } from 'express';
 import { authenticateUser } from '../../middleware/auth.js';
 import { requireAnyModule, requireModule } from '../../middleware/requireModule.js';
 import cashRouter from './cash.js';
+import clipTerminalRouter from './clipTerminal.js';
 import menuRouter from './menu.js';
 import onlineRouter from './online.js';
 import ordersRouter from './orders.js';
@@ -30,5 +31,6 @@ router.use(onlineRouter);
 router.use(cashRouter);
 router.use(reportsRouter);
 router.use(promotionsRouter);
+router.use(clipTerminalRouter);
 
 export default router;

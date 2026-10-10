@@ -15,6 +15,7 @@ export const MODULE_ICONS: Record<string, LucideIcon> = {
   plataformas: Store,
   promociones: Gift,
   multimoneda: DollarSign,
+  terminal_clip: CreditCard,
 };
 
 export const moduleIcon = (code: string): LucideIcon => MODULE_ICONS[code] || Package;
