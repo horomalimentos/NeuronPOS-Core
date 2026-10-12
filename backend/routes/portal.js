@@ -133,7 +133,7 @@ router.get('/menu', ah(async (req, res) => {
   const categoryIds = new Set(menu.categories.map((c) => c.id));
   const items = menu.items
     .filter((i) => categoryIds.has(i.category_id))
-    .map(({ unavailable_branch_ids, active, sort_order, ...i }) => i);
+    .map(({ unavailable_branch_ids, unavailable_until, active, sort_order, ...i }) => i);
   const usedGroups = new Set(items.flatMap((i) => i.modifier_group_ids));
   res.json({
     categories: menu.categories.map(({ id, name, description }) => ({ id, name, description })),
@@ -487,6 +487,8 @@ router.post('/quote', optionalCustomer, ah(async (req, res) => {
       modifiers: l.modifiers.map((m) => ({ id: m.id, name: m.name, group_name: m.group_name, price_delta: m.price_delta })),
     })),
     ...p.totals,
+    promotions: p.promotions.map((x) => ({ promotion_id: x.promotion_id, name: x.name, amount: x.cents / 100 })),
+    voucher: p.voucher ? { code: p.voucher.code, amount: p.voucher.cents / 100 } : null,
     tax_rate_pct: p.pos.tax_rate_pct,
     prices_include_tax: p.pos.prices_include_tax,
     prep_time_minutes: p.settings.prep_time_minutes,

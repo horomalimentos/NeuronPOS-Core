@@ -114,6 +114,63 @@ export function createClipClient({ apiKey, secretKey } = {}) {
       };
     },
 
+    /**
+     * Terminal fisica (PinPad): enciende la terminal con el monto. Regresa el
+     * pinpad_request_id. Sin propina ni meses sin intereses en la terminal.
+     */
+    async createPinpadPayment({ amount, reference, serialNumber, webhookUrl }) {
+      const { status, data } = await send({
+        method: 'POST',
+        url: env.clipPinpadUrl,
+        headers,
+        timeoutMs: 20000,
+        body: {
+          amount: Number(amount),
+          reference,
+          serial_number_pos: serialNumber,
+          webhook_url: webhookUrl,
+          preferences: {
+            is_auto_return_enabled: true, is_tip_enabled: false, is_msi_enabled: false,
+            is_mci_enabled: false, is_dcc_enabled: false, is_split_payment_enabled: false,
+          },
+        },
+      });
+      if (status < 200 || status >= 300 || !data?.pinpad_request_id) {
+        const offline = data?.code === 'PINPAD_TERMINAL_TIMEOUT_EXCEPTION';
+        throw new ClipError(offline
+          ? 'La terminal Clip no respondio. Revisa que este encendida, con la app PinPad abierta y con internet.'
+          : `Clip no acepto el cobro: ${data?.message || `respondio ${status}`}`, offline ? 'PINPAD_OFFLINE' : 'CLIP_ERROR');
+      }
+      return String(data.pinpad_request_id);
+    },
+
+    /** Estado del cobro en la terminal (con detalle de la tarjeta); null si no responde. */
+    async getPinpadPayment(pinpadRequestId) {
+      try {
+        const { status, data } = await send({
+          method: 'GET',
+          url: `${env.clipPinpadUrl}?pinpadRequestId=${encodeURIComponent(pinpadRequestId)}`,
+          headers: { ...headers, 'Pinpad-Include-Detail': 'true' },
+          timeoutMs: 15000,
+        });
+        return status >= 200 && status < 300 ? data : null;
+      } catch (err) {
+        console.error('[Clip PinPad] consulta fallo:', err.message);
+        return null;
+      }
+    },
+
+    /** Cancela un cobro que la terminal aun no toma. true si se cancelo. */
+    async cancelPinpadPayment(pinpadRequestId) {
+      const { status } = await send({
+        method: 'DELETE',
+        url: `${env.clipPinpadUrl}/${encodeURIComponent(pinpadRequestId)}`,
+        headers,
+        timeoutMs: 15000,
+      });
+      return status >= 200 && status < 300;
+    },
+
     /** Estado autoritativo de un checkout; null si Clip no responde o no lo encuentra. */
     async getCheckout(checkoutId) {
       try {

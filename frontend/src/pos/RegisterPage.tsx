@@ -1,13 +1,13 @@
 import {
-  ArrowLeft, Ban, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
-  ShoppingBag, Tag, Trash2, Truck, Utensils, Wallet,
+  ArrowLeft, Ban, CheckCheck, ChefHat, ClipboardList, CreditCard, Globe, Image as ImageIcon, Minus, Plus, Printer, Save, Search,
+  ShoppingBag, Tag, Ticket, Trash2, Truck, Utensils, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
 import DiscountModal from './DiscountModal';
 import ModifierModal, { type CartSelection } from './ModifierModal';
@@ -18,9 +18,15 @@ import {
 } from './lib';
 import { comandaHtml, lastSentItems, orderTicketHtml, printHtml } from './ticket';
 import type {
-  CashSession, DiningTable, Menu, MenuItem, Order, OrderType, PaymentMethod, PosSettings, Zone,
+  CashSession, DiningTable, Menu, MenuItem, Order, OrderItem, OrderType, PaymentMethod, PosSettings, SalesChannel, Zone, ZoneMapObject,
 } from './types';
 import { usePosBranch } from './usePosBranch';
+import ChannelBadge from './ChannelBadge';
+import VoucherModal from './VoucherModal';
+import { useLive } from '../lib/live';
+import DeviceBanner from './DeviceBanner';
+import SoldOutModal from './SoldOutModal';
+import { FloorPlanView } from './FloorPlan';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -30,11 +36,15 @@ interface Draft {
   customer_phone: string;
   customer_address: string;
   guests: string;
+  /** Plataforma de delivery (null = venta propia). */
+  channel: SalesChannel | null;
+  channel_order_number: string;
 }
 
 let cartKey = 1;
 const emptyDraft = (order_type: OrderType, table: DiningTable | null = null): Draft => ({
   order_type, table, customer_name: '', customer_phone: '', customer_address: '', guests: '',
+  channel: null, channel_order_number: '',
 });
 
 /**
@@ -51,15 +61,23 @@ export default function RegisterPage() {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [zones, setZones] = useState<Zone[]>([]);
   const [tables, setTables] = useState<DiningTable[]>([]);
+  const [mapObjects, setMapObjects] = useState<ZoneMapObject[]>([]);
   const [openOrders, setOpenOrders] = useState<Order[]>([]);
   const [methods, setMethods] = useState<PaymentMethod[]>([]);
+  const [channels, setChannels] = useState<SalesChannel[]>([]);
+  const [clipTerminal, setClipTerminal] = useState<string | null>(null);
+  useEffect(() => {
+    if (!branchId || !meHas(me, 'terminal_clip') || !posCan.cashier(role)) { setClipTerminal(null); return; }
+    api<{ enabled: boolean }>(`/pos/clip/terminal?branch_id=${branchId}&terminal=${encodeURIComponent(terminal)}`)
+      .then((r) => setClipTerminal(r.enabled ? terminal : null)).catch(() => setClipTerminal(null));
+  }, [branchId, terminal, me, role]);
   const [settings, setSettings] = useState<PosSettings | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
 
   // ?tab=linea: viene de un aviso push de pedido en linea.
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea'>(() => (params.get('tab') === 'linea' ? 'linea' : 'mesas'));
+  const [tab, setTab] = useState<'mesas' | 'nueva' | 'abiertas' | 'linea' | 'cobradas'>(() => (params.get('tab') === 'linea' ? 'linea' : 'mesas'));
   const [pendingOnline, setPendingOnline] = useState(0);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
@@ -69,14 +87,18 @@ export default function RegisterPage() {
   const [pickItem, setPickItem] = useState<MenuItem | null>(null);
   const [showPay, setShowPay] = useState(false);
   const [showDiscount, setShowDiscount] = useState(false);
+  const [discountItem, setDiscountItem] = useState<OrderItem | null>(null);
+  const [voucherOpen, setVoucherOpen] = useState(false);
+  const doVoucher = () => run(async () => { if (await save()) setVoucherOpen(true); });
+  const [soldOut, setSoldOut] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const inOrder = Boolean(draft || order);
 
   const loadFloor = useCallback(() => {
     if (!branchId) return;
-    api<{ zones: Zone[]; tables: DiningTable[] }>(`/pos/tables?branch_id=${branchId}`)
-      .then((r) => { setZones(r.zones.filter((z) => z.active)); setTables(r.tables.filter((t) => t.active)); })
+    api<{ zones: Zone[]; tables: DiningTable[]; objects?: ZoneMapObject[] }>(`/pos/tables?branch_id=${branchId}`)
+      .then((r) => { setZones(r.zones.filter((z) => z.active)); setTables(r.tables.filter((t) => t.active)); setMapObjects(r.objects || []); })
       .catch((e) => setError(errorMessage(e)));
     api<{ orders: Order[] }>(`/pos/orders?branch_id=${branchId}&status=activas`)
       .then((r) => setOpenOrders(r.orders)).catch(() => {});
@@ -90,6 +112,7 @@ export default function RegisterPage() {
     setMenu(null);
     api<Menu>(`/pos/menu?branch_id=${branchId}`).then(setMenu).catch((e) => setError(errorMessage(e)));
     api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => setMethods(r.payment_methods)).catch(() => {});
+    api<{ channels: SalesChannel[] }>('/pos/channels').then((r) => setChannels(r.channels)).catch(() => {});
     api<{ settings: PosSettings }>('/pos/settings').then((r) => setSettings(r.settings)).catch(() => {});
     if (posCan.cashier(role)) {
       api<{ sessions: CashSession[] }>(`/pos/cash-sessions?branch_id=${branchId}&status=abierta`)
@@ -98,6 +121,12 @@ export default function RegisterPage() {
     }
     loadFloor();
   }, [branchId, role, terminal, loadFloor]);
+
+  // Al instante cuando otra pantalla cambia algo de la sucursal (mesas, ordenes, pedidos en linea).
+  useLive(branchId, () => {
+    if (!inOrder) loadFloor();
+    else api<{ pending_count: number }>(`/pos/online-orders?branch_id=${branchId}&status=pendientes`).then((r) => setPendingOnline(r.pending_count)).catch(() => {});
+  });
 
   // Refresca mesas y ordenes abiertas mientras se esta en el selector.
   useEffect(() => {
@@ -113,6 +142,7 @@ export default function RegisterPage() {
     return menu.items.filter((i) => (q ? i.name.toLowerCase().includes(q) : !category || i.category_id === category));
   }, [menu, category, search]);
 
+  const menuHasImages = Boolean(menu?.items.some((i) => i.image_url));
   const cartTotal = round2(cart.reduce((s, l) => s + (num(l.item.price) + l.modifiers.reduce((a, m) => a + num(m.price_delta), 0)) * l.quantity, 0));
 
   // ---------------------------------------------------------------------------
@@ -182,6 +212,8 @@ export default function RegisterPage() {
           customer_name: draft.customer_name || null,
           customer_phone: draft.customer_phone || null,
           customer_address: draft.customer_address || null,
+          channel_id: draft.channel?.id,
+          channel_order_number: draft.channel_order_number || null,
           items,
         },
       });
@@ -265,8 +297,11 @@ export default function RegisterPage() {
       <>
         {header}
         {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-        <div className="mb-4 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm">
-          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe]] as const)
+        {posCan.cashier(role) && <DeviceBanner branchId={branchId} />}
+        {/* En celular las 4 pestanas van en 2 renglones (meseros con el telefono). */}
+        <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:flex">
+          {([['mesas', 'Mesas', Utensils], ['nueva', 'Para llevar / Domicilio', ShoppingBag], ['abiertas', `Abiertas (${openOrders.length})`, ClipboardList], ['linea', 'En línea', Globe],
+            ...(posCan.cashier(role) ? [['cobradas', 'Cobradas hoy', CheckCheck]] as const : [])] as const)
             .map(([key, label, Icon]) => (
               <button key={key} onClick={() => setTab(key)}
                 className={`relative flex flex-1 items-center justify-center gap-2 rounded-lg px-3 py-2.5 font-medium ${tab === key ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
@@ -278,20 +313,33 @@ export default function RegisterPage() {
               </button>
             ))}
         </div>
-        {tab === 'mesas' && <TableGrid zones={zones} tables={tables} onPick={openTable} canManage={posCan.manage(role)} />}
-        {tab === 'nueva' && <NewOrderForm onStart={(d) => setDraft(d)} />}
+        {tab === 'mesas' && <TableGrid zones={zones} tables={tables} objects={mapObjects} onPick={openTable} canManage={posCan.manage(role)} />}
+        {tab === 'nueva' && <NewOrderForm channels={channels} onStart={(d) => setDraft(d)} />}
         {tab === 'abiertas' && <OpenOrdersList orders={openOrders} onPick={openOrder} />}
+        {tab === 'cobradas' && <PaidOrdersList branchId={branchId} onReprint={async (id) => {
+          try { print((await api<{ order: Order }>(`/pos/orders/${id}`)).order); } catch (e) { setError(errorMessage(e)); }
+        }} />}
         {tab === 'linea' && <OnlineOrdersPanel branchId={branchId} role={role} onOpen={openOrder} onChanged={setPendingOnline} />}
       </>
     );
   }
 
   const items = order?.items || [];
-  const title = order
+  const channelName = order ? order.channel_name : draft!.channel?.name;
+  const title = (order
     ? `${order.order_type === 'comedor' ? `Mesa ${order.table_name}` : ORDER_TYPE_LABEL[order.order_type]} · Folio ${order.folio}`
-    : draft!.order_type === 'comedor' ? `Mesa ${draft!.table?.name} · nueva` : `${ORDER_TYPE_LABEL[draft!.order_type]} · nueva`;
-  const customer = order ? [order.customer_name, order.customer_phone, order.customer_address].filter(Boolean).join(' · ')
-    : [draft!.customer_name, draft!.customer_phone, draft!.customer_address].filter(Boolean).join(' · ');
+    : draft!.order_type === 'comedor' ? `Mesa ${draft!.table?.name} · nueva` : `${ORDER_TYPE_LABEL[draft!.order_type]} · nueva`)
+    + (channelName ? ` · ${channelName}` : '');
+  const orderNumber = order ? order.channel_order_number : draft!.channel_order_number;
+  const customer = [orderNumber && `Pedido ${orderNumber}`, ...(order
+    ? [order.customer_name, order.customer_phone, order.customer_address]
+    : [draft!.customer_name, draft!.customer_phone, draft!.customer_address])].filter(Boolean).join(' · ');
+  // Una plataforma puede limitar con que se cobra.
+  // Sin plataforma se ocultan los metodos reservados para alguna (ej. "Rappi pagado").
+  const allowedIds = channels.find((c) => c.id === order?.channel_id)?.payment_method_ids || [];
+  const reserved = new Set(channels.flatMap((c) => c.payment_method_ids));
+  const payMethods = allowedIds.length ? methods.filter((m) => allowedIds.includes(m.id))
+    : order?.channel_id ? methods : methods.filter((m) => !reserved.has(m.id));
   const unsentCount = items.filter((i) => !i.sent_at && !i.voided_at).length;
   const remaining = order ? round2(num(order.total) - num(order.paid_amount)) : 0;
   const maxPct = posCan.manage(role) ? null : num(settings?.cashier_max_discount_pct);
@@ -308,6 +356,7 @@ export default function RegisterPage() {
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500" />
               <input className="input pl-9" placeholder="Buscar producto" value={search} onChange={(e) => setSearch(e.target.value)} />
             </div>
+            {posCan.availability(role) && <Button variant="secondary" onClick={() => setSoldOut(true)}><Ban className="h-4 w-4" /> Agotados</Button>}
           </div>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
             {[{ id: '', name: 'Todo' }, ...menu.categories].map((c) => (
@@ -322,12 +371,15 @@ export default function RegisterPage() {
             {visibleItems.map((it) => (
               <button key={it.id} onClick={() => clickItem(it)} disabled={!it.available}
                 className={`card flex flex-col overflow-hidden text-left transition hover:border-brand/60 ${it.available ? '' : 'cursor-not-allowed opacity-50'}`}>
-                <div className="relative aspect-[4/3] w-full bg-gray-800">
-                  {it.image_url
-                    ? <img src={it.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
-                    : <ImageIcon className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 text-gray-600" />}
-                  {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado</span>}
-                </div>
+                {/* Sin fotos en el menu, tarjetas compactas (caben mas en el celular del mesero). */}
+                {menuHasImages ? (
+                  <div className="relative aspect-[4/3] w-full bg-gray-800">
+                    {it.image_url
+                      ? <img src={it.image_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                      : <ImageIcon className="absolute left-1/2 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2 text-gray-600" />}
+                    {!it.available && <span className="absolute inset-x-0 bottom-0 bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado{it.available_at ? ` hasta ${formatTime(it.available_at)}` : ''}</span>}
+                  </div>
+                ) : !it.available && <span className="bg-red-900/90 py-0.5 text-center text-xs font-semibold">Agotado{it.available_at ? ` hasta ${formatTime(it.available_at)}` : ''}</span>}
                 <div className="flex flex-1 flex-col p-2">
                   <span className="line-clamp-2 text-sm font-medium leading-tight text-white">{it.name}</span>
                   <span className="mt-auto pt-1 text-sm text-gray-400">{formatMXN(it.price)}</span>
@@ -338,7 +390,7 @@ export default function RegisterPage() {
         </section>
 
         {/* Cuenta */}
-        <aside className="card flex flex-col md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
+        <aside id="cuenta" className="card flex scroll-mt-4 flex-col md:sticky md:top-20 md:max-h-[calc(100vh-6rem)]">
           <div className="border-b border-gray-800 p-4">
             <div className="flex items-start justify-between gap-2">
               <h2 className="font-semibold text-white">{title}</h2>
@@ -365,9 +417,15 @@ export default function RegisterPage() {
                     {it.modifiers.map((m, i) => <div key={i} className="text-xs text-gray-400">+ {m.name}</div>)}
                     {it.notes && <div className="text-xs italic text-amber-200/80">{it.notes}</div>}
                     <div className="text-[11px] text-gray-500">{it.voided_at ? `Cancelado: ${it.void_reason}` : it.sent_at ? `En cocina ${formatTime(it.sent_at)}` : 'Sin enviar'}</div>
+                    {num(it.discount_amount) > 0 && !it.voided_at && (
+                      <div className="text-[11px] text-emerald-300">Descuento -{formatMXN(it.discount_amount)}{it.discount_reason && ` · ${it.discount_reason}`}</div>
+                    )}
                   </div>
                   <span className="text-gray-300">{formatMXN(it.line_total)}</span>
-                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && (!it.sent_at || posCan.manage(role)) && (
+                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && posCan.cashier(role) && (
+                    <button onClick={() => setDiscountItem(it)} className="rounded p-1 text-gray-500 hover:text-emerald-300" aria-label="Descuento al artículo" title="Descuento al artículo"><Tag className="h-3.5 w-3.5" /></button>
+                  )}
+                  {!it.voided_at && ['abierta', 'enviada', 'lista'].includes(order!.status) && (!it.sent_at || posCan.voidSent(role)) && (
                     <button onClick={() => removeItem(it.id, Boolean(it.sent_at))} className="rounded p-1 text-gray-500 hover:text-red-300" aria-label="Quitar"><Trash2 className="h-3.5 w-3.5" /></button>
                   )}
                 </div>
@@ -396,6 +454,9 @@ export default function RegisterPage() {
             {order && (
               <>
                 <Row label="Subtotal" value={formatMXN(order.subtotal)} />
+                {(order.promotions || []).map((p) => <Row key={p.promotion_id} label={`Promo: ${p.name}`} value={`-${formatMXN(p.amount)}`} />)}
+                {num(order.voucher_discount) > 0 && <Row label={`Vale ${order.voucher_code}`} value={`-${formatMXN(order.voucher_discount)}`} />}
+                {num(order.item_discount) > 0 && <Row label="Descuentos por artículo" value={`-${formatMXN(order.item_discount)}`} />}
                 {num(order.discount_amount) > 0 && <Row label={`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`} value={`-${formatMXN(order.discount_amount)}`} />}
                 <Row label={`IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' incl.' : ''}`} value={formatMXN(order.tax_amount)} />
                 {num(order.delivery_fee) > 0 && <Row label="Envío" value={formatMXN(order.delivery_fee)} />}
@@ -413,6 +474,9 @@ export default function RegisterPage() {
               <Button variant="secondary" onClick={doSend} disabled={busy || (cart.length === 0 && unsentCount === 0)}><ChefHat className="h-4 w-4" /> Enviar a cocina</Button>
               {posCan.cashier(role) && (
                 <Button variant="secondary" onClick={doDiscount} disabled={busy || (!order && cart.length === 0)}><Tag className="h-4 w-4" /> Descuento</Button>
+              )}
+              {meHas(me, 'promociones') && (
+                <Button variant="secondary" onClick={doVoucher} disabled={busy || (!order && cart.length === 0)}><Ticket className="h-4 w-4" /> {order?.voucher_id ? 'Cambiar vale' : 'Vale'}</Button>
               )}
               <Button variant="secondary" onClick={() => order && print(order)} disabled={!order || cart.length > 0}><Printer className="h-4 w-4" /> Cuenta</Button>
               <Button variant="ghost" onClick={doCancel} disabled={busy}><Ban className="h-4 w-4" /> {order ? 'Cancelar orden' : 'Descartar'}</Button>
@@ -436,11 +500,28 @@ export default function RegisterPage() {
           groups={pickItem.modifier_group_ids.map((id) => groupsById.get(id)).filter((g) => g !== undefined)} />
       )}
       {showPay && order && session && (
-        <PaymentModal order={order} methods={methods} sessionId={session.id} onClose={() => setShowPay(false)}
+        <PaymentModal order={order} methods={payMethods} sessionId={session.id} usdRate={num(session.usd_rate)} clipTerminal={clipTerminal} onClose={() => setShowPay(false)}
           loyalty={me.modules.some((m) => m.code === 'lealtad' && m.enabled)}
           wallet={me.modules.some((m) => m.code === 'monedero' && m.enabled)}
           onPrint={print}
           onPaid={(o) => { setShowPay(false); setOrder(o); if (o.status === 'pagada') loadFloor(); }} />
+      )}
+      {/* Celular: barra fija para ir a la cuenta sin recorrer todo el menu. */}
+      {(cart.length > 0 || items.length > 0) && (
+        <button onClick={() => document.getElementById('cuenta')?.scrollIntoView({ behavior: 'smooth' })}
+          className="fixed inset-x-3 bottom-3 z-30 flex items-center justify-between rounded-2xl bg-brand px-5 py-3.5 font-semibold text-brand-contrast shadow-xl md:hidden">
+          <span>Ver cuenta · {items.filter((i) => !i.voided_at).length + cart.length} {items.filter((i) => !i.voided_at).length + cart.length === 1 ? 'artículo' : 'artículos'}</span>
+          <span>{formatMXN((order ? num(order.total) : 0) + cartTotal)}</span>
+        </button>
+      )}
+      {voucherOpen && order && <VoucherModal order={order} onClose={() => setVoucherOpen(false)} onSaved={(o) => { setVoucherOpen(false); setOrder(o); }} />}
+      {soldOut && menu && (
+        <SoldOutModal menu={menu} branchId={branchId} onClose={() => setSoldOut(false)}
+          onChanged={(it) => setMenu((m) => (m ? { ...m, items: m.items.map((x) => (x.id === it.id ? it : x)) } : m))} />
+      )}
+      {discountItem && order && (
+        <DiscountModal order={order} item={discountItem} maxPct={maxPct} onClose={() => setDiscountItem(null)}
+          onSaved={(o) => { setDiscountItem(null); setOrder(o); }} />
       )}
       {showDiscount && order && (
         <DiscountModal order={order} maxPct={maxPct} onClose={() => setShowDiscount(false)}
@@ -458,8 +539,8 @@ function Row({ label, value, strong }: { label: string; value: string; strong?: 
   );
 }
 
-function TableGrid({ zones, tables, onPick, canManage }: {
-  zones: Zone[]; tables: DiningTable[]; onPick: (t: DiningTable) => void; canManage: boolean;
+function TableGrid({ zones, tables, objects, onPick, canManage }: {
+  zones: Zone[]; tables: DiningTable[]; objects: ZoneMapObject[]; onPick: (t: DiningTable) => void; canManage: boolean;
 }) {
   if (tables.length === 0) {
     return <p className="py-10 text-center text-sm text-gray-500">No hay mesas en esta sucursal.{canManage && <> Créalas en <Link className="text-brand" to="/admin/mesas">Mesas</Link>.</>}</p>;
@@ -468,11 +549,16 @@ function TableGrid({ zones, tables, onPick, canManage }: {
   return (
     <div className="space-y-6">
       {sections.map((z) => {
-        const list = tables.filter((t) => t.zone_id === z.id || (z.id === null && !zones.some((x) => x.id === t.zone_id)));
-        if (!list.length) return null;
+        const all = tables.filter((t) => t.zone_id === z.id || (z.id === null && !zones.some((x) => x.id === t.zone_id)));
+        if (!all.length) return null;
+        // Zona con plano: las mesas acomodadas se ven en el plano y el resto en cuadricula.
+        const zone = zones.find((x) => x.id === z.id);
+        const plan = zone?.map_enabled && all.some((t) => t.map_x != null) ? zone : null;
+        const list = plan ? all.filter((t) => t.map_x == null) : all;
         return (
           <section key={z.id || 'none'}>
             {z.name && <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-gray-500">{z.name}</h3>}
+            {plan && <div className="mb-3"><FloorPlanView zone={plan} tables={all} objects={objects.filter((o) => o.zone_id === plan.id)} onPick={onPick} /></div>}
             <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
               {list.map((t) => {
                 const busy = t.status === 'ocupada';
@@ -496,13 +582,23 @@ function TableGrid({ zones, tables, onPick, canManage }: {
   );
 }
 
-function NewOrderForm({ onStart }: { onStart: (d: Draft) => void }) {
+function NewOrderForm({ channels, onStart }: { channels: SalesChannel[]; onStart: (d: Draft) => void }) {
   const [d, setD] = useState<Draft>(emptyDraft('para_llevar'));
   const [error, setError] = useState('');
+  const ch = d.channel;
+  const needsAddress = d.order_type === 'domicilio' && (!ch || ch.requires_address);
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (d.order_type === 'domicilio' && (!d.customer_name.trim() || !d.customer_address.trim())) {
+    if (ch?.requires_order_number && !d.channel_order_number.trim()) {
+      setError(`Escribe el número de pedido de ${ch.name}.`);
+      return;
+    }
+    if (d.order_type === 'domicilio' && !ch && (!d.customer_name.trim() || !d.customer_address.trim())) {
       setError('Para domicilio escribe el nombre y la dirección del cliente.');
+      return;
+    }
+    if (needsAddress && !d.customer_address.trim()) {
+      setError('Escribe la dirección de entrega.');
       return;
     }
     onStart(d);
@@ -519,17 +615,69 @@ function NewOrderForm({ onStart }: { onStart: (d: Draft) => void }) {
           </button>
         ))}
       </div>
-      <Field label={d.order_type === 'domicilio' ? 'Nombre del cliente' : 'Nombre del cliente (opcional)'}>
+      {channels.length > 0 && (
+        <div>
+          <span className="label">¿De dónde viene?</span>
+          <div className="flex flex-wrap gap-2">
+            {[null, ...channels].map((c) => {
+              const on = (d.channel?.id || null) === (c?.id || null);
+              return (
+                <button key={c?.id || 'local'} type="button" onClick={() => setD({ ...d, channel: c })}
+                  className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium ${on ? 'border-brand bg-brand/15 text-white' : 'border-gray-700 bg-gray-800 text-gray-300'}`}>
+                  {c && <span className="h-2.5 w-2.5 rounded-full" style={{ background: c.color || '#6b7280' }} />}
+                  {c ? c.name : 'Local'}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      {ch && (
+        <Field label={`Número de pedido de ${ch.name}${ch.requires_order_number ? '' : ' (opcional)'}`}>
+          <input className="input" value={d.channel_order_number} maxLength={60} onChange={(e) => setD({ ...d, channel_order_number: e.target.value })} />
+        </Field>
+      )}
+      <Field label={d.order_type === 'domicilio' && !ch ? 'Nombre del cliente' : 'Nombre del cliente (opcional)'}>
         <input className="input" value={d.customer_name} maxLength={120} onChange={(e) => setD({ ...d, customer_name: e.target.value })} />
       </Field>
       <Field label="Teléfono"><input className="input" type="tel" value={d.customer_phone} maxLength={40} onChange={(e) => setD({ ...d, customer_phone: e.target.value })} /></Field>
       {d.order_type === 'domicilio' && (
-        <Field label="Dirección de entrega">
+        <Field label={needsAddress ? 'Dirección de entrega' : 'Dirección de entrega (opcional)'}>
           <textarea className="input" rows={2} value={d.customer_address} maxLength={400} onChange={(e) => setD({ ...d, customer_address: e.target.value })} />
         </Field>
       )}
       <Button type="submit" className="w-full py-3">Empezar orden</Button>
     </form>
+  );
+}
+
+/** Cobradas hoy en la sucursal: para reimprimir el ticket. */
+function PaidOrdersList({ branchId, onReprint }: { branchId: string; onReprint: (id: string) => void }) {
+  const [orders, setOrders] = useState<Order[] | null>(null);
+  const [q, setQ] = useState('');
+  useEffect(() => {
+    api<{ orders: Order[] }>(`/pos/orders?branch_id=${branchId}&status=pagada&date=${new Date().toLocaleDateString('en-CA')}`)
+      .then((r) => setOrders(r.orders)).catch(() => setOrders([]));
+  }, [branchId]);
+  if (!orders) return <Spinner />;
+  const shown = orders.filter((o) => !q || `${o.folio} ${o.customer_name || ''} ${o.table_name || ''}`.toLowerCase().includes(q.toLowerCase()));
+  return (
+    <>
+      <input className="input mb-3 max-w-xs" placeholder="Buscar folio, cliente o mesa" value={q} onChange={(e) => setQ(e.target.value)} />
+      {shown.length === 0 ? <p className="py-10 text-center text-sm text-gray-500">No hay órdenes cobradas hoy.</p> : (
+        <ul className="card divide-y divide-gray-800 text-sm">
+          {shown.map((o) => (
+            <li key={o.id} className="flex items-center gap-3 px-4 py-2.5">
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-white"><b>Folio {o.folio}</b> · {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}</p>
+                <p className="text-xs text-gray-500">{formatTime(o.paid_at || o.created_at)} · <span className="font-semibold text-gray-200">{formatMXN(o.total)}</span></p>
+              </div>
+              <Button variant="secondary" onClick={() => onReprint(o.id)} aria-label={`Reimprimir ticket del folio ${o.folio}`}><Printer className="h-4 w-4" /> <span className="hidden sm:inline">Ticket</span></Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -545,11 +693,14 @@ function OpenOrdersList({ orders, onPick }: { orders: Order[]; onPick: (id: stri
           </div>
           <p className="mt-1 text-sm text-gray-300">
             {o.source === 'web' && <Globe className="mr-1 inline h-3.5 w-3.5 text-brand" aria-label="En línea" />}
+            {o.source === 'kiosko' && <span className="mr-1 rounded bg-brand/20 px-1.5 py-0.5 text-xs font-semibold text-brand">Kiosko{o.dine_in ? ' · aquí' : ''}</span>}
             {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}{o.customer_name && ` · ${o.customer_name}`}
           </p>
+          {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
           <div className="mt-2 flex justify-between text-sm text-gray-400"><span>{formatTime(o.created_at)}</span><span className="font-semibold text-white">{formatMXN(o.total)}</span></div>
         </button>
       ))}
     </div>
   );
 }
+

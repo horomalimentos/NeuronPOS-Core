@@ -155,6 +155,10 @@ export interface Branch {
   phone: string | null;
   timezone: string;
   active: boolean;
+  /** Impuesto propio de la sucursal (ej. 8 % en la frontera); null = el del restaurante. */
+  tax_rate_pct?: string | null;
+  ticket_header?: string | null;
+  ticket_footer?: string | null;
 }
 
 export interface User {
@@ -181,6 +185,8 @@ export interface Me {
   branches: Branch[];
   /** Solo admin y gerente (null para el resto). */
   billing: BillingSummary | null;
+  /** Capacidades del POS de su rol (con los permisos que el restaurante cambio). */
+  capabilities?: string[];
 }
 
 export interface BranchHours {
@@ -205,6 +211,9 @@ export interface PublicBranch {
   hours: BranchHours[];
   closures: BranchClosure[];
   open_now: boolean;
+  /** Pausa temporal de pedidos en linea (cocina saturada...). */
+  paused_until?: string | null;
+  paused_message?: string | null;
   today: { opens_at: string; closes_at: string } | null;
   closed_today: boolean;
 }

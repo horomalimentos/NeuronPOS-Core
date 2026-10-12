@@ -293,6 +293,32 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
 - Precios siempre del lado del servidor: el cliente manda producto,
   cantidad, modificadores y notas. Se validan mínimo/máximo por grupo y la
   disponibilidad en la sucursal. Nombre y precios se copian a la orden.
+- **Agotados** (botón en la pantalla de venta; admin, gerente y cajero): un
+  producto se marca agotado en la sucursal por 30 min, 1, 2 o 4 horas (vuelve
+  solo a esa hora) o hasta reactivarlo; la tarjeta muestra "Agotado hasta…".
+- **Pausar pedidos en línea** (pestaña En línea): 15 min a 2 h con mensaje para el
+  cliente; el portal muestra la sucursal cerrada con ese mensaje y no acepta
+  pedidos, mientras la caja sigue vendiendo.
+- **Plano de mesas** (Mesas > Crear plano, por zona): cuadrícula donde se arrastran las
+  mesas (cuadradas o redondas, del tamaño que se quiera) y elementos del local (barra,
+  pared, puerta, baños, caja, cocina, planta, texto). En la pantalla de venta la zona se
+  ve como plano con el estado de cada mesa (libre, total y estado de la orden); las mesas
+  sin acomodar siguen en cuadrícula. API: `PUT /api/pos/zones/:id/map`.
+- **Cobradas hoy** (pestaña de la pantalla de venta, cajero): las órdenes pagadas del
+  día en la sucursal, con búsqueda y botón para reimprimir el ticket.
+- **En vivo**: caja, cocina y pedidos en línea se actualizan al instante cuando otra
+  pantalla de la sucursal cambia algo (`GET /api/live?branch_id=`, Server-Sent Events
+  sobre LISTEN/NOTIFY de Postgres, así funciona con varios procesos). Si se corta la
+  conexión siguen consultando cada pocos segundos. En nginx no hace falta configurar
+  nada: la respuesta lleva `X-Accel-Buffering: no` y un latido cada 25 s.
+- **Cocina**: los minutos para amarillo y rojo se configuran en Ajustes del POS. La
+  pestaña **Listas** muestra lo preparado en las últimas 12 horas con **Regresar a
+  cocina** (por estación; una orden "lista" vuelve a "enviada").
+- **Cierre de caja**: si es la última caja abierta de la sucursal y quedan órdenes
+  sin cobrar, el corte avisa cuáles (`OPEN_ORDERS`) y pide confirmar (`force`).
+- **Entradas y salidas de efectivo** con categoría (compras, servicios, propinas,
+  nómina, retiro, fondo, otro): se ven en el corte y su ticket, y Reportes las suma por
+  categoría. El pago de nómina desde caja se registra como "nómina".
 - Tipos de orden: `comedor` (con mesa), `para_llevar`, `domicilio` (nombre y
   dirección del cliente; la logística de reparto llega con el módulo
   Domicilios). Folio consecutivo por sucursal.
@@ -301,7 +327,9 @@ la configuración y los métodos Efectivo, Tarjeta y Transferencia
   la tenga. Al cobrar, lo no enviado se manda a cocina.
 - Totales en centavos (`services/posMath.js`): IVA configurable, incluido en
   el precio (se desglosa) o encima del subtotal; la tasa se fija al crear la
-  orden. Descuento por porcentaje o cantidad: admin/gerente sin límite, cajero
+  orden. Cada **sucursal** puede tener su propia tasa (ej. 8 % en la franja
+  fronteriza; vacío = la del restaurante) y su propio encabezado y pie del ticket
+  (razón social, RFC...), en Sucursales; aplica en caja, kiosko y portal. Descuento por porcentaje o cantidad: admin/gerente sin límite, cajero
   hasta `cashier_max_discount_pct` (0 = no puede), mesero no.
 - Pagos: uno o varios (cuenta dividida), cada uno con propina; solo el
   efectivo da cambio. Requieren un turno de caja abierto de la sucursal.
@@ -347,6 +375,32 @@ junto con la base de datos.
 El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
 iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
 impresión nativo. La pantalla de cocina se actualiza cada 5 segundos.
+
+## Funciones extra del POS (como en Horom)
+
+Módulos con precio aparte (empiezan en $0; el precio se fija en el Panel):
+
+| Módulo | Qué hace |
+| --- | --- |
+| `estaciones` | Barra, parrilla, sushi…: cada estación con su pantalla y sus comandas. Tiempos de cocina configurables y regresar órdenes listas. |
+| `plataformas` | Rappi, Uber Eats, Didi: número de pedido, métodos permitidos y comisión guardada en cada orden; venta neta en reportes. |
+| `promociones` | 2x1, paquetes, % o $ por horario, día y canal (caja / en línea), y vales con código en caja y en el checkout. |
+| `multimoneda` | Efectivo en dólares con tipo de cambio por turno y conteo de billetes en el corte. |
+| `terminal_clip` | Cobro con la terminal física de Clip (PinPad) desde la caja; se confirma con Clip y se usa una sola vez. |
+| `kiosko` | Autoservicio en tablet (`/autoservicio`): el cliente arma su orden y paga en caja. |
+| `dispositivos` | Solo los equipos autorizados por el gerente pueden abrir caja y cobrar. |
+| `eventos` | Ventas por evento y preventas con página pública (`/evento/:slug`). |
+
+Incluido en el POS: descuento por artículo con PIN rotativo del gerente, dividir
+la cuenta, permisos por rol editables (`role_permissions`), impuesto y ticket por
+sucursal (IVA fronterizo), agotado hasta cierta hora y pausa de pedidos en línea,
+aviso de órdenes sin cobrar al cerrar la última caja (`force: true` para cerrar
+igual), categorías en entradas y salidas de efectivo, pestaña "Cobradas hoy", caja
+en celular para meseros, plano de mesas por zona, bitácora de accesos y avisos en
+vivo (`/api/live`, SSE con LISTEN/NOTIFY). Los reportes suman plataformas,
+ventas por caja y entradas/salidas de efectivo. En RH: checada desde el celular
+del empleado dentro de la geocerca (`mobile_enabled` por sucursal). Las fotos del
+personal (checklists, incidencias) se suben a `POST /api/uploads/photo`.
 
 ## Inventario y compras (módulo `inventario`)
 
@@ -857,7 +911,9 @@ calculado en la zona horaria de la sucursal), redes y pie. `<title>` y meta
 description/og se fijan por restaurante al cargar (`seo_title`,
 `seo_description`). Sin el módulo, `/` muestra solo el nombre y el enlace para
 ordenar (si tiene portal) o "Sitio no disponible". Se edita en
-**Admin → Sitio web**; las imágenes son URLs por ahora.
+**Admin → Sitio web**; las imágenes son URLs por ahora. Opcional: **portada en
+carrusel** (rota entre las fotos de la galería cada 5 s) y **platillos destacados**
+(hasta 8 productos del menú, en el orden elegido; los desactivados no salen).
 
 **Portal de clientes (módulo `portal`)**: registro, inicio de sesión,
 perfil, direcciones, historial y seguimiento con estado en vivo (sondeo cada
@@ -1131,6 +1187,31 @@ Pantallas: `/admin/rh` (Empleados, Asistencia, Nómina, Configuración),
 `/admin/mi-nomina`, `/admin/empleado-del-mes` (ranking, evaluaciones,
 tareas, historial y reglas), `/admin/empleado-del-mes/empleados` (cuando
 solo se tiene `empleado_mes`) y `/admin/muro`.
+
+### Operación diaria: checklists, incidencias y comunicados
+
+Dentro del módulo `rh` (sin costo extra), como en Horom:
+
+- **Checklists** (`/admin/checklists`, todo el personal): el gerente arma plantillas
+  (Apertura, Cierre, Limpieza...) por sucursal, y cada punto puede pedir **foto de
+  evidencia**. Cada día se genera la lista de la sucursal; quien marca cada punto queda
+  registrado y solo se puede **enviar** cuando todo está completo. El gerente ve el
+  historial con fotos.
+- **Incidencias** (RH > Incidencias): acta de retardo, falta, conducta, accidente u otro,
+  con medida tomada y hasta 6 fotos. El empleado la ve en **Mi nómina** y la **firma de
+  enterado** con su comentario; el gerente la cierra.
+- **Comunicados** (RH > Comunicados): avisos al personal por sucursal y/o área, normal o
+  importante, con fecha de fin. Salen en el **Inicio** de cada quien con botón
+  "Enterado" y el gerente ve cuántos lo leyeron.
+
+API: `/api/rh/checklists/*`, `/api/rh/incidents`, `/api/rh/me/incidents`,
+`/api/rh/announcements` y `/api/rh/announcements/feed`.
+
+**Fotos** (`POST /api/uploads`, `{ data: "data:image/jpeg;base64,..." }`, máx. 4 MB): el
+navegador las reduce a 1600 px antes de subirlas. Se guardan en `UPLOADS_DIR` (por
+defecto `backend/uploads/`, ignorada por git) en una carpeta por restaurante y se sirven
+en `/api/uploads/files/<restaurante>/<archivo>`. **Respalda esa carpeta** junto con la base.
+
 
 ## Domicilios (fase 5)
 

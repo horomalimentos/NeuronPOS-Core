@@ -25,7 +25,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
   before(async () => {
     ctx = await setupDb();
     owner = await ownerToken(ctx);
-    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos'] });
+    A = await createRestaurant(ctx, owner, 'alfa', { modules: ['pos', 'estaciones', 'reportes', 'plataformas', 'promociones', 'multimoneda', 'kiosko'] });
     B = await createRestaurant(ctx, owner, 'beta', { modules: ['pos'] });
     C = await createRestaurant(ctx, owner, 'gamma');
     branchA = (await api(A, 'GET', '/api/branches')).body.branches[0];
@@ -48,6 +48,23 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
         assert.equal(res.body.code, 'MODULE_NOT_ENABLED');
       }
       assert.equal((await ctx.request('GET', '/api/pos/menu')).status, 401, 'sin sesion');
+    });
+
+    test('las funciones con precio aparte piden su modulo (402 sin el)', async () => {
+      // B solo tiene el POS basico.
+      for (const [m, p, body] of [
+        ['POST', '/api/pos/stations', { name: 'Barra' }],
+        ['GET', '/api/pos/reports/sales?from=2026-01-01&to=2026-01-02'],
+        ['POST', '/api/pos/channels', { name: 'Rappi' }],
+        ['GET', '/api/pos/promotions'],
+        ['POST', '/api/pos/promotions', { name: 'X', kind: 'monto', amount: 5 }],
+        ['POST', '/api/pos/payment-methods', { name: 'Dolares', kind: 'efectivo', currency: 'USD' }],
+      ]) {
+        const res = await api(B, m, p, body);
+        assert.equal(res.status, 402, `${m} ${p}`);
+        assert.equal(res.body.code, 'MODULE_NOT_ENABLED');
+      }
+      assert.deepEqual((await api(B, 'GET', '/api/pos/channels')).body.channels, []);
     });
 
     test('restaurante suspendido: 402 aunque tenga el modulo', async () => {
@@ -298,6 +315,58 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       assert.equal(Number(again.body.order.total), 380);
     });
 
+    test('estaciones de cocina: cada estacion ve y marca lo suyo', async () => {
+      const created = await api(A, 'POST', '/api/pos/stations', { name: 'Barra' });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const barra = created.body.station;
+      assert.equal((await api(A, 'POST', '/api/pos/stations', { name: 'barra' })).body.code, 'STATION_EXISTS');
+      assert.equal((await api(cocina, 'POST', '/api/pos/stations', { name: 'Parrilla' })).status, 403);
+      // B no puede usar la estacion de A.
+      const ajena = await api(B, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id });
+      // (B ni siquiera tiene el modulo de estaciones; en ambos casos se rechaza.)
+      assert.ok(['STATION_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajena.body.code), ajena.body.code);
+
+      const bebidas = (await api(A, 'POST', '/api/pos/categories', { name: 'Bebidas', station_id: barra.id })).body.category;
+      assert.equal(bebidas.station_id, barra.id);
+      const refresco = (await api(A, 'POST', '/api/pos/items', { category_id: bebidas.id, name: 'Refresco', price: 30 })).body.item;
+      // Producto de una categoria sin estacion que va a la barra.
+      const flan = (await api(A, 'POST', '/api/pos/items', {
+        category_id: catA.id, name: 'Flan', price: 40, station_id: barra.id,
+      })).body.item;
+      const menu = await api(cocina, 'GET', '/api/pos/menu');
+      assert.deepEqual(menu.body.stations.map((s) => s.name), ['Barra']);
+
+      const o = (await api(mesero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar',
+        items: [{ menu_item_id: refresco.id, quantity: 1 }, { menu_item_id: flan.id, quantity: 1 }, { menu_item_id: aguaA.id, quantity: 1 }],
+      })).body.order;
+      const sent = await api(mesero, 'POST', `/api/pos/orders/${o.id}/send`);
+      assert.deepEqual(sent.body.order.items.map((i) => i.station_name), ['Barra', 'Barra', null]);
+
+      const kds = (station) => api(cocina, 'GET', `/api/pos/kitchen?branch_id=${branchA.id}&station_id=${station}`);
+      const enBarra = (await kds(barra.id)).body.orders.find((x) => x.id === o.id);
+      assert.deepEqual(enBarra.items.map((i) => i.name), ['Refresco', 'Flan']);
+      const enGeneral = (await kds('general')).body.orders.find((x) => x.id === o.id);
+      assert.deepEqual(enGeneral.items.map((i) => i.name), ['Agua']);
+
+      const r1 = await api(cocina, 'POST', `/api/pos/orders/${o.id}/ready`, { station_id: barra.id });
+      assert.equal(r1.body.order.status, 'enviada', 'falta la cocina general');
+      assert.ok(!(await kds(barra.id)).body.orders.some((x) => x.id === o.id));
+      assert.ok((await kds('general')).body.orders.some((x) => x.id === o.id));
+      const r2 = await api(cocina, 'POST', `/api/pos/orders/${o.id}/ready`, { station_id: 'general' });
+      assert.equal(r2.body.order.status, 'lista');
+      assert.ok(r2.body.order.items.every((i) => i.ready_at));
+
+      // Cambiar el menu no mueve lo ya vendido; una estacion usada solo se desactiva.
+      const del = await api(A, 'DELETE', `/api/pos/stations/${barra.id}`);
+      assert.deepEqual(del.body, { archived: true });
+      const after = await api(A, 'GET', '/api/pos/menu?all=1');
+      assert.equal(after.body.categories.find((c) => c.id === bebidas.id).station_id, null);
+      assert.equal(after.body.stations[0].active, false);
+      assert.equal((await api(A, 'GET', `/api/pos/orders/${o.id}`)).body.order.items[0].station_name, 'Barra');
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de estaciones' })).status, 200);
+    });
+
     test('quitar articulos: libre si no se envio; enviado solo gerente con motivo', async () => {
       const added = await api(mesero, 'POST', `/api/pos/orders/${order.id}/items`, { items: [{ menu_item_id: aguaA.id }] });
       const fresh = added.body.order.items.at(-1);
@@ -471,6 +540,197 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
 
       const nopay = await api(cajero, 'POST', `/api/pos/orders/${order.id}/payments`, { cash_session_id: session.id, payments: [] });
       assert.equal(nopay.status, 400);
+    });
+
+    test('plataformas de delivery: comision, numero de pedido y metodos permitidos', async () => {
+      const rappiPagado = (await api(A, 'POST', '/api/pos/payment-methods', { name: 'Rappi (pagado)', kind: 'otro' })).body.payment_method;
+      const created = await api(A, 'POST', '/api/pos/channels', {
+        name: 'Rappi', color: '#FF441F', commission_pct: 28, payment_method_ids: [rappiPagado.id],
+      });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      const rappi = created.body.channel;
+      assert.equal(Number(rappi.commission_pct), 28);
+      assert.equal((await api(A, 'POST', '/api/pos/channels', { name: 'RAPPI' })).body.code, 'CHANNEL_EXISTS');
+      assert.equal((await api(cajero, 'POST', '/api/pos/channels', { name: 'Didi' })).status, 403);
+      assert.equal((await api(B, 'GET', '/api/pos/channels')).body.channels.length, 0);
+
+      const base = { branch_id: branchA.id, order_type: 'domicilio', channel_id: rappi.id, items: [{ menu_item_id: aguaA.id, quantity: 2 }] };
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', base)).body.code, 'CHANNEL_ORDER_NUMBER_REQUIRED');
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', { ...base, order_type: 'comedor', table_id: mesa2.id })).status, 400);
+      const ajeno = await api(B, 'POST', '/api/pos/orders', { ...base, branch_id: branchB.id, channel_order_number: 'R-1' });
+      assert.ok(['CHANNEL_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajeno.body.code), ajeno.body.code);
+      // Con plataforma no se pide la direccion (la entrega es de Rappi).
+      const o = (await api(cajero, 'POST', '/api/pos/orders', { ...base, channel_order_number: 'R-123' })).body.order;
+      assert.equal(o.channel_name, 'Rappi');
+      assert.equal(Number(o.channel_commission_pct), 28);
+
+      // Cambiar la comision despues no reescribe la orden.
+      await api(A, 'PATCH', `/api/pos/channels/${rappi.id}`, { commission_pct: 30 });
+      assert.equal(Number((await api(A, 'GET', `/api/pos/orders/${o.id}`)).body.order.channel_commission_pct), 28);
+
+      const session = (await api(cajero, 'POST', '/api/pos/cash-sessions/open', { branch_id: branchA.id, terminal: 'Plataformas', opening_cash: 0 })).body.session;
+      const efectivo = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: session.id, payments: [{ payment_method_id: byKind('efectivo'), amount: Number(o.total) }],
+      });
+      assert.equal(efectivo.body.code, 'PAYMENT_METHOD_NOT_ALLOWED');
+      const paid = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: session.id, payments: [{ payment_method_id: rappiPagado.id, amount: Number(o.total) }],
+      });
+      assert.equal(paid.body.order.status, 'pagada', JSON.stringify(paid.body));
+
+      const day = new Date().toISOString().slice(0, 10);
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      await api(owner, 'PUT', `/api/platform/restaurants/${A.id}/modules/reportes`, { enabled: true });
+      const rep = await api(A, 'GET', `/api/pos/reports/sales?from=${yesterday}&to=${day}`);
+      assert.ok(rep.body.by_terminal.some((x) => x.terminal === 'Plataformas'), 'por caja');
+      const row = rep.body.by_channel.find((c) => c.name === 'Rappi');
+      assert.equal(Number(row.total), 100);
+      assert.equal(Number(row.commission), 28);
+      assert.equal(Number(row.net), 72);
+      await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts: [] });
+      assert.deepEqual((await api(A, 'DELETE', `/api/pos/channels/${rappi.id}`)).body, { archived: true });
+      await api(A, 'PATCH', `/api/pos/payment-methods/${rappiPagado.id}`, { active: false });
+    });
+
+    test('promociones automaticas: 2x1 y descuento a la cuenta se recalculan solos', async () => {
+      const bad = await api(A, 'POST', '/api/pos/promotions', { name: 'Mal', kind: 'nxm', buy_quantity: 2, pay_quantity: 2 });
+      assert.equal(bad.body.code, 'INVALID_PROMOTION');
+      assert.equal((await api(cajero, 'POST', '/api/pos/promotions', { name: 'X', kind: 'monto', amount: 5 })).status, 403);
+      const ajena = await api(B, 'POST', '/api/pos/promotions', { name: 'X', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id] });
+      assert.ok(['ITEM_NOT_FOUND', 'MODULE_NOT_ENABLED'].includes(ajena.body.code), ajena.body.code);
+
+      const dosx1 = (await api(A, 'POST', '/api/pos/promotions', {
+        name: 'Agua 2x1', kind: 'nxm', buy_quantity: 2, pay_quantity: 1, item_ids: [aguaA.id], priority: 1,
+      })).body.promotion;
+      assert.equal(dosx1.kind, 'nxm');
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 3 }],
+      })).body.order;
+      assert.equal(Number(o.subtotal), 150);
+      assert.equal(Number(o.promo_discount), 50);
+      assert.equal(Number(o.total), 100);
+      assert.deepEqual(o.promotions.map((x) => [x.name, Number(x.amount)]), [['Agua 2x1', 50]]);
+
+      // Una promocion a la cuenta (con minimo) entra al agregar mas; el descuento manual va despues.
+      await api(A, 'POST', '/api/pos/promotions', { name: '10% arriba de $200', kind: 'porcentaje', percent: 10, min_amount: 200, priority: 5 });
+      const more = (await api(cajero, 'POST', `/api/pos/orders/${o.id}/items`, { items: [{ menu_item_id: aguaA.id, quantity: 1 }] })).body.order;
+      // 4 aguas = 200; 2x1 -> 100 de descuento; 10% de 100 = 10.
+      assert.equal(Number(more.promo_discount), 110);
+      assert.equal(Number(more.total), 90);
+      const manual = (await api(A, 'PUT', `/api/pos/orders/${o.id}/discount`, { type: 'percent', value: 10, reason: 'Cliente frecuente' })).body.order;
+      assert.equal(Number(manual.discount_amount), 9);
+      assert.equal(Number(manual.total), 81);
+
+      // Solo en linea: no aplica en caja. Fuera de horario tampoco.
+      await api(A, 'PATCH', `/api/pos/promotions/${dosx1.id}`, { applies_pos: false });
+      const q = (await api(cajero, 'POST', `/api/pos/orders/${o.id}/items`, { items: [{ menu_item_id: aguaA.id, quantity: 1 }] })).body.order;
+      assert.ok(!q.promotions.some((x) => x.name === 'Agua 2x1'));
+      const list = await api(cajero, 'GET', `/api/pos/promotions?branch_id=${branchA.id}`);
+      assert.equal(list.body.promotions.length, 2);
+
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de promociones' })).status, 200);
+      for (const p of list.body.promotions) {
+        const del = await api(A, 'DELETE', `/api/pos/promotions/${p.id}`);
+        assert.ok([200, 204].includes(del.status));
+      }
+      assert.equal((await api(B, 'GET', '/api/pos/promotions')).status, 402);
+    });
+
+    test('descuento por articulo y PIN rotativo del gerente para pasar el limite del cajero', async () => {
+      await api(A, 'PATCH', '/api/pos/settings', { cashier_max_discount_pct: 10 });
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 2 }, { menu_item_id: aguaA.id, quantity: 1 }],
+      })).body.order;
+      const [l1, l2] = o.items;
+      // Dentro del limite: 10% del articulo de $100.
+      const ok = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l1.id}/discount`, { type: 'percent', value: 10, reason: 'Cortesia' });
+      assert.equal(Number(ok.body.order.item_discount), 10);
+      assert.equal(Number(ok.body.order.total), 140);
+      // Arriba del limite: necesita PIN.
+      const over = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50 });
+      assert.equal(over.body.code, 'DISCOUNT_NOT_ALLOWED');
+      assert.equal((await api(cajero, 'GET', '/api/pos/approval-pin')).status, 403, 'el cajero no ve el PIN');
+      const { pin } = (await api(A, 'GET', '/api/pos/approval-pin')).body;
+      assert.match(pin, /^\d{6}$/);
+      const wrong = String((Number(pin) + 1) % 1000000).padStart(6, '0');
+      assert.equal((await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin: wrong })).body.code, 'INVALID_PIN');
+      // El PIN de otro restaurante no sirve.
+      const pinB = (await api(B, 'GET', '/api/pos/approval-pin')).body.pin;
+      if (pinB !== pin) {
+        assert.equal((await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin: pinB })).body.code, 'INVALID_PIN');
+      }
+      const withPin = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/items/${l2.id}/discount`, { type: 'amount', value: 50, pin });
+      assert.equal(withPin.status, 200, JSON.stringify(withPin.body));
+      // 150 - 10 - 50 (el articulo de $50 queda en 0) = 90
+      assert.equal(Number(withPin.body.order.total), 90);
+      assert.equal(Number(withPin.body.order.items.find((i) => i.id === l2.id).discount_amount), 50);
+      // Descuento a la cuenta sobre lo que queda, tambien con PIN.
+      const cuenta = await api(cajero, 'PUT', `/api/pos/orders/${o.id}/discount`, { type: 'percent', value: 50, pin });
+      assert.equal(Number(cuenta.body.order.discount_amount), 45);
+      assert.equal(Number(cuenta.body.order.total), 45);
+      const removed = await api(cajero, 'DELETE', `/api/pos/orders/${o.id}/items/${l2.id}/discount`);
+      assert.equal(Number(removed.body.order.item_discount), 10);
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba de descuentos' })).status, 200);
+      await api(A, 'PATCH', '/api/pos/settings', { cashier_max_discount_pct: 0 });
+    });
+
+    test('cobro en dolares: tipo de cambio del turno, cambio en pesos y corte en USD', async () => {
+      assert.equal((await api(A, 'POST', '/api/pos/payment-methods', { name: 'Tarjeta USD', kind: 'tarjeta', currency: 'USD' })).status, 400);
+      const usd = (await api(A, 'POST', '/api/pos/payment-methods', { name: 'Dólares', kind: 'efectivo', currency: 'USD' })).body.payment_method;
+      assert.equal(usd.currency, 'USD');
+      await api(A, 'PATCH', '/api/pos/settings', { usd_rate: 17.5 });
+      const s = (await api(cajero, 'POST', '/api/pos/cash-sessions/open', { branch_id: branchA.id, terminal: 'Caja USD', opening_cash: 500 })).body.session;
+      assert.equal(Number(s.usd_rate), 17.5, 'toma el de la configuracion');
+      const upd = await api(cajero, 'PATCH', `/api/pos/cash-sessions/${s.id}`, { usd_rate: 18 });
+      assert.equal(Number(upd.body.session.usd_rate), 18);
+
+      const o = (await api(cajero, 'POST', '/api/pos/orders', {
+        branch_id: branchA.id, order_type: 'para_llevar', items: [{ menu_item_id: aguaA.id, quantity: 2 }],
+      })).body.order;
+      const sinUsd = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: s.id, payments: [{ payment_method_id: usd.id, amount: 100 }],
+      });
+      assert.equal(sinUsd.body.code, 'MISSING_FIELD');
+      // 10 dolares a 18 = 180 pesos; cuenta de 100 -> cambio 80 pesos.
+      const paid = await api(cajero, 'POST', `/api/pos/orders/${o.id}/payments`, {
+        cash_session_id: s.id, payments: [{ payment_method_id: usd.id, amount: 100, received_usd: 10 }],
+      });
+      assert.equal(paid.body.order.status, 'pagada', JSON.stringify(paid.body));
+      assert.equal(paid.body.change, 80);
+      const pay = paid.body.order.payments[0];
+      assert.equal(pay.currency, 'USD');
+      assert.equal(Number(pay.foreign_received), 10);
+      assert.equal(Number(pay.exchange_rate), 18);
+
+      const cut = (await api(cajero, 'GET', `/api/pos/cash-sessions/${s.id}`)).body.cut;
+      const byName = Object.fromEntries(cut.methods.map((m) => [m.name, m]));
+      assert.equal(byName['Dólares'].expected, 10);
+      assert.equal(byName['Dólares'].currency, 'USD');
+      assert.equal(byName.Efectivo.expected, 420, 'fondo 500 menos 80 de cambio');
+      const closed = await api(cajero, 'POST', `/api/pos/cash-sessions/${s.id}/close`, {
+        counts: [{ payment_method_id: byKind('efectivo'), counted: 420 }, { payment_method_id: usd.id, counted: 9 }],
+        count_detail: { MXN: { 200: 2, 20: 1 }, USD: { 5: 1, 1: 4 } },
+      });
+      assert.equal(closed.status, 200, JSON.stringify(closed.body));
+      assert.equal(closed.body.cut.total_difference, -18, 'falta 1 dolar = 18 pesos');
+      assert.deepEqual(closed.body.session.count_detail.USD, { 5: 1, 1: 4 });
+      await api(A, 'PATCH', `/api/pos/payment-methods/${usd.id}`, { active: false });
+    });
+
+    test('kiosko: orden para llevar con nombre, marcada como kiosko y comer aqui', async () => {
+      const base = { branch_id: branchA.id, order_type: 'para_llevar', source: 'kiosko', items: [{ menu_item_id: aguaA.id, quantity: 1 }] };
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', base)).status, 400, 'sin nombre');
+      assert.equal((await api(cajero, 'POST', '/api/pos/orders', { ...base, order_type: 'comedor', table_id: mesa2.id, customer_name: 'Ana' })).status, 400);
+      const branchB = (await api(B, 'GET', '/api/branches')).body.branches[0];
+      const catB = (await api(B, 'POST', '/api/pos/categories', { name: 'K' })).body.category;
+      const itB = (await api(B, 'POST', '/api/pos/items', { category_id: catB.id, name: 'K', price: 10 })).body.item;
+      const noMod = await api(B, 'POST', '/api/pos/orders', { ...base, branch_id: branchB.id, customer_name: 'Ana', items: [{ menu_item_id: itB.id, quantity: 1 }] });
+      assert.equal(noMod.status, 402);
+      const o = (await api(cajero, 'POST', '/api/pos/orders', { ...base, customer_name: 'Ana', dine_in: true })).body.order;
+      assert.equal(o.source, 'kiosko');
+      assert.equal(o.dine_in, true);
+      assert.equal(o.status, 'abierta');
+      assert.equal((await api(A, 'POST', `/api/pos/orders/${o.id}/cancel`, { reason: 'prueba kiosko' })).status, 200);
     });
 
     test('productos y metodos ya usados se desactivan en lugar de borrarse', async () => {

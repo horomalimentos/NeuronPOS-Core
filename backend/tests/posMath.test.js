@@ -13,34 +13,41 @@ const items = [
 
 test('totales: precios con IVA incluido (se desglosa)', () => {
   const t = calculateOrderTotals(items, { taxRatePct: 16, pricesIncludeTax: true });
-  assert.deepEqual(t, { subtotal: 280, discount_amount: 0, tax_amount: 38.62, delivery_fee: 0, total: 280 });
+  assert.deepEqual(t, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 0, tax_amount: 38.62, delivery_fee: 0, total: 280 });
 });
 
 test('totales: IVA encima del subtotal', () => {
   const t = calculateOrderTotals(items, { taxRatePct: 16, pricesIncludeTax: false });
-  assert.deepEqual(t, { subtotal: 280, discount_amount: 0, tax_amount: 44.8, delivery_fee: 0, total: 324.8 });
+  assert.deepEqual(t, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 0, tax_amount: 44.8, delivery_fee: 0, total: 324.8 });
 });
 
 test('totales: descuento porcentual y por monto', () => {
   const pct = calculateOrderTotals(items, { discount: { type: 'percent', value: 10 }, taxRatePct: 16, pricesIncludeTax: true });
-  assert.deepEqual(pct, { subtotal: 280, discount_amount: 28, tax_amount: 34.76, delivery_fee: 0, total: 252 });
+  assert.deepEqual(pct, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 28, tax_amount: 34.76, delivery_fee: 0, total: 252 });
   const amt = calculateOrderTotals(items, { discount: { type: 'amount', value: 30 }, taxRatePct: 16, pricesIncludeTax: false });
-  assert.deepEqual(amt, { subtotal: 280, discount_amount: 30, tax_amount: 40, delivery_fee: 0, total: 290 });
+  assert.deepEqual(amt, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 30, tax_amount: 40, delivery_fee: 0, total: 290 });
 });
 
 test('totales: costo de envio se suma al final, sin descuento ni IVA', () => {
   const t = calculateOrderTotals(items, {
     discount: { type: 'percent', value: 10 }, taxRatePct: 16, pricesIncludeTax: false, deliveryFee: '35.50',
   });
-  assert.deepEqual(t, { subtotal: 280, discount_amount: 28, tax_amount: 40.32, delivery_fee: 35.5, total: 327.82 });
+  assert.deepEqual(t, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 28, tax_amount: 40.32, delivery_fee: 35.5, total: 327.82 });
 });
 
 test('totales: el descuento nunca excede el subtotal y los cancelados no cuentan', () => {
   const t = calculateOrderTotals([...items, { unit_price: 999, quantity: 1, voided: true }], {
     discount: { type: 'amount', value: 1000 }, taxRatePct: 16,
   });
-  assert.deepEqual(t, { subtotal: 280, discount_amount: 280, tax_amount: 0, delivery_fee: 0, total: 0 });
+  assert.deepEqual(t, { subtotal: 280, promo_discount: 0, item_discount: 0, discount_amount: 280, tax_amount: 0, delivery_fee: 0, total: 0 });
   assert.equal(calculateOrderTotals([], {}).total, 0);
+});
+
+test('totales: promociones antes del descuento manual y del IVA', () => {
+  const t = calculateOrderTotals(items, { promoDiscount: 80, discount: { type: 'percent', value: 10 }, taxRatePct: 16 });
+  // 280 - 80 de promocion = 200; 10% manual = 20; total 180 con IVA incluido.
+  assert.deepEqual(t, { subtotal: 280, promo_discount: 80, item_discount: 0, discount_amount: 20, tax_amount: 24.83, delivery_fee: 0, total: 180 });
+  assert.equal(calculateOrderTotals(items, { promoDiscount: 999 }).total, 0, 'nunca mas que el subtotal');
 });
 
 test('totales: redondeo en centavos (sin errores de punto flotante)', () => {

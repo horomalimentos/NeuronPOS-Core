@@ -2,8 +2,10 @@ import { BadgeCheck, Bike, CalendarClock, Check, ChefHat, Clock, CreditCard, Glo
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { useLive } from '../lib/live';
 import { formatMXN } from '../lib/format';
 import { ORDER_STATUS_LABEL, ORDER_STATUS_STYLE, formatTime, minutesSince, num, posCan } from './lib';
+import OnlinePause from './OnlinePause';
 import type { Order } from './types';
 import type { Role } from '../lib/types';
 
@@ -36,6 +38,7 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+  useLive(branchId, load);
 
   async function act(o: Order, action: 'accept' | 'reject' | 'dispatch' | 'deliver') {
     let body: Record<string, unknown> | undefined;
@@ -69,6 +72,7 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
         <p className="text-sm text-gray-400">Pedidos hechos desde el portal de clientes. Se actualiza cada 10 segundos.</p>
         <Button variant="ghost" onClick={load}><RefreshCw className="h-4 w-4" /> Actualizar</Button>
       </div>
+      <OnlinePause branchId={branchId} canAct={posCan.availability(role)} />
       {error && <Alert>{error}</Alert>}
       {orders.length === 0 && <p className="py-10 text-center text-sm text-gray-500">No hay pedidos en línea activos.</p>}
 

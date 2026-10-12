@@ -7,8 +7,10 @@ import { formatDateTime } from '../pos/lib';
 import { printHtml } from '../pos/ticket';
 import { useAdmin } from '../restaurant/context';
 import { DayTable } from './AttendancePage';
+import { IncidentCard, type Incident } from './IncidentsPage';
 import { DOW_LABEL, FREQUENCY_LABEL, PERIOD_STATUS_LABEL, addDaysStr, hours, inZone, shortDay } from './lib';
 import { ClaimModal, MyAguinaldo, MyClaims, MyLive } from './MyExtras';
+import MobileClock from './MobileClock';
 import { ReceiptView } from './PayrollPeriodPage';
 import { receiptHtml } from './print';
 import type { AttendanceDay, AttendanceSummary, MyEmployee, PayrollItem, PayrollPeriod, RosterDay } from './types';
@@ -54,6 +56,7 @@ export default function MyPayrollPage() {
     <>
       <PageHeader title="Mi nómina" subtitle={`${employee.full_name}${employee.position ? ` · ${employee.position}` : ''} · ${employee.branch_name}`} />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <MobileClock />
       <div className="grid gap-6 lg:grid-cols-3">
         {hasShifts ? <MyShifts /> : (
         <section className="card p-5">
@@ -115,10 +118,54 @@ export default function MyPayrollPage() {
           </table>
         )}
       </section>
+      <MyIncidents />
       {open && <MyReceiptModal id={open} onClose={() => setOpen(null)} onSigned={load}
         onClaim={() => { setClaim({ itemId: open }); setOpen(null); }} />}
       {claim && <ClaimModal {...claim} onClose={() => setClaim(null)} onSaved={() => setClaimsKey((k) => k + 1)} />}
     </>
+  );
+}
+
+/** Incidencias que levanto el gerente; el empleado las firma de enterado (con su version si quiere). */
+function MyIncidents() {
+  const [list, setList] = useState<Incident[]>([]);
+  const [signing, setSigning] = useState<Incident | null>(null);
+  const [comment, setComment] = useState('');
+  const [error, setError] = useState('');
+  const load = useCallback(() => { api<{ incidents: Incident[] }>('/rh/me/incidents').then((r) => setList(r.incidents)).catch(() => {}); }, []);
+  useEffect(load, [load]);
+  if (list.length === 0) return null;
+  async function sign() {
+    if (!signing) return;
+    try {
+      await api(`/rh/me/incidents/${signing.id}/sign`, { method: 'POST', body: { comment } });
+      setSigning(null);
+      setComment('');
+      load();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+  return (
+    <section className="mt-6">
+      <h2 className="mb-3 font-semibold text-white">Mis incidencias</h2>
+      <div className="grid gap-3 md:grid-cols-2">
+        {list.map((i) => <IncidentCard key={i.id} inc={i} action={i.status === 'pendiente' && <Button onClick={() => { setError(''); setSigning(i); }}><FileSignature className="h-4 w-4" /> Firmar de enterado</Button>} />)}
+      </div>
+      {signing && (
+        <Modal title="Firmar de enterado" onClose={() => setSigning(null)}>
+          <div className="space-y-4">
+            {error && <Alert>{error}</Alert>}
+            <p className="text-sm text-gray-300">Firmar indica que te informaron de esta incidencia. Si no estás de acuerdo, escríbelo aquí.</p>
+            <textarea className="input min-h-24" maxLength={1000} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Comentario (opcional)" />
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setSigning(null)}>Cancelar</Button>
+              <Button onClick={sign}>Firmar</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </section>
   );
 }
 

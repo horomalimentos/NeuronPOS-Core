@@ -8,6 +8,7 @@ export const basicAuth = (apiKey, secretKey) => `Basic ${Buffer.from(`${apiKey}:
 
 export function createClipMock() {
   const checkouts = new Map();
+  const pinpads = new Map();
   const calls = [];
   let seq = 0;
   const mock = {
@@ -16,8 +17,41 @@ export function createClipMock() {
     failCreate: false,
     created: () => calls.filter((c) => c.method === 'POST'),
     lastCreated: () => mock.created().at(-1),
+    pinpads,
+    pinpadOffline: false,
     async transport({ method, url, headers, body }) {
       calls.push({ method, url, auth: headers.Authorization, body });
+      // Terminal fisica (PinPad).
+      if (url.includes('/pinpad/')) {
+        if (method === 'POST') {
+          if (mock.pinpadOffline) return { status: 408, data: { code: 'PINPAD_TERMINAL_TIMEOUT_EXCEPTION', message: 'timeout' } };
+          seq += 1;
+          const id = `pp_${seq}`;
+          pinpads.set(id, { id, auth: headers.Authorization, amount: body.amount, serial: body.serial_number_pos, status: 'PENDING', taken: false });
+          return { status: 200, data: { pinpad_request_id: id } };
+        }
+        const q = url.match(/pinpadRequestId=([^&]+)/);
+        if (method === 'GET' && q) {
+          const pp = pinpads.get(decodeURIComponent(q[1]));
+          if (!pp || pp.auth !== headers.Authorization) return { status: 404, data: null };
+          const approved = pp.status === 'APPROVED';
+          return {
+            status: 200,
+            data: {
+              status: pp.status, amount: pp.amount, amount_paid: approved ? pp.paid ?? pp.amount : 0,
+              detail: approved ? { results: [{ status: 'approved', paid_amount: pp.paid ?? pp.amount, transaction_id: `tx_${pp.id}`, payment_method: { id: 'VISA', card: { last_digits: '4242' } } }] } : { results: [] },
+            },
+          };
+        }
+        const d = url.match(/\/payment\/([^/?]+)$/);
+        if (method === 'DELETE' && d) {
+          const pp = pinpads.get(decodeURIComponent(d[1]));
+          if (!pp || pp.taken) return { status: 409, data: { message: 'in progress' } };
+          pp.status = 'CANCELED';
+          return { status: 200, data: {} };
+        }
+        return { status: 404, data: null };
+      }
       if (method === 'POST' && url.endsWith('/v2/checkout')) {
         if (mock.failCreate) return { status: 500, data: { message: 'falla simulada' } };
         seq += 1;
@@ -49,6 +83,10 @@ export function createClipMock() {
       return { status: 404, data: null };
     },
     pay(id) { checkouts.get(id).status = 'CHECKOUT_COMPLETED'; },
+    /** Terminal: el cliente paso la tarjeta (paid permite simular un monto distinto). */
+    approvePinpad(id, paid) { Object.assign(pinpads.get(id), { status: 'APPROVED', taken: true, paid }); },
+    rejectPinpad(id) { Object.assign(pinpads.get(id), { status: 'DECLINED', taken: true }); },
+    takePinpad(id) { pinpads.get(id).taken = true; },
     expire(id) { checkouts.get(id).status = 'CHECKOUT_EXPIRED'; },
     /** Cambia lo que Clip reporta como monto (para probar la validacion). */
     tamper(id, amount) { checkouts.get(id).amount = amount; },

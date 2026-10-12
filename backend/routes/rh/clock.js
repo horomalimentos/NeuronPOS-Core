@@ -48,6 +48,55 @@ router.get('/kiosk/:branchId', ah(async (req, res) => {
   res.json(data);
 }));
 
+/**
+ * Registra la checada ya autorizada (NIP en el kiosco o sesion en el celular):
+ * evita duplicados, decide entrada/salida y avisa si es retardo.
+ */
+async function recordClock(db, req, { emp, branchId, kindRequested, body, source, ip, now }) {
+  const last = (await db.query(
+    `SELECT kind, occurred_at FROM time_entries WHERE restaurant_id = $1 AND employee_id = $2 AND NOT voided
+      ORDER BY occurred_at DESC LIMIT 1`,
+    [req.tenant.id, emp.id],
+  )).rows[0];
+  if (last && now - new Date(last.occurred_at) < DUPLICATE_SECONDS * 1000) {
+    return { error: new HttpError(409, 'Ya registraste una checada hace un momento', 'CLOCK_DUPLICATE') };
+  }
+  const kind = kindRequested || nextKind(last, now);
+  const lat = Number.isFinite(Number(body.latitude)) && body.latitude !== null ? Number(body.latitude) : null;
+  const lon = Number.isFinite(Number(body.longitude)) && body.longitude !== null ? Number(body.longitude) : null;
+  const entry = (await db.query(
+    `INSERT INTO time_entries (restaurant_id, employee_id, branch_id, kind, occurred_at, source, latitude, longitude, ip, created_by)
+     VALUES ($1, $2, $3, $4, $5, $10, $6, $7, $8, $9) RETURNING id, kind, occurred_at`,
+    [req.tenant.id, emp.id, branchId, kind, now, lat, lon, ip, req.user.id, source],
+  )).rows[0];
+
+  // Aviso de retardo en pantalla (el calculo formal es el de la nomina).
+  let lateMinutes = 0;
+  if (kind === 'entrada') {
+    const local = localParts(now, emp.timezone);
+    const dow = new Date(`${local.date}T00:00:00Z`).getUTCDay();
+    // El turno del rol de ese dia (modulo turnos) manda sobre el horario fijo.
+    const rol = await moduleActive(db, req.tenant.id, 'turnos', now)
+      ? (await db.query(
+        `SELECT is_rest, to_char(start_time, 'HH24:MI') AS start_time FROM employee_shift_days
+          WHERE restaurant_id = $1 AND employee_id = $2 AND date = $3`,
+        [req.tenant.id, emp.id, local.date],
+      )).rows[0]
+      : null;
+    const sched = rol ? (rol.is_rest ? null : rol) : (await db.query(
+      `SELECT to_char(start_time, 'HH24:MI') AS start_time FROM employee_schedules
+        WHERE restaurant_id = $1 AND employee_id = $2 AND day_of_week = $3`,
+      [req.tenant.id, emp.id, dow],
+    )).rows[0];
+    const tol = (await db.query('SELECT tolerance_minutes FROM payroll_settings WHERE restaurant_id = $1', [req.tenant.id])).rows[0];
+    if (sched) {
+      const late = local.minutes - timeToMinutes(sched.start_time);
+      if (late > Number(tol?.tolerance_minutes ?? 0)) lateMinutes = late;
+    }
+  }
+  return { entry, employee_name: emp.full_name, late_minutes: lateMinutes };
+}
+
 router.post('/kiosk/clock', kioskLimiter, ah(async (req, res) => {
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
@@ -95,49 +144,45 @@ router.post('/kiosk/clock', kioskLimiter, ah(async (req, res) => {
     )).rows[0] || null;
     const denied = checkClockRestriction(settings, { ip, latitude: body.latitude, longitude: body.longitude });
     if (denied) return { error: new HttpError(403, denied.error, denied.code) };
+    return recordClock(db, req, { emp, branchId, kindRequested, body, source: 'kiosco', ip, now });
+  });
+  if (outcome.error) throw outcome.error;
+  res.status(201).json(outcome);
+}));
 
-    const last = (await db.query(
-      `SELECT kind, occurred_at FROM time_entries WHERE restaurant_id = $1 AND employee_id = $2 AND NOT voided
-        ORDER BY occurred_at DESC LIMIT 1`,
-      [req.tenant.id, emp.id],
-    )).rows[0];
-    if (last && now - new Date(last.occurred_at) < DUPLICATE_SECONDS * 1000) {
-      return { error: new HttpError(409, 'Ya registraste una checada hace un momento', 'CLOCK_DUPLICATE') };
-    }
-    const kind = kindRequested || nextKind(last, now);
-    const lat = Number.isFinite(Number(body.latitude)) && body.latitude !== null ? Number(body.latitude) : null;
-    const lon = Number.isFinite(Number(body.longitude)) && body.longitude !== null ? Number(body.longitude) : null;
-    const entry = (await db.query(
-      `INSERT INTO time_entries (restaurant_id, employee_id, branch_id, kind, occurred_at, source, latitude, longitude, ip, created_by)
-       VALUES ($1, $2, $3, $4, $5, 'kiosco', $6, $7, $8, $9) RETURNING id, kind, occurred_at`,
-      [req.tenant.id, emp.id, branchId, kind, now, lat, lon, ip, req.user.id],
-    )).rows[0];
+// Checada desde el celular del empleado (sesion propia), si su sucursal lo
+// permite: siempre dentro de la geocerca.
+router.get('/me/clock', ah(async (req, res) => {
+  const data = await withTenant(req.tenant.id, async (db) => {
+    const emp = (await db.query('SELECT id, branch_id FROM employees WHERE restaurant_id = $1 AND user_id = $2 AND active', [req.tenant.id, req.user.id])).rows[0];
+    if (!emp) return { enabled: false };
+    const c = (await db.query('SELECT mobile_enabled, radius_meters FROM hr_clock_settings WHERE branch_id = $1 AND restaurant_id = $2', [emp.branch_id, req.tenant.id])).rows[0];
+    const last = (await db.query('SELECT kind, occurred_at FROM time_entries WHERE restaurant_id = $1 AND employee_id = $2 AND NOT voided ORDER BY occurred_at DESC LIMIT 1', [req.tenant.id, emp.id])).rows[0] || null;
+    return { enabled: Boolean(c?.mobile_enabled), radius_meters: c?.radius_meters ?? null, last, next: nextKind(last) };
+  });
+  res.json(data);
+}));
 
-    // Aviso de retardo en pantalla (el calculo formal es el de la nomina).
-    let lateMinutes = 0;
-    if (kind === 'entrada') {
-      const local = localParts(now, emp.timezone);
-      const dow = new Date(`${local.date}T00:00:00Z`).getUTCDay();
-      // El turno del rol de ese dia (modulo turnos) manda sobre el horario fijo.
-      const rol = await moduleActive(db, req.tenant.id, 'turnos', now)
-        ? (await db.query(
-          `SELECT is_rest, to_char(start_time, 'HH24:MI') AS start_time FROM employee_shift_days
-            WHERE restaurant_id = $1 AND employee_id = $2 AND date = $3`,
-          [req.tenant.id, emp.id, local.date],
-        )).rows[0]
-        : null;
-      const sched = rol ? (rol.is_rest ? null : rol) : (await db.query(
-        `SELECT to_char(start_time, 'HH24:MI') AS start_time FROM employee_schedules
-          WHERE restaurant_id = $1 AND employee_id = $2 AND day_of_week = $3`,
-        [req.tenant.id, emp.id, dow],
-      )).rows[0];
-      const tol = (await db.query('SELECT tolerance_minutes FROM payroll_settings WHERE restaurant_id = $1', [req.tenant.id])).rows[0];
-      if (sched) {
-        const late = local.minutes - timeToMinutes(sched.start_time);
-        if (late > Number(tol?.tolerance_minutes ?? 0)) lateMinutes = late;
-      }
-    }
-    return { entry, employee_name: emp.full_name, late_minutes: lateMinutes };
+router.post('/me/clock', kioskLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const kindRequested = oneOf(body.kind, ['entrada', 'salida'], 'kind');
+  const now = new Date();
+  const outcome = await withTenant(req.tenant.id, async (db) => {
+    const emp = (await db.query(
+      `SELECT e.id, e.full_name, e.branch_id, b.timezone FROM employees e JOIN branches b ON b.id = e.branch_id AND b.restaurant_id = e.restaurant_id
+        WHERE e.restaurant_id = $1 AND e.user_id = $2 AND e.active`,
+      [req.tenant.id, req.user.id],
+    )).rows[0];
+    if (!emp) return { error: new HttpError(404, 'Tu usuario no está ligado a un empleado', 'NOT_AN_EMPLOYEE') };
+    const settings = (await db.query(
+      'SELECT mobile_enabled, geo_enabled, latitude, longitude, radius_meters FROM hr_clock_settings WHERE branch_id = $1 AND restaurant_id = $2',
+      [emp.branch_id, req.tenant.id],
+    )).rows[0];
+    if (!settings?.mobile_enabled) return { error: new HttpError(403, 'Tu sucursal no permite checar desde el celular', 'MOBILE_CLOCK_DISABLED') };
+    // Sin lista de IPs (datos moviles); la geocerca es obligatoria.
+    const denied = checkClockRestriction({ ...settings, allowed_ips: [] }, { latitude: body.latitude, longitude: body.longitude });
+    if (denied) return { error: new HttpError(403, denied.error, denied.code) };
+    return recordClock(db, req, { emp, branchId: emp.branch_id, kindRequested, body, source: 'celular', ip: normalizeIp(req.ip), now });
   });
   if (outcome.error) throw outcome.error;
   res.status(201).json(outcome);

@@ -46,11 +46,17 @@ restaurantAuthRouter.post('/login', loginLimiter, requireTenant, ah(async (req, 
   });
 
   const ok = await bcrypt.compare(password, user?.password_hash || DUMMY_HASH);
-  if (!user || !ok) throw invalidCredentials();
-  if (!user.active) throw new HttpError(403, 'Tu cuenta esta desactivada. Contacta a un administrador.', 'ACCOUNT_DEACTIVATED');
-
-  await withTenant(req.tenant.id, (db) =>
-    db.query('UPDATE users SET last_login_at = now() WHERE id = $1 AND restaurant_id = $2', [user.id, req.tenant.id]));
+  // Bitacora de accesos: cada intento, correcto o no.
+  const result = !user || !ok ? 'contrasena' : !user.active ? 'desactivada' : 'ok';
+  await withTenant(req.tenant.id, async (db) => {
+    await db.query(
+      'INSERT INTO access_log (restaurant_id, user_id, email, result, ip, user_agent) VALUES ($1, $2, $3, $4, $5, $6)',
+      [req.tenant.id, user?.id ?? null, email, result, String(req.ip || '').replace(/^::ffff:/, '').slice(0, 64), String(req.headers['user-agent'] || '').slice(0, 300)],
+    );
+    if (result === 'ok') await db.query('UPDATE users SET last_login_at = now() WHERE id = $1 AND restaurant_id = $2', [user.id, req.tenant.id]);
+  });
+  if (result === 'contrasena') throw invalidCredentials();
+  if (result === 'desactivada') throw new HttpError(403, 'Tu cuenta esta desactivada. Contacta a un administrador.', 'ACCOUNT_DEACTIVATED');
 
   res.json({
     token: signUserToken(user),

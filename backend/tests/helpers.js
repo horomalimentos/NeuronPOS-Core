@@ -54,6 +54,7 @@ export async function setupDb() {
     port,
     async close() {
       await new Promise((r) => server.close(r));
+      await (await import('../services/live.js')).stopLive();
       await db.default.end();
     },
     /** request HTTP con control total de headers (incluido Host). */

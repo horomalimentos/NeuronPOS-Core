@@ -8,6 +8,15 @@ export interface MenuCategory {
   description: string | null;
   sort_order: number;
   active: boolean;
+  /** Estacion de cocina por omision de sus productos (null = cocina general). */
+  station_id: string | null;
+}
+
+export interface KitchenStation {
+  id: string;
+  name: string;
+  sort_order: number;
+  active: boolean;
 }
 
 export interface Modifier {
@@ -41,12 +50,31 @@ export interface MenuItem {
   modifier_group_ids: string[];
   unavailable_branch_ids: string[];
   available: boolean;
+  /** Agotado con hora de regreso en la sucursal consultada. */
+  available_at?: string | null;
+  /** null = la de su categoria. */
+  station_id: string | null;
 }
 
 export interface Menu {
   categories: MenuCategory[];
   items: MenuItem[];
   modifier_groups: ModifierGroup[];
+  stations: KitchenStation[];
+}
+
+/** Plataforma de delivery (Rappi, Uber Eats...) con su comision. */
+export interface SalesChannel {
+  id: string;
+  name: string;
+  color: string | null;
+  commission_pct: Money;
+  /** Metodos con los que se cobra (vacio = cualquiera). */
+  payment_method_ids: string[];
+  requires_order_number: boolean;
+  requires_address: boolean;
+  sort_order: number;
+  active: boolean;
 }
 
 export interface Zone {
@@ -55,7 +83,14 @@ export interface Zone {
   name: string;
   sort_order: number;
   active: boolean;
+  /** Plano de la zona (cuadricula de map_width x map_height celdas). */
+  map_enabled?: boolean;
+  map_width?: number;
+  map_height?: number;
 }
+
+export type MapObjectKind = 'barra' | 'pared' | 'puerta' | 'bano' | 'caja' | 'cocina' | 'planta' | 'texto';
+export interface ZoneMapObject { id?: string; zone_id?: string; kind: MapObjectKind; label: string | null; x: number; y: number; w: number; h: number }
 
 export interface DiningTable {
   id: string;
@@ -66,6 +101,12 @@ export interface DiningTable {
   sort_order: number;
   active: boolean;
   status?: 'libre' | 'ocupada';
+  /** Posicion en el plano (null = sin acomodar). */
+  map_x?: number | null;
+  map_y?: number | null;
+  map_w?: number;
+  map_h?: number;
+  map_shape?: 'cuadrada' | 'redonda';
   order_id?: string | null;
   order_folio?: number | null;
   order_status?: OrderStatus | null;
@@ -96,6 +137,13 @@ export interface OrderItem {
   line_total: Money;
   notes: string | null;
   sent_at: string | null;
+  ready_at: string | null;
+  station_id: string | null;
+  station_name: string | null;
+  discount_type?: 'amount' | 'percent' | null;
+  discount_value?: Money | null;
+  discount_amount?: Money;
+  discount_reason?: string | null;
   voided_at: string | null;
   void_reason: string | null;
   modifiers: OrderItemModifier[];
@@ -149,7 +197,7 @@ export interface Order {
   items?: OrderItem[];
   payments?: OrderPayment[];
   // Pedidos en linea (source = 'web')
-  source?: 'pos' | 'web';
+  source?: 'pos' | 'web' | 'kiosko';
   online_status?: OnlineStatus | null;
   delivery_fee?: Money;
   delivery_reference?: string | null;
@@ -165,6 +213,53 @@ export interface Order {
   // Pago en linea con Clip: pendiente (no llega aqui), pagado o cancelado.
   payment_provider?: string | null;
   online_payment_status?: 'pendiente' | 'pagado' | 'cancelado' | null;
+  // Plataforma de delivery (Rappi, Uber Eats...) y su comision al momento.
+  channel_id?: string | null;
+  channel_name?: string | null;
+  channel_color?: string | null;
+  channel_order_number?: string | null;
+  channel_commission_pct?: Money;
+  // Promociones automaticas aplicadas (se recalculan con cada cambio).
+  promo_discount?: Money;
+  item_discount?: Money;
+  promotions?: { promotion_id: string; name: string; amount: Money }[];
+  // Vale aplicado (su descuento ya esta dentro de promo_discount).
+  voucher_id?: string | null;
+  voucher_code?: string | null;
+  voucher_discount?: Money;
+  dine_in?: boolean;
+}
+
+export type PromotionKind = 'nxm' | 'paquete' | 'porcentaje' | 'monto' | 'regalo';
+
+export interface Promotion {
+  id: string;
+  name: string;
+  description: string | null;
+  kind: PromotionKind;
+  item_ids: string[];
+  category_ids: string[];
+  buy_quantity: number | null;
+  pay_quantity: number | null;
+  percent: Money | null;
+  amount: Money | null;
+  bundle_price: Money | null;
+  reward_item_id: string | null;
+  reward_quantity: number | null;
+  same_modifiers: boolean;
+  min_amount: Money;
+  applies_pos: boolean;
+  applies_web: boolean;
+  branch_ids: string[];
+  starts_on: string | null;
+  ends_on: string | null;
+  days_of_week: number[];
+  start_time: string | null;
+  end_time: string | null;
+  priority: number;
+  active: boolean;
+  /** Aplica en este momento (segun fechas, dias y horario). */
+  active_now?: boolean;
 }
 
 export type OnlineStatus = 'pendiente' | 'aceptada' | 'rechazada';
@@ -173,6 +268,8 @@ export interface PaymentMethod {
   id: string;
   name: string;
   kind: MethodKind;
+  /** Efectivo en dolares: se cobra con el tipo de cambio del turno. */
+  currency?: 'MXN' | 'USD';
   active: boolean;
   sort_order: number;
 }
@@ -183,6 +280,11 @@ export interface PosSettings {
   cashier_max_discount_pct: Money;
   ticket_header: string | null;
   ticket_footer: string | null;
+  /** Tipo de cambio por omision (pesos por dolar). */
+  usd_rate: Money;
+  /** Pantalla de cocina: minutos para amarillo y rojo. */
+  kitchen_warn_minutes: number;
+  kitchen_late_minutes: number;
 }
 
 export interface CashSession {
@@ -203,6 +305,8 @@ export interface CashSession {
   closed_by_name: string | null;
   closed_at: string | null;
   notes: string | null;
+  usd_rate?: Money | null;
+  count_detail?: Record<string, Record<string, number>> | null;
 }
 
 export interface CashMovement {
@@ -210,9 +314,12 @@ export interface CashMovement {
   kind: 'entrada' | 'salida';
   amount: Money;
   reason: string;
+  category?: MovementCategory;
   created_at: string;
   created_by_name?: string;
 }
+
+export type MovementCategory = 'compras' | 'servicios' | 'propinas' | 'nomina' | 'retiro' | 'fondo' | 'otro';
 
 export interface CutLine {
   payment_method_id: string;
@@ -221,6 +328,7 @@ export interface CutLine {
   payments: number;
   sales: number;
   tips: number;
+  currency?: 'MXN' | 'USD';
   expected: number;
   counted?: number;
   difference?: number;

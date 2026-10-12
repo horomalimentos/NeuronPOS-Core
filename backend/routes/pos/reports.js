@@ -5,13 +5,13 @@
 // Modulo 'reportes' (ademas de 'pos', que exige el router padre).
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { requireModule } from '../../middleware/requireModule.js';
+import { can } from '../../services/permissions.js';
 import { ah, badRequest } from '../../utils/http.js';
-import { ROLES, requireBranch } from './common.js';
+import { requireBranch } from './common.js';
 
 const router = Router();
-const manager = requireRole(...ROLES.manage);
+const manager = can('manage');
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_DAYS = 366;
@@ -52,7 +52,8 @@ const TOTALS = `
   WITH ${PAID}
   SELECT count(*)::int AS orders,
          coalesce(sum(subtotal), 0) AS subtotal,
-         coalesce(sum(discount_amount), 0) AS discounts,
+         coalesce(sum(discount_amount + item_discount), 0) AS discounts,
+         coalesce(sum(promo_discount), 0) AS promotions,
          coalesce(sum(tax_amount), 0) AS tax,
          coalesce(sum(delivery_fee), 0) AS delivery_fees,
          coalesce(sum(total), 0) AS total,
@@ -69,6 +70,7 @@ async function totals(db, params) {
     orders: t.orders,
     subtotal: n(t.subtotal),
     discounts: n(t.discounts),
+    promotions: n(t.promotions),
     tax: n(t.tax),
     delivery_fees: n(t.delivery_fees),
     total: n(t.total),
@@ -131,6 +133,17 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
        GROUP BY pm.id, pm.name, pm.kind, pm.sort_order
        ORDER BY sum(p.amount) DESC, pm.sort_order`);
 
+    // Por terminal (caja): lo cobrado en cada una; lo pagado en linea va aparte.
+    const byTerminal = await q(`
+      WITH ${PAID}
+      SELECT coalesce(cs.terminal, 'En línea') AS terminal, count(DISTINCT p.order_id)::int AS orders,
+             count(*)::int AS payments, sum(p.amount) AS amount, sum(p.tip) AS tips
+        FROM order_payments p
+        JOIN paid ON paid.id = p.order_id
+        LEFT JOIN cash_sessions cs ON cs.id = p.cash_session_id AND cs.restaurant_id = p.restaurant_id
+       WHERE p.restaurant_id = $1
+       GROUP BY 1 ORDER BY sum(p.amount) DESC`);
+
     const byType = await q(`
       WITH ${PAID}
       SELECT order_type, source, count(*)::int AS orders, sum(total) AS total
@@ -140,6 +153,15 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       WITH ${PAID}
       SELECT branch_id, branch_name, count(*)::int AS orders, sum(total) AS total, sum(tip_amount) AS tips
         FROM paid GROUP BY 1, 2 ORDER BY sum(total) DESC`);
+
+    // Plataformas de delivery (Rappi, Uber Eats...): comision guardada en cada orden.
+    const byChannel = await q(`
+      WITH ${PAID}
+      SELECT paid.channel_id, coalesce(ch.name, 'Directo') AS name, count(*)::int AS orders, sum(paid.total) AS total,
+             sum(round(paid.total * paid.channel_commission_pct / 100, 2)) AS commission,
+             sum(paid.total - round(paid.total * paid.channel_commission_pct / 100, 2)) AS net
+        FROM paid LEFT JOIN sales_channels ch ON ch.id = paid.channel_id AND ch.restaurant_id = paid.restaurant_id
+       GROUP BY 1, 2 ORDER BY sum(paid.total) DESC`);
 
     // Productos (sin articulos cancelados). line_total es antes del descuento de la orden.
     const items = await q(`
@@ -179,10 +201,20 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       WITH ${PAID}
       SELECT paid.created_by AS user_id, coalesce(u.name, 'Pedidos en línea') AS name,
              count(*)::int AS orders, sum(paid.total) AS total, sum(paid.tip_amount) AS tips,
-             sum(paid.discount_amount) AS discounts
+             sum(paid.discount_amount + paid.item_discount) AS discounts
         FROM paid
         LEFT JOIN users u ON u.id = paid.created_by AND u.restaurant_id = paid.restaurant_id
        GROUP BY 1, 2 ORDER BY sum(paid.total) DESC`);
+
+    // Entradas y salidas de efectivo por categoria (en el periodo).
+    const cashMovements = await q(`
+      SELECT m.category, m.kind, count(*)::int AS movements, coalesce(sum(m.amount), 0) AS total
+        FROM cash_movements m
+        JOIN cash_sessions cs ON cs.id = m.session_id AND cs.restaurant_id = m.restaurant_id
+        JOIN branches b ON b.id = cs.branch_id AND b.restaurant_id = cs.restaurant_id
+       WHERE m.restaurant_id = $1 AND (m.created_at AT TIME ZONE b.timezone)::date BETWEEN $2::date AND $3::date
+         AND ($4::uuid IS NULL OR cs.branch_id = $4)
+       GROUP BY 1, 2 ORDER BY 2 DESC, 4 DESC`);
 
     const money = (rows, ...keys) => rows.map((r) => {
       const o = { ...r };
@@ -201,8 +233,11 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       by_hour: money(byHour, 'total'),
       by_weekday: money(byWeekday, 'total'),
       by_payment_method: money(byPayment, 'amount', 'tips'),
+      by_terminal: money(byTerminal, 'amount', 'tips'),
       by_order_type: money(byType, 'total'),
       by_branch: money(byBranch, 'total', 'tips'),
+      by_channel: money(byChannel, 'total', 'commission', 'net'),
+      cash_movements: money(cashMovements, 'total'),
       items: money(items, 'total'),
       categories: money(categories, 'total'),
       modifiers: money(modifiers, 'total'),

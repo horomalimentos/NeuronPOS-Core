@@ -8,6 +8,8 @@ export interface SiteContent {
   hero_title?: string;
   hero_subtitle?: string;
   hero_image_url?: string;
+  /** La portada rota entre las fotos de la galeria. */
+  hero_carousel?: boolean;
   announcement?: string;
   about_title?: string;
   about_text?: string;
@@ -16,6 +18,9 @@ export interface SiteContent {
   menu_title?: string;
   show_gallery?: boolean;
   gallery_title?: string;
+  show_featured?: boolean;
+  featured_title?: string;
+  featured_item_ids?: string[];
   contact_email?: string;
   whatsapp?: string;
   social_facebook?: string;
@@ -45,6 +50,8 @@ export interface LandingData {
     description: string | null;
     items: { id: string; name: string; description: string | null; price: Money; image_url: string | null }[];
   }[];
+  /** Platillos destacados, en el orden elegido. */
+  featured?: { id: string; name: string; description: string | null; price: Money; image_url: string | null }[];
   branches: PublicBranch[];
   ordering: boolean;
 }
@@ -220,6 +227,9 @@ export interface CustomerDelivery {
 export interface Quote {
   subtotal: number;
   discount_amount: number;
+  promo_discount?: number;
+  promotions?: { promotion_id: string; name: string; amount: number }[];
+  voucher?: { code: string; amount: number } | null;
   tax_amount: number;
   delivery_fee: number;
   total: number;

@@ -1,13 +1,15 @@
-import { CheckCircle2, ChefHat, RefreshCw } from 'lucide-react';
+import { CheckCircle2, ChefHat, RefreshCw, Undo2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Button, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { useLive } from '../lib/live';
 import { nativeInfo } from '../lib/native';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
-import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan } from './lib';
+import ChannelBadge from './ChannelBadge';
+import { ORDER_TYPE_LABEL, formatTime, minutesSince, posCan, posPrefs } from './lib';
 import { comandaHtml, printHtml } from './ticket';
-import type { Order } from './types';
+import type { KitchenStation, Order } from './types';
 import { usePosBranch } from './usePosBranch';
 
 const POLL_MS = 5000;
@@ -15,7 +17,8 @@ const POLL_MS = 5000;
 /**
  * Pantalla de cocina (KDS): ordenes enviadas que aun no estan listas. Se
  * actualiza cada 5 segundos. Los articulos agregados despues de marcar lista
- * aparecen resaltados como nuevos.
+ * aparecen resaltados como nuevos. Cada pantalla puede mostrar solo una
+ * estacion (barra, parrilla...); la eleccion se guarda en este equipo.
  */
 export default function KitchenPage() {
   const { me } = useAdmin();
@@ -25,6 +28,19 @@ export default function KitchenPage() {
   const [now, setNow] = useState(() => Date.now());
   const [marking, setMarking] = useState<string | null>(null);
   const canReady = posCan.kitchenReady(me.user.role);
+  const [stations, setStations] = useState<KitchenStation[]>([]);
+  const [station, setStationState] = useState(posPrefs.getStation);
+  const setStation = (id: string) => { posPrefs.setStation(id); setStationState(id); };
+  // Listas: lo ya preparado, para regresarlo a cocina si hace falta.
+  const [view, setView] = useState<'' | 'listas'>('');
+  const [done, setDone] = useState<Order[] | null>(null);
+  const [times, setTimes] = useState({ warn: 10, late: 20 });
+  useEffect(() => {
+    api<{ stations: KitchenStation[] }>('/pos/menu').then((m) => setStations(m.stations || [])).catch(() => undefined);
+    api<{ settings: { kitchen_warn_minutes: number; kitchen_late_minutes: number } }>('/pos/settings')
+      .then((r) => setTimes({ warn: r.settings.kitchen_warn_minutes, late: r.settings.kitchen_late_minutes })).catch(() => undefined);
+  }, []);
+  const stationName = station === 'general' ? 'Cocina general' : stations.find((s) => s.id === station)?.name;
   // Neuron KDS con impresora de comandas: imprime lo que va llegando (ordenes
   // del POS y pedidos en linea). Lo que ya estaba al abrir no se imprime.
   const seen = useRef<Set<string> | null>(null);
@@ -44,25 +60,39 @@ export default function KitchenPage() {
       void printHtml(comandaHtml(o, fresh.filter((f) => f.o === o).map((f) => f.it), branch), 'comanda');
     }
   }, [orders, printComandas, branches, branchId]);
-  useEffect(() => { seen.current = null; }, [branchId]);
+  useEffect(() => { seen.current = null; }, [branchId, station]);
 
   const load = useCallback(() => {
     if (!branchId) return;
-    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}`)
-      .then((r) => { setOrders(r.orders); setError(''); setNow(Date.now()); })
+    api<{ orders: Order[] }>(`/pos/kitchen?branch_id=${branchId}${station ? `&station_id=${station}` : ''}${view ? `&view=${view}` : ''}`)
+      .then((r) => { if (view) setDone(r.orders); else setOrders(r.orders); setError(''); setNow(Date.now()); })
       .catch((e) => setError(errorMessage(e)));
-  }, [branchId]);
+  }, [branchId, station, view]);
+
+  async function unready(o: Order) {
+    setMarking(o.id);
+    try {
+      await api(`/pos/orders/${o.id}/unready`, { method: 'POST', body: station ? { station_id: station } : {} });
+      setDone((list) => (list || []).filter((x) => x.id !== o.id));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setMarking(null);
+    }
+  }
 
   useEffect(() => {
     load();
     const t = setInterval(load, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+  // Al instante cuando llega o cambia una orden de la sucursal.
+  useLive(branchId, load);
 
   async function ready(o: Order) {
     setMarking(o.id);
     try {
-      await api(`/pos/orders/${o.id}/ready`, { method: 'POST' });
+      await api(`/pos/orders/${o.id}/ready`, { method: 'POST', body: station ? { station_id: station } : {} });
       setOrders((list) => (list || []).filter((x) => x.id !== o.id));
     } catch (e) {
       setError(errorMessage(e));
@@ -74,22 +104,47 @@ export default function KitchenPage() {
   return (
     <>
       <PageHeader
-        title="Cocina"
+        title={stationName ? `Cocina · ${stationName}` : 'Cocina'}
         subtitle="Órdenes enviadas a cocina, de la más antigua a la más reciente."
         actions={<>
           <BranchSelect branches={branches} value={branchId} onChange={setBranchId} />
+          {stations.length > 0 && meHas(me, 'estaciones') && (
+            <select className="input w-auto" value={station} onChange={(e) => setStation(e.target.value)} aria-label="Estación">
+              <option value="">Todas las estaciones</option>
+              <option value="general">Cocina general</option>
+              {stations.filter((s) => s.active || s.id === station).map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <Button variant="secondary" onClick={load}><RefreshCw className="h-4 w-4" /> Actualizar</Button>
         </>}
       />
+      <div className="mb-4 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:w-fit">
+        {([['', 'En preparación'], ['listas', 'Listas']] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setView(v)} className={`flex-1 whitespace-nowrap rounded-lg px-4 py-2 font-medium ${view === v ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>{l}</button>
+        ))}
+      </div>
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
-      {!orders ? <Spinner /> : orders.length === 0 ? (
+      {view === 'listas' ? (
+        !done ? <Spinner /> : done.length === 0 ? <p className="py-16 text-center text-gray-500">Nada listo en las últimas horas.</p> : (
+          <div className="card divide-y divide-gray-800">
+            {done.map((o) => (
+              <div key={o.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <span className="w-40 font-semibold text-white">{o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]} · {o.folio}</span>
+                <span className="min-w-0 flex-1 truncate text-gray-300">{o.items?.map((i) => `${i.quantity}× ${i.name}`).join(', ')}</span>
+                <span className="text-xs text-gray-500">lista {formatTime(o.items?.map((i) => i.ready_at || '').sort().pop() || o.ready_at)}</span>
+                {canReady && <Button variant="secondary" onClick={() => unready(o)} loading={marking === o.id}><Undo2 className="h-4 w-4" /> Regresar a cocina</Button>}
+              </div>
+            ))}
+          </div>
+        )
+      ) : !orders ? <Spinner /> : orders.length === 0 ? (
         <div className="py-20 text-center text-gray-500"><ChefHat className="mx-auto mb-3 h-10 w-10" />Sin órdenes pendientes.</div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {orders.map((o) => {
             const since = o.items?.filter((i) => i.is_new).map((i) => i.sent_at!).sort()[0] || o.sent_at;
             const mins = minutesSince(since, now);
-            const tone = mins >= 20 ? 'border-red-600' : mins >= 10 ? 'border-amber-500' : 'border-gray-700';
+            const tone = mins >= times.late ? 'border-red-600' : mins >= times.warn ? 'border-amber-500' : 'border-gray-700';
             return (
               <article key={o.id} className={`card flex flex-col border-t-4 ${tone}`}>
                 <header className="flex items-start justify-between border-b border-gray-800 p-4">
@@ -97,11 +152,13 @@ export default function KitchenPage() {
                     <h3 className="text-lg font-bold text-white">
                       {o.order_type === 'comedor' ? `Mesa ${o.table_name}` : ORDER_TYPE_LABEL[o.order_type]}
                       {o.source === 'web' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">En línea</span>}
+                      {o.source === 'kiosko' && <span className="ml-2 rounded-full bg-brand/20 px-2 py-0.5 align-middle text-xs font-semibold text-brand">Kiosko{o.dine_in ? ' · comer aquí' : ''}</span>}
                     </h3>
                     <p className="text-xs text-gray-400">Folio {o.folio}{o.customer_name && ` · ${o.customer_name}`}</p>
+                    {o.channel_name && <ChannelBadge name={o.channel_name} color={o.channel_color} number={o.channel_order_number} />}
                   </div>
                   <div className="text-right">
-                    <p className={`text-lg font-semibold ${mins >= 20 ? 'text-red-400' : mins >= 10 ? 'text-amber-300' : 'text-gray-200'}`}>{mins} min</p>
+                    <p className={`text-lg font-semibold ${mins >= times.late ? 'text-red-400' : mins >= times.warn ? 'text-amber-300' : 'text-gray-200'}`}>{mins} min</p>
                     <p className="text-xs text-gray-500">{formatTime(since)}</p>
                   </div>
                 </header>
@@ -111,6 +168,9 @@ export default function KitchenPage() {
                       <div className="flex gap-2 text-base">
                         <span className="font-bold text-white">{it.quantity}×</span>
                         <span className="text-white">{it.name}</span>
+                        {!station && it.station_name && (
+                          <span className="ml-auto self-center rounded-full bg-gray-800 px-2 py-0.5 text-xs text-gray-300">{it.station_name}</span>
+                        )}
                       </div>
                       {it.modifiers.map((m, i) => <div key={i} className="pl-7 text-sm text-gray-300">+ {m.name}</div>)}
                       {it.notes && <div className="pl-7 text-sm italic text-amber-200">{it.notes}</div>}

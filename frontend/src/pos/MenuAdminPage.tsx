@@ -1,4 +1,4 @@
-import { Image as ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChefHat, Image as ImageIcon, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
@@ -6,13 +6,20 @@ import ImageInput from '../components/ImageInput';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import type { Branch } from '../lib/types';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import { num, posCan } from './lib';
-import type { Menu, MenuCategory, MenuItem, ModifierGroup } from './types';
+import type { KitchenStation, Menu, MenuCategory, MenuItem, ModifierGroup } from './types';
 
-type Tab = 'productos' | 'categorias' | 'modificadores';
+type Tab = 'productos' | 'categorias' | 'modificadores' | 'estaciones';
 
-/** Administracion del menu: productos, categorias y grupos de modificadores. */
+const TAB_LABEL: Record<Tab, string> = {
+  productos: 'Productos', categorias: 'Categorías', modificadores: 'Modificadores', estaciones: 'Estaciones',
+};
+
+/**
+ * Administracion del menu: productos, categorias, grupos de modificadores y
+ * estaciones de cocina (a donde va cada producto en la pantalla de cocina).
+ */
 export default function MenuAdminPage() {
   const { me } = useAdmin();
   const [menu, setMenu] = useState<Menu | null>(null);
@@ -21,6 +28,7 @@ export default function MenuAdminPage() {
   const [editItem, setEditItem] = useState<MenuItem | 'new' | null>(null);
   const [editCat, setEditCat] = useState<MenuCategory | 'new' | null>(null);
   const [editGroup, setEditGroup] = useState<ModifierGroup | 'new' | null>(null);
+  const [editStation, setEditStation] = useState<KitchenStation | 'new' | null>(null);
 
   const load = useCallback(() => {
     api<Menu>('/pos/menu?all=1').then(setMenu).catch((e) => setError(errorMessage(e)));
@@ -45,17 +53,19 @@ export default function MenuAdminPage() {
     productos: <Button onClick={() => setEditItem('new')} disabled={!menu?.categories.length}><Plus className="h-4 w-4" /> Nuevo producto</Button>,
     categorias: <Button onClick={() => setEditCat('new')}><Plus className="h-4 w-4" /> Nueva categoría</Button>,
     modificadores: <Button onClick={() => setEditGroup('new')}><Plus className="h-4 w-4" /> Nuevo grupo</Button>,
+    estaciones: <Button onClick={() => setEditStation('new')}><Plus className="h-4 w-4" /> Nueva estación</Button>,
   }[tab];
+  const stationName = (id: string | null) => (id ? menu?.stations.find((s) => s.id === id)?.name : null);
 
   return (
     <>
-      <PageHeader title="Menú" subtitle="Productos, categorías y modificadores del punto de venta." actions={actions} />
+      <PageHeader title="Menú" subtitle="Productos, categorías, modificadores y estaciones de cocina del punto de venta." actions={actions} />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       <div className="mb-5 flex gap-1 rounded-xl bg-gray-900 p-1 text-sm">
-        {(['productos', 'categorias', 'modificadores'] as Tab[]).map((t) => (
+        {(Object.keys(TAB_LABEL) as Tab[]).filter((t) => t !== 'estaciones' || meHas(me, 'estaciones')).map((t) => (
           <button key={t} onClick={() => setTab(t)}
-            className={`flex-1 rounded-lg px-3 py-2 font-medium capitalize ${tab === t ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
-            {t === 'categorias' ? 'Categorías' : t}
+            className={`flex-1 rounded-lg px-3 py-2 font-medium ${tab === t ? 'bg-brand text-brand-contrast' : 'text-gray-400 hover:text-white'}`}>
+            {TAB_LABEL[t]}
           </button>
         ))}
       </div>
@@ -80,6 +90,7 @@ export default function MenuAdminPage() {
                             <p className="truncate text-xs text-gray-500">
                               {it.modifier_group_ids.map((id) => menu.modifier_groups.find((g) => g.id === id)?.name).filter(Boolean).join(', ') || 'Sin modificadores'}
                               {it.unavailable_branch_ids.length > 0 && ` · no disponible en ${it.unavailable_branch_ids.length} sucursal(es)`}
+                              {stationName(it.station_id) && ` · ${stationName(it.station_id)}`}
                             </p>
                           </div>
                           <span className="text-sm text-gray-200">{formatMXN(it.price)}</span>
@@ -99,13 +110,37 @@ export default function MenuAdminPage() {
           {menu.categories.length === 0 && <p className="p-4 text-sm text-gray-500">Sin categorías.</p>}
           {menu.categories.map((c) => (
             <div key={c.id} className={`flex items-center gap-3 p-3 ${c.active ? '' : 'opacity-50'}`}>
-              <div className="flex-1"><p className="font-medium text-white">{c.name}</p>{c.description && <p className="text-xs text-gray-500">{c.description}</p>}</div>
+              <div className="flex-1">
+                <p className="font-medium text-white">{c.name}</p>
+                <p className="text-xs text-gray-500">{[c.description, stationName(c.station_id) && `Cocina: ${stationName(c.station_id)}`].filter(Boolean).join(' · ')}</p>
+              </div>
               <span className="text-xs text-gray-500">{menu.items.filter((i) => i.category_id === c.id).length} productos</span>
               <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white" onClick={() => setEditCat(c)} aria-label="Editar"><Pencil className="h-4 w-4" /></button>
               <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-red-300" onClick={() => remove(`/pos/categories/${c.id}`, `la categoría "${c.name}"`)} aria-label="Borrar"><Trash2 className="h-4 w-4" /></button>
             </div>
           ))}
         </div>
+      ) : tab === 'estaciones' ? (
+        <>
+          <p className="mb-3 text-sm text-gray-400">
+            Cada estación (barra, parrilla, sushi…) tiene su propia pantalla de cocina y su impresora de comandas.
+            Asigna la estación a una categoría y, si algún producto va a otra, cámbiala en el producto. Sin estación, va a la cocina general.
+          </p>
+          <div className="card divide-y divide-gray-800">
+            {menu.stations.length === 0 && <p className="p-4 text-sm text-gray-500">Sin estaciones: todo va a la cocina general.</p>}
+            {menu.stations.map((st) => (
+              <div key={st.id} className={`flex items-center gap-3 p-3 ${st.active ? '' : 'opacity-50'}`}>
+                <ChefHat className="h-5 w-5 text-gray-500" />
+                <p className="flex-1 font-medium text-white">{st.name}{!st.active && ' (inactiva)'}</p>
+                <span className="text-xs text-gray-500">
+                  {menu.categories.filter((c) => c.station_id === st.id).length} categorías · {menu.items.filter((i) => i.station_id === st.id).length} productos propios
+                </span>
+                <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white" onClick={() => setEditStation(st)} aria-label="Editar"><Pencil className="h-4 w-4" /></button>
+                <button className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-red-300" onClick={() => remove(`/pos/stations/${st.id}`, `la estación "${st.name}"`)} aria-label="Borrar"><Trash2 className="h-4 w-4" /></button>
+              </div>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {menu.modifier_groups.length === 0 && <p className="text-sm text-gray-500">Sin grupos. Ejemplos: “Salsa” (elige 1), “Extras” (hasta 3).</p>}
@@ -138,7 +173,11 @@ export default function MenuAdminPage() {
           onClose={() => setEditItem(null)} onSaved={() => { setEditItem(null); load(); }} />
       )}
       {editCat && (
-        <CategoryModal category={editCat === 'new' ? null : editCat} onClose={() => setEditCat(null)} onSaved={() => { setEditCat(null); load(); }} />
+        <CategoryModal category={editCat === 'new' ? null : editCat} stations={menu?.stations || []}
+          onClose={() => setEditCat(null)} onSaved={() => { setEditCat(null); load(); }} />
+      )}
+      {editStation && (
+        <StationModal station={editStation === 'new' ? null : editStation} onClose={() => setEditStation(null)} onSaved={() => { setEditStation(null); load(); }} />
       )}
       {editGroup && (
         <GroupModal group={editGroup === 'new' ? null : editGroup} onClose={() => setEditGroup(null)} onSaved={() => { setEditGroup(null); load(); }} />
@@ -172,6 +211,7 @@ function ItemModal({ item, menu, branches, onClose, onSaved }: {
     price: item ? String(num(item.price)) : '', description: item?.description || '', image_url: item?.image_url || '',
     active: item?.active ?? true, modifier_group_ids: item?.modifier_group_ids || [],
     unavailable_branch_ids: item?.unavailable_branch_ids || [],
+    station_id: item?.station_id || '',
   });
   const { error, saving, save } = useSave(onSaved);
   const toggleIn = (list: string[], id: string) => (list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
@@ -180,6 +220,7 @@ function ItemModal({ item, menu, branches, onClose, onSaved }: {
     e.preventDefault();
     save(item ? `/pos/items/${item.id}` : '/pos/items', item ? 'PATCH' : 'POST', {
       ...form, price: num(form.price), description: form.description || null, image_url: form.image_url || null,
+      station_id: form.station_id || null,
     });
   };
 
@@ -195,6 +236,14 @@ function ItemModal({ item, menu, branches, onClose, onSaved }: {
               {menu.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </Field>
+          {menu.stations.length > 0 && (
+            <Field label="Estación de cocina">
+              <select className="input" value={form.station_id} onChange={(e) => setForm({ ...form, station_id: e.target.value })}>
+                <option value="">La de su categoría</option>
+                {menu.stations.filter((st) => st.active || st.id === form.station_id).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+              </select>
+            </Field>
+          )}
         </div>
         <ImageInput label="Foto (opcional)" value={form.image_url} onChange={(image_url) => setForm({ ...form, image_url })} />
         <Field label="Descripción"><textarea className="input" rows={2} maxLength={500} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
@@ -238,16 +287,20 @@ function ItemModal({ item, menu, branches, onClose, onSaved }: {
   );
 }
 
-function CategoryModal({ category, onClose, onSaved }: { category: MenuCategory | null; onClose: () => void; onSaved: () => void }) {
+function CategoryModal({ category, stations, onClose, onSaved }: {
+  category: MenuCategory | null; stations: KitchenStation[]; onClose: () => void; onSaved: () => void;
+}) {
   const [form, setForm] = useState({
     name: category?.name || '', description: category?.description || '',
     sort_order: String(category?.sort_order ?? 0), active: category?.active ?? true,
+    station_id: category?.station_id || '',
   });
   const { error, saving, save } = useSave(onSaved);
   const submit = (e: FormEvent) => {
     e.preventDefault();
     save(category ? `/pos/categories/${category.id}` : '/pos/categories', category ? 'PATCH' : 'POST', {
       ...form, description: form.description || null, sort_order: Number(form.sort_order) || 0,
+      station_id: form.station_id || null,
     });
   };
   return (
@@ -256,6 +309,41 @@ function CategoryModal({ category, onClose, onSaved }: { category: MenuCategory 
         {error && <Alert>{error}</Alert>}
         <Field label="Nombre"><input className="input" required maxLength={80} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Descripción"><input className="input" maxLength={300} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} /></Field>
+        <Field label="Orden" hint="Menor número aparece primero"><input className="input" type="number" min="0" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} /></Field>
+        {stations.length > 0 && (
+          <Field label="Estación de cocina" hint="A dónde van sus productos en la pantalla de cocina">
+            <select className="input" value={form.station_id} onChange={(e) => setForm({ ...form, station_id: e.target.value })}>
+              <option value="">Cocina general</option>
+              {stations.filter((st) => st.active || st.id === form.station_id).map((st) => <option key={st.id} value={st.id}>{st.name}</option>)}
+            </select>
+          </Field>
+        )}
+        <div className="flex items-center gap-3 text-sm text-gray-300">
+          <Toggle label="Activa" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} /> Activa
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button type="button" variant="secondary" onClick={onClose}>Cancelar</Button>
+          <Button type="submit" loading={saving}>Guardar</Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function StationModal({ station, onClose, onSaved }: { station: KitchenStation | null; onClose: () => void; onSaved: () => void }) {
+  const [form, setForm] = useState({ name: station?.name || '', sort_order: String(station?.sort_order ?? 0), active: station?.active ?? true });
+  const { error, saving, save } = useSave(onSaved);
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    save(station ? `/pos/stations/${station.id}` : '/pos/stations', station ? 'PATCH' : 'POST', {
+      ...form, sort_order: Number(form.sort_order) || 0,
+    });
+  };
+  return (
+    <Modal title={station ? 'Editar estación' : 'Nueva estación de cocina'} onClose={onClose}>
+      <form onSubmit={submit} className="space-y-4">
+        {error && <Alert>{error}</Alert>}
+        <Field label="Nombre"><input className="input" required maxLength={60} value={form.name} placeholder="Ej. Barra, Parrilla, Sushi" onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label="Orden" hint="Menor número aparece primero"><input className="input" type="number" min="0" value={form.sort_order} onChange={(e) => setForm({ ...form, sort_order: e.target.value })} /></Field>
         <div className="flex items-center gap-3 text-sm text-gray-300">
           <Toggle label="Activa" checked={form.active} onChange={(v) => setForm({ ...form, active: v })} /> Activa

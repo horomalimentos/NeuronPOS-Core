@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { withTenant } from '../config/database.js';
 import { authenticateUser } from '../middleware/auth.js';
 import { checkRestaurantAccess } from '../services/access.js';
+import { capabilitiesFor } from '../services/permissions.js';
 import { listRestaurantModules } from '../services/restaurants.js';
 import { billingSummary } from '../services/subscriptions.js';
 import { ah } from '../utils/http.js';
@@ -14,14 +15,15 @@ router.get('/', authenticateUser, ah(async (req, res) => {
   const data = await withTenant(tenant.id, async (db) => {
     const modules = await listRestaurantModules(db, tenant.id);
     const branches = await db.query(
-      `SELECT id, name, address, phone, timezone, active FROM branches
+      `SELECT id, name, address, phone, timezone, active, tax_rate_pct, ticket_header, ticket_footer FROM branches
         WHERE restaurant_id = $1 AND ($2 OR id = ANY($3::uuid[]))
         ORDER BY name`,
       [tenant.id, ['admin', 'gerente'].includes(user.role), user.branch_ids],
     );
     // Banner de pago pendiente / suspension (solo admin y gerente ven montos).
     const billing = ['admin', 'gerente'].includes(user.role) ? await billingSummary(db, tenant) : null;
-    return { modules, branches: branches.rows, billing };
+    const capabilities = [...await capabilitiesFor(db, tenant.id, user.role)];
+    return { modules, branches: branches.rows, billing, capabilities };
   });
   const access = checkRestaurantAccess(tenant);
   res.json({
@@ -32,6 +34,8 @@ router.get('/', authenticateUser, ah(async (req, res) => {
       code: m.module_code, name: m.name, description: m.description, enabled: m.is_active,
     })),
     branches: data.branches,
+    // Capacidades del POS de su rol (con los permisos que el restaurante cambio).
+    capabilities: data.capabilities,
     billing: data.billing,
   });
 }));

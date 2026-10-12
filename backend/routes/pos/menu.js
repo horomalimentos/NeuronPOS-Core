@@ -1,17 +1,19 @@
-// Menu del POS: categorias, productos (con disponibilidad por sucursal) y
-// grupos de modificadores. Escritura: admin y gerente.
+// Menu del POS: categorias, productos (con disponibilidad por sucursal),
+// grupos de modificadores y estaciones de cocina. Escritura: admin y gerente.
 import { Router } from 'express';
 import { withTenant } from '../../config/database.js';
-import { requireRole } from '../../middleware/auth.js';
 import { ah, badRequest, bool, buildSet, money, notFound, requireUuid, str } from '../../utils/http.js';
 import {
-  ROLES, assertBranchExists, imageUrl, insertSql, int, isManager, requireBranch, signedMoney, uuidList,
+  ROLES, assertBranchExists, assertModule, imageUrl, insertSql, int, isManager, requireBranch, signedMoney, uuidList,
 } from './common.js';
+import { requireModule } from '../../middleware/requireModule.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
-const CATEGORY_COLS = 'id, name, description, sort_order, active';
-const ITEM_COLS = 'id, category_id, name, description, price, image_url, active, sort_order';
+const CATEGORY_COLS = 'id, name, description, sort_order, active, station_id';
+const ITEM_COLS = 'id, category_id, name, description, price, image_url, active, sort_order, station_id';
+const STATION_COLS = 'id, name, sort_order, active';
 const GROUP_COLS = 'id, name, min_selections, max_selections, sort_order, active';
 const MODIFIER_COLS = 'id, group_id, name, price_delta, sort_order, active';
 
@@ -30,7 +32,10 @@ export async function loadMenu(db, restaurantId, { branchId = null, includeInact
             coalesce((SELECT array_agg(g.modifier_group_id ORDER BY g.sort_order)
                         FROM menu_item_modifier_groups g WHERE g.menu_item_id = i.id), '{}') AS modifier_group_ids,
             coalesce((SELECT array_agg(b.branch_id) FROM menu_item_branches b
-                       WHERE b.menu_item_id = i.id AND NOT b.available), '{}') AS unavailable_branch_ids
+                       WHERE b.menu_item_id = i.id AND NOT b.available
+                         AND (b.unavailable_until IS NULL OR b.unavailable_until > now())), '{}') AS unavailable_branch_ids,
+            (SELECT jsonb_object_agg(b.branch_id, b.unavailable_until) FROM menu_item_branches b
+              WHERE b.menu_item_id = i.id AND NOT b.available AND b.unavailable_until > now()) AS unavailable_until
        FROM menu_items i
       WHERE i.restaurant_id = $1 ${includeInactive ? '' : 'AND i.active'}
       ORDER BY i.sort_order, i.name`,
@@ -38,6 +43,8 @@ export async function loadMenu(db, restaurantId, { branchId = null, includeInact
   )).rows.map((it) => ({
     ...it,
     available: branchId ? !it.unavailable_branch_ids.includes(branchId) : true,
+    // Agotado con hora de regreso en esta sucursal (o null).
+    available_at: branchId ? it.unavailable_until?.[branchId] ?? null : null,
   }));
   const groups = (await db.query(
     `SELECT ${GROUP_COLS} FROM modifier_groups WHERE restaurant_id = $1 ${onlyActive} ORDER BY sort_order, name`,
@@ -48,10 +55,32 @@ export async function loadMenu(db, restaurantId, { branchId = null, includeInact
     [restaurantId],
   )).rows;
   for (const g of groups) g.modifiers = modifiers.filter((m) => m.group_id === g.id);
-  return { categories, items, modifier_groups: groups };
+  const stations = (await db.query(
+    `SELECT ${STATION_COLS} FROM kitchen_stations WHERE restaurant_id = $1 ${onlyActive} ORDER BY sort_order, name`,
+    [restaurantId],
+  )).rows;
+  return { categories, items, modifier_groups: groups, stations };
 }
 
-router.get('/menu', requireRole(...ROLES.kitchen), ah(async (req, res) => {
+/** station_id opcional: uuid, o null/'' para quitarla. */
+function stationField(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  return requireUuid(value, 'station_id');
+}
+
+/** Valida que la estacion sea del restaurante (RLS ya oculta las ajenas). */
+async function assertStation(db, restaurantId, stationId) {
+  if (!stationId) return;
+  await assertModule(db, restaurantId, 'estaciones', 'Estaciones de cocina');
+  const { rowCount } = await db.query(
+    'SELECT 1 FROM kitchen_stations WHERE id = $1 AND restaurant_id = $2',
+    [stationId, restaurantId],
+  );
+  if (!rowCount) throw badRequest('La estacion de cocina no existe', 'STATION_NOT_FOUND');
+}
+
+router.get('/menu', can('kitchen'), ah(async (req, res) => {
   const branchId = req.query.branch_id ? requireBranch(req, req.query.branch_id) : null;
   const includeInactive = req.query.all === '1' && isManager(req.user);
   const menu = await withTenant(req.tenant.id, (db) => loadMenu(db, req.tenant.id, { branchId, includeInactive }));
@@ -68,31 +97,40 @@ function categoryFields(body, creating) {
     description: str(body.description, { field: 'description', max: 300 }),
     sort_order: int(body.sort_order, { field: 'sort_order', max: 100000 }),
     active: bool(body.active, 'active'),
+    station_id: stationField(body.station_id),
   };
   if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
   return f;
 }
 
-router.post('/categories', requireRole(...ROLES.manage), ah(async (req, res) => {
-  const q = insertSql('menu_categories', req.tenant.id, categoryFields(req.body || {}, true), CATEGORY_COLS);
-  const row = await withTenant(req.tenant.id, async (db) => (await db.query(q.text, q.values)).rows[0]);
+router.post('/categories', can('manage'), ah(async (req, res) => {
+  const f = categoryFields(req.body || {}, true);
+  const q = insertSql('menu_categories', req.tenant.id, f, CATEGORY_COLS);
+  const row = await withTenant(req.tenant.id, async (db) => {
+    await assertStation(db, req.tenant.id, f.station_id);
+    return (await db.query(q.text, q.values)).rows[0];
+  });
   res.status(201).json({ category: row });
 }));
 
-router.patch('/categories/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/categories/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
-  const set = buildSet(categoryFields(req.body || {}, false), 3);
+  const f = categoryFields(req.body || {}, false);
+  const set = buildSet(f, 3);
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
-  const row = await withTenant(req.tenant.id, async (db) => (await db.query(
-    `UPDATE menu_categories SET ${set.sql}, updated_at = now()
-      WHERE id = $1 AND restaurant_id = $2 RETURNING ${CATEGORY_COLS}`,
-    [req.params.id, req.tenant.id, ...set.values],
-  )).rows[0]);
+  const row = await withTenant(req.tenant.id, async (db) => {
+    await assertStation(db, req.tenant.id, f.station_id);
+    return (await db.query(
+      `UPDATE menu_categories SET ${set.sql}, updated_at = now()
+        WHERE id = $1 AND restaurant_id = $2 RETURNING ${CATEGORY_COLS}`,
+      [req.params.id, req.tenant.id, ...set.values],
+    )).rows[0];
+  });
   if (!row) throw notFound('Categoria no encontrada', 'CATEGORY_NOT_FOUND');
   res.json({ category: row });
 }));
 
-router.delete('/categories/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/categories/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   await withTenant(req.tenant.id, async (db) => {
     const items = await db.query(
@@ -124,6 +162,7 @@ function itemFields(body, creating) {
     image_url: imageUrl(body.image_url),
     active: bool(body.active, 'active'),
     sort_order: int(body.sort_order, { field: 'sort_order', max: 100000 }),
+    station_id: stationField(body.station_id),
   };
   if (creating && !f.category_id) throw badRequest('La categoria es obligatoria', 'MISSING_FIELD');
   if (creating && f.price === undefined) throw badRequest('El precio es obligatorio', 'MISSING_FIELD');
@@ -174,19 +213,23 @@ async function getItem(db, restaurantId, id) {
             coalesce((SELECT array_agg(g.modifier_group_id ORDER BY g.sort_order)
                         FROM menu_item_modifier_groups g WHERE g.menu_item_id = i.id), '{}') AS modifier_group_ids,
             coalesce((SELECT array_agg(b.branch_id) FROM menu_item_branches b
-                       WHERE b.menu_item_id = i.id AND NOT b.available), '{}') AS unavailable_branch_ids
+                       WHERE b.menu_item_id = i.id AND NOT b.available
+                         AND (b.unavailable_until IS NULL OR b.unavailable_until > now())), '{}') AS unavailable_branch_ids,
+            (SELECT jsonb_object_agg(b.branch_id, b.unavailable_until) FROM menu_item_branches b
+              WHERE b.menu_item_id = i.id AND NOT b.available AND b.unavailable_until > now()) AS unavailable_until
        FROM menu_items i WHERE id = $1 AND restaurant_id = $2`,
     [id, restaurantId],
   );
   return menu.rows[0] || null;
 }
 
-router.post('/items', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/items', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const f = itemFields(body, true);
   const groupIds = uuidList(body.modifier_group_ids, 'modifier_group_ids') || [];
   const unavailable = uuidList(body.unavailable_branch_ids, 'unavailable_branch_ids') || [];
   const item = await withTenant(req.tenant.id, async (db) => {
+    await assertStation(db, req.tenant.id, f.station_id);
     const q = insertSql('menu_items', req.tenant.id, f, 'id');
     const { rows } = await db.query(q.text, q.values);
     await setItemGroups(db, req.tenant.id, rows[0].id, groupIds);
@@ -196,15 +239,17 @@ router.post('/items', requireRole(...ROLES.manage), ah(async (req, res) => {
   res.status(201).json({ item });
 }));
 
-router.patch('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/items/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
-  const set = buildSet(itemFields(body, false), 3);
+  const f = itemFields(body, false);
+  const set = buildSet(f, 3);
   const groupIds = uuidList(body.modifier_group_ids, 'modifier_group_ids');
   const unavailable = uuidList(body.unavailable_branch_ids, 'unavailable_branch_ids');
   if (!set && !groupIds && !unavailable) throw badRequest('No hay cambios', 'NO_CHANGES');
   const item = await withTenant(req.tenant.id, async (db) => {
     if (!(await getItem(db, req.tenant.id, req.params.id))) throw notFound('Producto no encontrado', 'ITEM_NOT_FOUND');
+    await assertStation(db, req.tenant.id, f.station_id);
     if (set) {
       await db.query(
         `UPDATE menu_items SET ${set.sql}, updated_at = now() WHERE id = $1 AND restaurant_id = $2`,
@@ -219,28 +264,36 @@ router.patch('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => 
 }));
 
 // Agotado / disponible en una sucursal (cajero tambien puede).
-router.put('/items/:id/availability', requireRole(...ROLES.availability), ah(async (req, res) => {
+router.put('/items/:id/availability', can('availability'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const branchId = requireBranch(req, body.branch_id);
   const available = bool(body.available, 'available');
   if (available === undefined) throw badRequest('El campo "available" es obligatorio', 'MISSING_FIELD');
+  // Agotado por un rato: { minutes } (1 a 7 dias). Sin minutos = hasta reactivarlo.
+  let until = null;
+  if (!available && body.minutes !== undefined && body.minutes !== null) {
+    const m = Number(body.minutes);
+    if (!Number.isInteger(m) || m < 1 || m > 7 * 24 * 60) throw badRequest('Los minutos deben ser de 1 a 10080', 'INVALID_FIELD');
+    until = new Date(Date.now() + m * 60000);
+  }
   await withTenant(req.tenant.id, async (db) => {
     if (!(await getItem(db, req.tenant.id, req.params.id))) throw notFound('Producto no encontrado', 'ITEM_NOT_FOUND');
     await assertBranchExists(db, req.tenant.id, branchId);
     await db.query(
-      `INSERT INTO menu_item_branches (restaurant_id, menu_item_id, branch_id, available)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (menu_item_id, branch_id) DO UPDATE SET available = EXCLUDED.available, updated_at = now()`,
-      [req.tenant.id, req.params.id, branchId, available],
+      `INSERT INTO menu_item_branches (restaurant_id, menu_item_id, branch_id, available, unavailable_until)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (menu_item_id, branch_id) DO UPDATE SET available = EXCLUDED.available,
+         unavailable_until = EXCLUDED.unavailable_until, updated_at = now()`,
+      [req.tenant.id, req.params.id, branchId, available, until],
     );
   });
-  res.json({ ok: true, available });
+  res.json({ ok: true, available, available_at: until });
 }));
 
 // Si el producto ya se vendio no se puede borrar (las ventas lo referencian):
 // se desactiva y se responde archived = true.
-router.delete('/items/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/items/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const result = await withTenant(req.tenant.id, async (db) => {
     const sold = await db.query(
@@ -330,7 +383,7 @@ async function getGroup(db, restaurantId, id) {
   return rows[0];
 }
 
-router.post('/modifier-groups', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.post('/modifier-groups', can('manage'), ah(async (req, res) => {
   const body = req.body || {};
   const f = groupFields(body, true);
   const modifiers = readModifiers(body.modifiers) || [];
@@ -343,7 +396,7 @@ router.post('/modifier-groups', requireRole(...ROLES.manage), ah(async (req, res
   res.status(201).json({ group });
 }));
 
-router.patch('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.patch('/modifier-groups/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const body = req.body || {};
   const set = buildSet(groupFields(body, false), 3);
@@ -363,13 +416,82 @@ router.patch('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req
   res.json({ group });
 }));
 
-router.delete('/modifier-groups/:id', requireRole(...ROLES.manage), ah(async (req, res) => {
+router.delete('/modifier-groups/:id', can('manage'), ah(async (req, res) => {
   requireUuid(req.params.id);
   const deleted = await withTenant(req.tenant.id, async (db) => (await db.query(
     'DELETE FROM modifier_groups WHERE id = $1 AND restaurant_id = $2',
     [req.params.id, req.tenant.id],
   )).rowCount);
   if (!deleted) throw notFound('Grupo no encontrado', 'GROUP_NOT_FOUND');
+  res.status(204).end();
+}));
+
+// ---------------------------------------------------------------------------
+// Estaciones de cocina (barra, parrilla, sushi...)
+// ---------------------------------------------------------------------------
+
+function stationFields(body, creating) {
+  const f = {
+    name: str(body.name, { field: 'name', required: creating, max: 60 }),
+    sort_order: int(body.sort_order, { field: 'sort_order', max: 100000 }),
+    active: bool(body.active, 'active'),
+  };
+  if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
+  return f;
+}
+
+const duplicateStation = (err) => {
+  if (err.code === '23505') throw badRequest('Ya existe una estacion con ese nombre', 'STATION_EXISTS');
+  throw err;
+};
+
+router.post('/stations', requireModule('estaciones'), can('manage'), ah(async (req, res) => {
+  const q = insertSql('kitchen_stations', req.tenant.id, stationFields(req.body || {}, true), STATION_COLS);
+  const row = await withTenant(req.tenant.id, async (db) => (await db.query(q.text, q.values)).rows[0])
+    .catch(duplicateStation);
+  res.status(201).json({ station: row });
+}));
+
+router.patch('/stations/:id', requireModule('estaciones'), can('manage'), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const set = buildSet(stationFields(req.body || {}, false), 3);
+  if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
+  const row = await withTenant(req.tenant.id, async (db) => (await db.query(
+    `UPDATE kitchen_stations SET ${set.sql}, updated_at = now()
+      WHERE id = $1 AND restaurant_id = $2 RETURNING ${STATION_COLS}`,
+    [req.params.id, req.tenant.id, ...set.values],
+  )).rows[0]).catch(duplicateStation);
+  if (!row) throw notFound('Estacion no encontrada', 'STATION_NOT_FOUND');
+  res.json({ station: row });
+}));
+
+// Borrar: el menu que la usaba pasa a cocina general. Si ya hay ordenes con
+// esa estacion solo se desactiva, para no perder el historial.
+router.delete('/stations/:id', can('manage'), ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const result = await withTenant(req.tenant.id, async (db) => {
+    const { rows } = await db.query(
+      'SELECT id FROM kitchen_stations WHERE id = $1 AND restaurant_id = $2 FOR UPDATE',
+      [req.params.id, req.tenant.id],
+    );
+    if (!rows[0]) throw notFound('Estacion no encontrada', 'STATION_NOT_FOUND');
+    await db.query('UPDATE menu_categories SET station_id = NULL WHERE station_id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
+    await db.query('UPDATE menu_items SET station_id = NULL WHERE station_id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
+    const used = await db.query(
+      'SELECT 1 FROM order_items WHERE station_id = $1 AND restaurant_id = $2 LIMIT 1',
+      [req.params.id, req.tenant.id],
+    );
+    if (used.rowCount) {
+      await db.query(
+        'UPDATE kitchen_stations SET active = false, updated_at = now() WHERE id = $1 AND restaurant_id = $2',
+        [req.params.id, req.tenant.id],
+      );
+      return { archived: true };
+    }
+    await db.query('DELETE FROM kitchen_stations WHERE id = $1 AND restaurant_id = $2', [req.params.id, req.tenant.id]);
+    return null;
+  });
+  if (result) return res.json(result);
   res.status(204).end();
 }));
 

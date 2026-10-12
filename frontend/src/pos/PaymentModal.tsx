@@ -1,4 +1,4 @@
-import { CheckCircle2, Gift, Plus, Printer, Trash2, UserRound, Wallet } from 'lucide-react';
+import { CheckCircle2, Gift, Plus, Printer, Split, Trash2, UserRound, Wallet } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
 import CustomerPicker from '../loyalty/CustomerPicker';
 import { fmtPoints, type LoyaltyCustomer, type LoyaltySettings, type WalletSettings } from '../loyalty/types';
@@ -6,12 +6,15 @@ import { Alert, Button, Modal } from '../components/ui';
 import { getNative, nativeInfo } from '../lib/native';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { num, round2 } from './lib';
+import ClipTerminalButton from './ClipTerminalButton';
+import { formatMoney, num, round2 } from './lib';
 import type { Order, PaymentMethod } from './types';
 
 interface Line {
   key: number;
   methodId: string;
+  /** Cobro aprobado en la terminal Clip para esta linea. */
+  clipCobroId?: string;
   amount: string;
   tip: string;
   received: string;
@@ -25,7 +28,7 @@ let nextKey = 1;
  * Cobro con uno o varios metodos (cuenta dividida), propina por pago y
  * calculo de cambio en efectivo. Adaptado de POSPaymentModal de NeuronPOS.
  */
-export default function PaymentModal({ order, methods, sessionId, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
+export default function PaymentModal({ order, methods, sessionId, usdRate, clipTerminal, loyalty = false, wallet = false, onClose, onPaid, onPrint }: {
   order: Order;
   /** El restaurante tiene el modulo de clientes y lealtad. */
   loyalty?: boolean;
@@ -33,6 +36,10 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   wallet?: boolean;
   methods: PaymentMethod[];
   sessionId: string;
+  /** Tipo de cambio del turno (para el efectivo en dolares). */
+  usdRate?: number;
+  /** Nombre de esta caja si tiene terminal Clip configurada. */
+  clipTerminal?: string | null;
   onClose: () => void;
   onPaid: (order: Order, change: number) => void;
   onPrint: (order: Order, change: number, opts?: { openDrawer?: boolean }) => void;
@@ -96,10 +103,14 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   const [done, setDone] = useState<{ order: Order; change: number } | null>(null);
 
   const kindOf = (id: string) => active.find((m) => m.id === id)?.kind;
+  const isUsd = (id: string) => active.find((m) => m.id === id)?.currency === 'USD';
+  const rate = num(usdRate) || 0;
+  // Lo recibido en pesos (si es en dolares, al tipo de cambio del turno).
+  const receivedMxn = (l: Line) => (isUsd(l.methodId) ? round2(num(l.received) * rate) : num(l.received));
   const applied = round2(lines.reduce((s, l) => s + num(l.amount), 0));
   const tips = round2(lines.reduce((s, l) => s + num(l.tip), 0));
   const change = round2(lines.reduce((s, l) => (kindOf(l.methodId) === 'efectivo' && l.received
-    ? s + Math.max(0, num(l.received) - num(l.amount) - num(l.tip)) : s), 0));
+    ? s + Math.max(0, receivedMxn(l) - num(l.amount) - num(l.tip)) : s), 0));
   const pending = round2(remaining - applied);
   const update = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
 
@@ -113,7 +124,8 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
   if (applied > remaining + 0.001) problems.push('Los pagos exceden el saldo');
   for (const l of lines) {
     if (!l.methodId) problems.push('Elige el método de pago');
-    if (kindOf(l.methodId) === 'efectivo' && l.received && num(l.received) < num(l.amount) + num(l.tip)) {
+    if (isUsd(l.methodId) && !(num(l.received) > 0)) problems.push('Escribe cuántos dólares recibiste');
+    if (kindOf(l.methodId) === 'efectivo' && l.received && receivedMxn(l) < num(l.amount) + num(l.tip)) {
       problems.push('El efectivo recibido no cubre el pago');
     }
   }
@@ -135,8 +147,10 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
             payment_method_id: l.methodId,
             amount: num(l.amount),
             tip: num(l.tip),
-            received: kindOf(l.methodId) === 'efectivo' && l.received ? num(l.received) : undefined,
+            received: kindOf(l.methodId) === 'efectivo' && !isUsd(l.methodId) && l.received ? num(l.received) : undefined,
+            received_usd: isUsd(l.methodId) ? num(l.received) : undefined,
             reference: l.reference || null,
+            clip_cobro_id: l.clipCobroId || undefined,
           }))],
         },
       });
@@ -246,10 +260,13 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
             )}
           </div>
         )}
+        <SplitPanel order={order} remaining={remaining}
+          onSplit={(amounts) => setLines(amounts.map((a) => newLine(lines[0]?.methodId || active[0]?.id || '', a)))} />
 
         {lines.map((l) => {
           const isCash = kindOf(l.methodId) === 'efectivo';
-          const lineChange = isCash && l.received ? num(l.received) - num(l.amount) - num(l.tip) : 0;
+          const usd = isUsd(l.methodId);
+          const lineChange = isCash && l.received ? receivedMxn(l) - num(l.amount) - num(l.tip) : 0;
           return (
             <div key={l.key} className="space-y-3 rounded-xl border border-gray-800 p-3">
               <div className="flex flex-wrap gap-2">
@@ -279,10 +296,13 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
                   </span>
                 </label>
                 {isCash ? (
-                  <label className="block"><span className="label">Recibido</span>
-                    <input className="input" type="number" inputMode="decimal" min="0" step="0.01" value={l.received} placeholder="Exacto"
+                  <label className="block"><span className="label">{usd ? 'Recibido (dólares)' : 'Recibido'}</span>
+                    <input className="input" type="number" inputMode="decimal" min="0" step="0.01" value={l.received} placeholder={usd ? 'US$' : 'Exacto'}
                       onChange={(e) => update(l.key, { received: e.target.value })} />
+                    {usd && <span className="mt-1 block text-xs text-gray-400">= {formatMXN(receivedMxn(l))} a ${rate} por dólar</span>}
                   </label>
+                ) : l.clipCobroId ? (
+                  <div />
                 ) : (
                   <label className="block"><span className="label">Referencia</span>
                     <input className="input" value={l.reference} maxLength={100} placeholder="Opcional"
@@ -290,13 +310,17 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
                   </label>
                 )}
               </div>
+              {clipTerminal && kindOf(l.methodId) === 'tarjeta' && (
+                <ClipTerminalButton orderId={order.id} amount={round2(num(l.amount) + num(l.tip))} terminal={clipTerminal}
+                  onApproved={(c) => update(l.key, { clipCobroId: c.id })} onReset={() => update(l.key, { clipCobroId: undefined })} />
+              )}
               {isCash && (
                 <div className="flex flex-wrap items-center gap-2">
                   <button type="button" className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
-                    onClick={() => update(l.key, { received: (num(l.amount) + num(l.tip)).toFixed(2) })}>Exacto</button>
-                  {QUICK_CASH.filter((q) => q >= num(l.amount) + num(l.tip)).slice(0, 4).map((q) => (
+                    onClick={() => update(l.key, { received: usd && rate ? (Math.ceil(((num(l.amount) + num(l.tip)) / rate) * 100) / 100).toFixed(2) : (num(l.amount) + num(l.tip)).toFixed(2) })}>Exacto</button>
+                  {(usd ? [1, 5, 10, 20, 50, 100].filter((q) => q * rate >= num(l.amount) + num(l.tip)) : QUICK_CASH.filter((q) => q >= num(l.amount) + num(l.tip))).slice(0, 4).map((q) => (
                     <button key={q} type="button" className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-200 hover:bg-gray-700"
-                      onClick={() => update(l.key, { received: String(q) })}>{formatMXN(q)}</button>
+                      onClick={() => update(l.key, { received: String(q) })}>{usd ? formatMoney(q, 'USD') : formatMXN(q)}</button>
                   ))}
                   {lineChange > 0 && <span className="ml-auto text-sm text-amber-300">Cambio {formatMXN(lineChange)}</span>}
                 </div>
@@ -330,5 +354,69 @@ export default function PaymentModal({ order, methods, sessionId, loyalty = fals
         <CustomerPicker initialQuery={order.customer_phone || ''} onPick={attach} onClose={() => setPicking(false)} />
       )}
     </Modal>
+  );
+}
+
+/**
+ * Dividir la cuenta (como en Horom): en partes iguales (un pago por persona) o
+ * cobrar ahora solo los articulos de alguien. La parte de cada articulo ya
+ * incluye su proporcion de promociones, descuentos e impuestos.
+ */
+function SplitPanel({ order, remaining, onSplit }: { order: Order; remaining: number; onSplit: (amounts: number[]) => void }) {
+  const [mode, setMode] = useState<'' | 'iguales' | 'articulos'>('');
+  const [people, setPeople] = useState('2');
+  const [picked, setPicked] = useState<Record<string, number>>({});
+  const items = (order.items || []).filter((i) => !i.voided_at);
+  const base = num(order.total) - num(order.delivery_fee);
+  const ratio = num(order.subtotal) > 0 ? base / num(order.subtotal) : 1;
+  const share = round2(items.reduce((s, i) => s + (num(i.line_total) / i.quantity) * (picked[i.id] || 0), 0) * ratio);
+
+  if (remaining <= 0) return null;
+  if (!mode) {
+    return (
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="ghost" onClick={() => setMode('iguales')}><Split className="h-4 w-4" /> Dividir en partes iguales</Button>
+        {items.length > 1 && <Button type="button" variant="ghost" onClick={() => setMode('articulos')}><Split className="h-4 w-4" /> Cobrar por artículos</Button>}
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-3 rounded-xl border border-dashed border-gray-700 p-3">
+      {mode === 'iguales' ? (
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block"><span className="label">Personas</span>
+            <input className="input w-24" type="number" min="2" max="20" value={people} onChange={(e) => setPeople(e.target.value)} /></label>
+          <p className="pb-2 text-sm text-gray-400">{formatMXN(remaining / Math.max(2, Number(people) || 2))} cada una</p>
+          <Button type="button" variant="secondary" onClick={() => {
+            const n = Math.min(20, Math.max(2, Number(people) || 2));
+            const each = Math.floor((remaining * 100) / n) / 100;
+            onSplit(Array.from({ length: n }, (_, k) => (k === n - 1 ? round2(remaining - each * (n - 1)) : each)));
+            setMode('');
+          }}>Hacer {Math.max(2, Number(people) || 2)} pagos</Button>
+        </div>
+      ) : (
+        <>
+          <p className="text-sm text-gray-400">Marca lo que paga esta persona:</p>
+          <ul className="max-h-48 space-y-1 overflow-y-auto">
+            {items.map((i) => (
+              <li key={i.id} className="flex items-center gap-2 text-sm">
+                <select className="input w-16 py-1" value={picked[i.id] || 0} onChange={(e) => setPicked({ ...picked, [i.id]: Number(e.target.value) })} aria-label={`Cantidad de ${i.name}`}>
+                  {Array.from({ length: i.quantity + 1 }, (_, q) => <option key={q} value={q}>{q}</option>)}
+                </select>
+                <span className="flex-1 text-gray-200">de {i.quantity} × {i.name}</span>
+                <span className="text-gray-400">{formatMXN(num(i.line_total) / i.quantity)} c/u</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-gray-300">Le toca: <b className="text-white">{formatMXN(Math.min(share, remaining))}</b></p>
+            <Button type="button" variant="secondary" disabled={share <= 0} onClick={() => { onSplit([Math.min(share, remaining)]); setMode(''); setPicked({}); }}>
+              Cobrar esta parte
+            </Button>
+          </div>
+        </>
+      )}
+      <button type="button" className="text-xs text-gray-500 hover:text-gray-300" onClick={() => setMode('')}>Cancelar división</button>
+    </div>
   );
 }

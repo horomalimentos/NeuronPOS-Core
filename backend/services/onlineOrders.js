@@ -8,6 +8,7 @@ import crypto from 'node:crypto';
 import { withTenant } from '../config/database.js';
 import { loadModuleRow } from '../middleware/requireModule.js';
 import { insertItems, loadOrder, nextFolio, priceItems, readItemInputs, recalcOrder } from '../routes/pos/orders.js';
+import { moduleActive } from '../routes/pos/common.js';
 import { getSettings } from '../routes/pos/settings.js';
 import { HttpError, badRequest, notFound, oneOf, requireUuid, str } from '../utils/http.js';
 import { checkModuleAccess } from './access.js';
@@ -17,7 +18,9 @@ import { acceptOnlineOrder, customerOrderView, getOnlineSettings, loadBranches }
 import { DEFAULT_PROVIDER, getPaymentProvider } from './onlinePayments.js';
 import { calculateOrderTotals, toCents } from './posMath.js';
 import { getPaymentSettings, loadRestaurantClipCredentials, onlinePaymentAvailable } from './restaurantPayments.js';
+import { promotionsFor } from './promotions.js';
 import { readScheduledFor } from './scheduling.js';
+import { findVoucher, voucherDiscountCents, voucherProblem } from './vouchers.js';
 import { activeWallet } from './wallet.js';
 
 const conflict = (msg, code) => new HttpError(409, msg, code);
@@ -69,6 +72,8 @@ export function readOrderInput(body = {}, customer, { quote = false } = {}) {
     location: readPoint(body.location),
     // Para mas tarde: uno de los horarios de GET /portal/schedule (ISO).
     scheduled_for: body.scheduled_for ? String(body.scheduled_for).slice(0, 40) : null,
+    // Codigo promocional (vale) capturado en el checkout.
+    voucher_code: body.voucher_code ? String(body.voucher_code).slice(0, 30) : null,
   };
   // La cotizacion no necesita datos de contacto ni direccion (el envio es por sucursal).
   if (!input.name && !quote) throw badRequest('Escribe tu nombre', 'CUSTOMER_REQUIRED');
@@ -103,6 +108,9 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
   if (!branch.online_enabled) throw conflict('Esta sucursal no recibe pedidos en linea', 'BRANCH_NOT_ACCEPTING');
   if (input.order_type === 'domicilio' && !branch.delivery_enabled) {
     throw badRequest('Esta sucursal no entrega a domicilio', 'ORDER_TYPE_UNAVAILABLE');
+  }
+  if (branch.status.paused_until) {
+    throw conflict(branch.status.paused_message || `${branch.name} no esta recibiendo pedidos en linea por el momento. Intenta mas tarde.`, 'BRANCH_PAUSED');
   }
   let scheduledFor = null;
   if (input.scheduled_for) {
@@ -161,9 +169,26 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
     point = null;
   }
 
-  const pos = await getSettings(db, rid);
+  const posSettings = await getSettings(db, rid);
+  // La sucursal puede tener su propio impuesto (ej. 8 % en la frontera).
+  const branchTax = (await db.query('SELECT tax_rate_pct FROM branches WHERE id = $1 AND restaurant_id = $2', [branch.id, rid])).rows[0]?.tax_rate_pct;
+  const pos = { ...posSettings, tax_rate_pct: branchTax ?? posSettings.tax_rate_pct };
+  // Las mismas promociones que se guardaran en la orden (recalcOrder).
+  const promosOn = await moduleActive(db, rid, 'promociones');
+  const promotions = promosOn ? await promotionsFor(db, rid, { branchId: branch.id, source: 'web', lines }) : [];
+  let voucher = null;
+  if (input.voucher_code) {
+    if (!promosOn) throw badRequest('Este restaurante no acepta codigos promocionales', 'VOUCHER_NOT_FOUND');
+    const v = await findVoucher(db, rid, input.voucher_code);
+    if (!v) throw badRequest('El codigo no existe', 'VOUCHER_NOT_FOUND');
+    const baseCents = lines.reduce((s, l) => s + toCents(l.line_total), 0) - promotions.reduce((s, p) => s + p.cents, 0);
+    const problem = await voucherProblem(db, rid, v, { source: 'web', timezone: branch.timezone, baseCents, lines });
+    if (problem) throw badRequest(problem, 'VOUCHER_NOT_APPLICABLE');
+    voucher = { id: v.id, code: v.code, cents: voucherDiscountCents(v, { baseCents, lines }) };
+  }
   const totals = calculateOrderTotals(lines, {
     taxRatePct: pos.tax_rate_pct, pricesIncludeTax: pos.prices_include_tax, deliveryFee,
+    promoDiscount: (promotions.reduce((s, p) => s + p.cents, 0) + (voucher?.cents || 0)) / 100,
   });
   const clipAvailable = onlinePaymentAvailable(await getPaymentSettings(db, rid));
   const walletAvailable = input.payment.provider === 'monedero' && await walletPayAvailable(db, rid);
@@ -172,7 +197,7 @@ export async function prepareOrder(db, req, input, mods, { quote = false } = {})
     throw badRequest('Inicia sesión para pagar con tu monedero', 'LOGIN_REQUIRED');
   }
   const payment = provider.validate(input.payment, { total: totals.total });
-  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone, scheduledFor };
+  return { settings, branch, lines, totals, pos, provider, payment, address, reference, point, distanceKm, zone, scheduledFor, promotions, voucher };
 }
 
 export async function readMods(tenant, input) {
@@ -216,6 +241,10 @@ export async function createOnlineOrder(req, input, { channel = 'web' } = {}) {
     );
     const order = rows[0];
     await insertItems(db, rid, order.id, null, p.lines);
+    if (p.voucher) {
+      await db.query('UPDATE orders SET voucher_id = $3 WHERE id = $1 AND restaurant_id = $2', [order.id, rid, p.voucher.id]);
+      order.voucher_id = p.voucher.id;
+    }
     await recalcOrder(db, rid, order);
     // Con pago en linea se acepta (o espera aceptacion) hasta que Clip confirme el pago.
     if (p.settings.auto_accept && !online) {

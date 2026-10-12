@@ -11,7 +11,7 @@ import { ah, badRequest, bool, buildSet, notFound, requireUuid, str } from '../u
 const router = Router();
 router.use(authenticateUser, requireOperational);
 
-const COLUMNS = 'id, name, address, phone, timezone, active, created_at, updated_at';
+const COLUMNS = 'id, name, address, phone, timezone, active, tax_rate_pct, ticket_header, ticket_footer, created_at, updated_at';
 
 function validTimezone(tz) {
   try {
@@ -22,6 +22,14 @@ function validTimezone(tz) {
   }
 }
 
+function taxRate(value) {
+  if (value === undefined) return undefined;
+  if (value === null || value === '') return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw badRequest('El impuesto debe ser de 0 a 100 %', 'INVALID_FIELD');
+  return Math.round(n * 100) / 100;
+}
+
 function branchFields(body, creating) {
   const f = {
     name: str(body.name, { field: 'name', required: creating, max: 120 }),
@@ -29,6 +37,10 @@ function branchFields(body, creating) {
     phone: str(body.phone, { field: 'phone', max: 40 }),
     timezone: str(body.timezone, { field: 'timezone', max: 60 }) ?? undefined,
     active: bool(body.active, 'active'),
+    // Impuesto propio (ej. 8 % en la frontera); vacio = el del restaurante.
+    tax_rate_pct: taxRate(body.tax_rate_pct),
+    ticket_header: str(body.ticket_header, { field: 'ticket_header', max: 500 }),
+    ticket_footer: str(body.ticket_footer, { field: 'ticket_footer', max: 500 }),
   };
   if (f.name === null) throw badRequest('El nombre no puede quedar vacio', 'MISSING_FIELD');
   if (f.timezone && !validTimezone(f.timezone)) throw badRequest('Zona horaria invalida', 'INVALID_TIMEZONE');

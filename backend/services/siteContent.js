@@ -2,7 +2,7 @@
 // Se guarda como JSON plano; aqui se define que llaves existen, su tipo y
 // limite, para que nunca se guarde algo que el sitio no sepa mostrar (ni
 // URLs con esquemas peligrosos como javascript:).
-import { badRequest } from '../utils/http.js';
+import { UUID_RE, badRequest } from '../utils/http.js';
 
 const text = (max) => ({ type: 'text', max });
 const url = { type: 'url' };
@@ -14,6 +14,8 @@ export const SITE_FIELDS = {
   hero_title: text(120),
   hero_subtitle: text(300),
   hero_image_url: image,
+  // La portada rota entre las fotos de la galeria (si hay 2 o mas).
+  hero_carousel: flag,
   announcement: text(200),
   // Acerca de
   about_title: text(120),
@@ -24,6 +26,10 @@ export const SITE_FIELDS = {
   menu_title: text(120),
   show_gallery: flag,
   gallery_title: text(120),
+  // Platillos destacados (hasta 8 productos del menu, en ese orden).
+  show_featured: flag,
+  featured_title: text(120),
+  featured_item_ids: { type: 'uuid_list', max: 8 },
   // Contacto y redes
   contact_email: text(200),
   whatsapp: text(30),
@@ -59,6 +65,13 @@ export function normalizeContentPatch(body) {
     const spec = SITE_FIELDS[key];
     if (!spec) throw badRequest(`Campo desconocido: "${key}"`, 'INVALID_FIELD');
     if (value === null || value === '') { unset.push(key); continue; }
+    if (spec.type === 'uuid_list') {
+      if (!Array.isArray(value) || value.length > spec.max || !value.every((v) => typeof v === 'string' && UUID_RE.test(v))) {
+        throw badRequest(`"${key}" debe ser una lista de hasta ${spec.max} productos`, 'INVALID_FIELD');
+      }
+      if (value.length) set[key] = [...new Set(value.map((v) => v.toLowerCase()))]; else unset.push(key);
+      continue;
+    }
     if (spec.type === 'bool') {
       if (typeof value !== 'boolean') throw badRequest(`"${key}" debe ser verdadero o falso`, 'INVALID_FIELD');
       set[key] = value;

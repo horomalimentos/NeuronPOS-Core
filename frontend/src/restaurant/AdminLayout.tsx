@@ -1,6 +1,6 @@
 import {
-  Award, BarChart3, Boxes, Bike, Building2, ChefHat, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
-  Settings, ShoppingBag, HeartHandshake, Store, Trophy, Truck, UtensilsCrossed, Users, Wallet,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -13,7 +13,8 @@ import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
 import { invCan } from '../inventory/lib';
-import { posCan } from '../pos/lib';
+import ApprovalPinButton from '../pos/ApprovalPin';
+import { posCan, setSessionCapabilities } from '../pos/lib';
 import type { Me } from '../lib/types';
 import { canManage, type AdminContext } from './context';
 
@@ -22,12 +23,14 @@ export default function AdminLayout() {
   const location = useLocation();
   const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const hasToken = Boolean(session.getToken('restaurant'));
   const waPending = useWhatsAppPending(me);
 
   const reload = useCallback(() => {
     api<Me>('/me')
       .then((m) => {
+        setSessionCapabilities(m.capabilities);
         setMe(m);
         applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
         document.title = `${m.restaurant.name} · NeuronPOS`;
@@ -60,17 +63,21 @@ export default function AdminLayout() {
     { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
+    { to: '/autoservicio', label: 'Kiosko', icon: TabletSmartphone, end: false, show: has('kiosko') && posCan.cashier(role) },
+    { to: '/admin/eventos', label: 'Eventos', icon: CalendarHeart, end: false, show: has('eventos') && posCan.orders(role) },
     { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && has('reportes') && posCan.manage(role) },
     { to: '/admin/clientes', label: 'Clientes', icon: HeartHandshake, end: false, show: (has('lealtad') || has('monedero')) && posCan.cashier(role) },
     { to: '/admin/inventario', label: 'Inventario', icon: Boxes, end: false, show: has('inventario') && invCan.staff(role) },
     { to: '/admin/delivery', label: 'Delivery', icon: Store, end: false, show: has('marketplace') && posCan.manage(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: (hasPos || has('marketplace')) && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
+    { to: '/admin/promociones', label: 'Promociones', icon: Gift, end: false, show: hasPos && has('promociones') && posCan.manage(role) },
     { to: '/admin/pos/ajustes', label: 'Ajustes', icon: Settings, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/reparto', label: 'Reparto', icon: Bike, end: false, show: has('domicilios') && posCan.cashier(role) },
     { to: '/repartidor', label: 'Mis entregas', icon: Bike, end: false, show: has('domicilios') && role === 'repartidor' },
     { to: '/admin/domicilios', label: 'Domicilios', icon: Truck, end: false, show: has('domicilios') && canManage(role) },
     { to: '/admin/rh', label: 'RH', icon: Contact, end: false, show: has('rh') && canManage(role) },
+    { to: '/admin/checklists', label: 'Checklists', icon: ClipboardCheck, end: false, show: has('rh') && role !== 'repartidor' },
     { to: '/admin/checador', label: 'Checador', icon: Clock, end: false, show: has('rh') },
     { to: '/admin/mi-nomina', label: 'Mi nómina', icon: Receipt, end: false, show: has('rh') },
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
@@ -87,9 +94,13 @@ export default function AdminLayout() {
   const wide = ['/admin/pos', '/admin/cocina'].includes(location.pathname.replace(/\/$/, ''));
 
   const ctx: AdminContext = { me, reload };
+  const here = location.pathname.replace(/\/$/, '');
+  const current = nav.filter((n) => (n.end ? here === n.to : here === n.to || here.startsWith(`${n.to}/`)))
+    .sort((a, b) => b.to.length - a.to.length)[0];
   return (
     <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur">
+      {/* Fijo arriba solo en pantallas grandes: en el celular el menu ocuparia media pantalla. */}
+      <header className="z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur lg:sticky lg:top-0">
         <div className="h-0.5 bg-brand" />
         <div className={`mx-auto flex ${wide ? 'max-w-none' : 'max-w-6xl'} flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3`}>
           <div className="flex items-center gap-2 font-semibold text-white">
@@ -98,9 +109,15 @@ export default function AdminLayout() {
               : <Store className="h-6 w-6 text-brand" />}
             {me.restaurant.name}
           </div>
-          <nav className="flex flex-1 gap-1 overflow-x-auto">
+          {/* Celular: el menu se abre con un boton que muestra la pagina actual. */}
+          <button onClick={() => setMenuOpen(!menuOpen)} className="order-last flex w-full items-center justify-between rounded-lg bg-gray-900 px-3 py-2 text-sm text-gray-200 lg:hidden" aria-expanded={menuOpen}>
+            <span className="flex items-center gap-2">{current && <current.icon className="h-4 w-4" />}{current?.label || 'Menú'}</span>
+            <span className="flex items-center gap-1 text-gray-400">{menuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />} Menú</span>
+          </button>
+          {/* Menu en su propio renglon y en varias lineas si hace falta: con todos los modulos no cabe en una. */}
+          <nav className={`${menuOpen ? 'flex' : 'hidden'} order-last w-full flex-wrap gap-1 lg:flex`}>
             {nav.map(({ to, label, icon: Icon, end, badge }) => (
-              <NavLink key={to} to={to} end={end}
+              <NavLink key={to} to={to} end={end} onClick={() => setMenuOpen(false)}
                 className={({ isActive }) => `flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition
                   ${isActive ? 'bg-brand/15 text-white' : 'text-gray-400 hover:text-white'}`}>
                 <Icon className="h-4 w-4" /> {label}
@@ -108,11 +125,12 @@ export default function AdminLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="text-right text-xs leading-tight text-gray-400">
+          <div className="ml-auto text-right text-xs leading-tight text-gray-400">
             <div className="text-sm text-gray-200">{me.user.name}</div>
             {ROLE_LABEL[me.user.role]}
           </div>
           {has('push') && ['admin', 'gerente', 'cajero', 'repartidor'].includes(role) && <PushBell target={{ realm: 'restaurant' }} />}
+          {hasPos && posCan.manage(role) && <ApprovalPinButton />}
           {getNative() && (
             <button onClick={() => { void getNative()?.openSettings(); }} className="flex items-center gap-2 text-sm text-gray-400 hover:text-white" aria-label="Impresoras de la app" title="Impresoras de la app">
               <Printer className="h-4 w-4" />

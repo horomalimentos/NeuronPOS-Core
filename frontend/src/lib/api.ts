@@ -3,10 +3,13 @@ import { session, type Realm } from './session';
 export class ApiError extends Error {
   status: number;
   code?: string;
-  constructor(status: number, message: string, code?: string) {
+  /** Cuerpo completo de la respuesta (algunos errores traen datos extra). */
+  data?: Record<string, unknown>;
+  constructor(status: number, message: string, code?: string, data?: Record<string, unknown>) {
     super(message);
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -18,6 +21,24 @@ interface Options {
   realm?: Realm;
   /** No mandar a login en 401 (p. ej. el propio formulario de login). */
   noRedirect?: boolean;
+}
+
+/**
+ * Llave de este equipo (control de dispositivos): aleatoria, se crea la primera
+ * vez y se queda en el navegador o la app. El servidor solo guarda su hash.
+ */
+export function deviceToken(): string {
+  try {
+    let t = localStorage.getItem('npc_device');
+    if (!t || !/^[A-Za-z0-9_-]{32,128}$/.test(t)) {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      t = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      localStorage.setItem('npc_device', t);
+    }
+    return t;
+  } catch {
+    return '';
+  }
 }
 
 const LOGIN_PATH: Record<Realm, string> = {
@@ -35,6 +56,10 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
   if (slug && realm !== 'platform' && realm !== 'fleet') headers['X-Restaurant-Slug'] = slug;
+  if (realm === 'restaurant') {
+    const device = deviceToken();
+    if (device) headers['X-Device-Token'] = device;
+  }
 
   let res: Response;
   try {
@@ -52,7 +77,7 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
       session.setToken(realm, null);
       window.location.assign(loginPath(realm));
     }
-    throw new ApiError(res.status, data?.error || `Error ${res.status}`, data?.code);
+    throw new ApiError(res.status, data?.error || `Error ${res.status}`, data?.code, data || undefined);
   }
   return data as T;
 }

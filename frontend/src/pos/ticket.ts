@@ -5,7 +5,7 @@
 import { formatMXN } from '../lib/format';
 import { nativePrint, type PrintRole } from '../lib/native';
 import type { Branch, Restaurant } from '../lib/types';
-import { ORDER_TYPE_LABEL, formatDateTime, num } from './lib';
+import { MOVEMENT_CATEGORY_LABEL, ORDER_TYPE_LABEL, formatDateTime, num } from './lib';
 import type { CashSessionDetail, Order, OrderItem, PosSettings } from './types';
 
 const esc = (v: unknown) => String(v ?? '')
@@ -40,7 +40,7 @@ function header(restaurant: Restaurant, branch: Branch | null, settings: PosSett
     ${restaurant.logo_url ? `<img src="${esc(restaurant.logo_url)}" alt="">` : ''}
     <h1>${esc(restaurant.name)}</h1>
     ${branch ? `<div class="muted">${esc(branch.name)}${branch.address ? `<br>${esc(branch.address)}` : ''}${branch.phone ? `<br>Tel. ${esc(branch.phone)}` : ''}</div>` : ''}
-    ${settings?.ticket_header ? `<div class="pre muted">${esc(settings.ticket_header)}</div>` : ''}
+    ${branch?.ticket_header || settings?.ticket_header ? `<div class="pre muted">${esc(branch?.ticket_header || settings?.ticket_header || '')}</div>` : ''}
   </div><hr>`;
 }
 
@@ -52,7 +52,8 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     const cls = it.voided_at ? 'void' : '';
     const mods = it.modifiers.map((m) => `<div class="mod">+ ${esc(m.name)}${num(m.price_delta) ? ` (${formatMXN(m.price_delta)})` : ''}</div>`).join('');
     const notes = it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : '';
-    return `<tr class="${cls}"><td>${it.quantity} x ${esc(it.name)}${mods}${notes}</td><td class="r">${formatMXN(it.line_total)}</td></tr>`;
+    const disc = num(it.discount_amount) && !it.voided_at ? `<div class="mod">Descuento -${formatMXN(it.discount_amount)}</div>` : '';
+    return `<tr class="${cls}"><td>${it.quantity} x ${esc(it.name)}${mods}${notes}${disc}</td><td class="r">${formatMXN(it.line_total)}</td></tr>`;
   }).join('');
   const who = order.order_type === 'comedor'
     ? `Mesa ${esc(order.table_name)}${order.guests ? ` · ${order.guests} pers.` : ''}`
@@ -61,7 +62,9 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     .filter(Boolean).map(esc).join('<br>');
   const web = order.source === 'web'
     ? `<div class="center"><b>PEDIDO EN LÍNEA</b>${order.payment_preference ? `<br>Paga con ${order.payment_preference}${num(order.pay_with) ? ` (${formatMXN(order.pay_with)})` : ''}` : ''}</div>`
-    : '';
+    : order.channel_name
+      ? `<div class="center"><b>${esc(order.channel_name.toUpperCase())}</b>${order.channel_order_number ? `<br>Pedido ${esc(order.channel_order_number)}` : ''}</div>`
+      : '';
   const taxLabel = `IVA ${num(order.tax_rate_pct)}%${order.prices_include_tax ? ' (incluido)' : ''}`;
   const payments = (order.payments || []).map((p) => row(
     esc(p.method_name) + (p.reference ? ` <span class="muted">${esc(p.reference)}</span>` : ''),
@@ -79,6 +82,9 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
     <hr><table>${items}</table><hr>
     <table>
       ${row('Subtotal', formatMXN(order.subtotal))}
+      ${(order.promotions || []).map((p) => row(`Promo ${esc(p.name)}`, `-${formatMXN(p.amount)}`)).join('')}
+      ${num(order.voucher_discount) ? row(`Vale ${esc(order.voucher_code)}`, `-${formatMXN(order.voucher_discount)}`) : ''}
+      ${num(order.item_discount) ? row('Descuentos por artículo', `-${formatMXN(order.item_discount)}`) : ''}
       ${num(order.discount_amount) ? row(`Descuento${order.discount_type === 'percent' ? ` ${num(order.discount_value)}%` : ''}`, `-${formatMXN(order.discount_amount)}`) : ''}
       ${row(taxLabel, formatMXN(order.tax_amount))}
       ${num(order.delivery_fee) ? row('Envío', formatMXN(order.delivery_fee)) : ''}
@@ -88,7 +94,7 @@ export function orderTicketHtml(order: Order, restaurant: Restaurant, branch: Br
       ${num(order.tip_amount) ? row('Propina', formatMXN(order.tip_amount)) : ''}
       ${changeTotal ? row('Cambio', formatMXN(changeTotal)) : ''}</table>` : ''}
     ${order.status === 'pagada' ? '' : `<hr><div class="center"><b>${order.status === 'cancelada' ? 'CANCELADA' : 'CUENTA - NO ES COMPROBANTE DE PAGO'}</b></div>`}
-    <hr><div class="center pre muted">${esc(settings?.ticket_footer || '¡Gracias por su visita!')}</div>`;
+    <hr><div class="center pre muted">${esc(branch?.ticket_footer || settings?.ticket_footer || '¡Gracias por su visita!')}</div>`;
   return page(`Ticket ${order.folio}`, safeColor(restaurant.primary_color)!, body);
 }
 
@@ -98,7 +104,7 @@ export function cashCutHtml(detail: CashSessionDetail, restaurant: Restaurant) {
   const methods = cut.methods.map((m) => `<tr><td colspan="2"><b>${esc(m.name)}</b> (${m.payments})</td></tr>
     ${row('Esperado', formatMXN(m.expected))}
     ${m.counted !== undefined ? row('Contado', formatMXN(m.counted)) + row('Diferencia', formatMXN(m.difference)) : ''}`).join('');
-  const movs = movements.map((m) => row(`${m.kind === 'entrada' ? '+' : '-'} ${esc(m.reason)}`, formatMXN(m.amount))).join('');
+  const movs = movements.map((m) => row(`${m.kind === 'entrada' ? '+' : '-'} ${m.category && m.category !== 'otro' ? `${MOVEMENT_CATEGORY_LABEL[m.category]}: ` : ''}${esc(m.reason)}`, formatMXN(m.amount))).join('');
   const body = `${header(restaurant, null, null)}
     <div class="center"><b>CORTE DE CAJA</b></div>
     <table>
@@ -128,11 +134,17 @@ export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | n
   const who = order.order_type === 'comedor'
     ? `Mesa ${esc(order.table_name)}`
     : ORDER_TYPE_LABEL[order.order_type];
-  const lines = items.map((it) => `<div class="it"><b>${it.quantity} x ${esc(it.name)}</b>
+  const line = (it: OrderItem) => `<div class="it"><b>${it.quantity} x ${esc(it.name)}</b>
     ${it.modifiers.map((m) => `<div class="mod">+ ${esc(m.name)}</div>`).join('')}
-    ${it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : ''}</div>`).join('');
+    ${it.notes ? `<div class="mod">* ${esc(it.notes)}</div>` : ''}</div>`;
+  // Agrupada por estacion de cocina cuando la orden va a varias.
+  const stations = [...new Set(items.map((it) => it.station_name || ''))];
+  const lines = stations.length > 1
+    ? stations.map((st) => `<div class="st">${esc(st || 'Cocina general')}</div>${items.filter((it) => (it.station_name || '') === st).map(line).join('')}`).join('')
+    : `${stations[0] ? `<div class="st">${esc(stations[0])}</div>` : ''}${items.map(line).join('')}`;
   const body = `<div class="center"><h1>${who}</h1>
       <div>Folio ${order.folio}${order.source === 'web' ? ' · EN LÍNEA' : ''}</div>
+      ${order.channel_name ? `<div><b>${esc(order.channel_name.toUpperCase())}${order.channel_order_number ? ` #${esc(order.channel_order_number)}` : ''}</b></div>` : ''}
       <div class="muted">${formatDateTime(items[0]?.sent_at || order.sent_at || order.created_at)}${branch ? ` · ${esc(branch.name)}` : ''}</div></div><hr>
     ${order.customer_name ? `<div>${esc(order.customer_name)}</div>` : ''}
     ${lines}
@@ -142,6 +154,7 @@ export function comandaHtml(order: Order, items: OrderItem[], branch: Branch | n
   h1 { font-size: 22px; }
   .it { font-size: 16px; margin: 6px 0; }
   .it .mod { font-size: 14px; color: #000; }
+  .st { font-size: 13px; font-weight: bold; text-transform: uppercase; border-bottom: 1px solid #000; margin-top: 8px; }
 </style>`);
 }
 

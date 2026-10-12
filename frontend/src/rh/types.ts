@@ -81,6 +81,8 @@ export interface ClockSettings {
   longitude: string | null;
   radius_meters: number;
   allowed_ips: string[];
+  /** Checada desde el celular del empleado (requiere geocerca). */
+  mobile_enabled: boolean;
 }
 
 export interface Holiday {

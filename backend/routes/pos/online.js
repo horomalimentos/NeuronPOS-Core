@@ -8,13 +8,14 @@ import { withTenant } from '../../config/database.js';
 import { sendOrderRejected } from '../../services/emails.js';
 import { deductOrder } from '../../services/inventory.js';
 import { earnForOrder } from '../../services/loyalty.js';
-import { requireRole } from '../../middleware/auth.js';
+import { redeemOrderVoucher } from '../../services/vouchers.js';
 import { acceptOnlineOrder, getOnlineSettings } from '../../services/online.js';
 import { toCents } from '../../services/posMath.js';
 import { refundOrderWallet } from '../../services/wallet.js';
 import { HttpError, ah, badRequest, oneOf, str } from '../../utils/http.js';
 import { ROLES, int, requireBranch } from './common.js';
 import { assertActive, loadItems, loadOrder, lockOrder } from './orders.js';
+import { can } from '../../services/permissions.js';
 
 const router = Router();
 
@@ -27,6 +28,50 @@ function assertNotAwaitingPayment(o) {
   }
 }
 
+// Pausa temporal de pedidos en linea de una sucursal (cocina saturada, sin
+// repartidor...): el portal la muestra cerrada con el mensaje hasta esa hora.
+async function pauseState(db, rid, branchId) {
+  const r = (await db.query(
+    `SELECT CASE WHEN paused_until > now() THEN paused_until END AS paused_until,
+            CASE WHEN paused_until > now() THEN paused_message END AS paused_message
+       FROM branch_online_settings WHERE branch_id = $1 AND restaurant_id = $2`,
+    [branchId, rid],
+  )).rows[0];
+  return { paused_until: r?.paused_until ?? null, paused_message: r?.paused_message ?? null };
+}
+
+router.get('/online-pause', can('orders'), ah(async (req, res) => {
+  const branchId = requireBranch(req, req.query.branch_id);
+  res.json(await withTenant(req.tenant.id, (db) => pauseState(db, req.tenant.id, branchId)));
+}));
+
+router.put('/online-pause', can('availability'), ah(async (req, res) => {
+  const b = req.body || {};
+  const branchId = requireBranch(req, b.branch_id);
+  const minutes = Number(b.minutes);
+  if (!Number.isInteger(minutes) || minutes < 5 || minutes > 24 * 60) throw badRequest('La pausa debe ser de 5 minutos a 24 horas', 'INVALID_FIELD');
+  const message = str(b.message, { field: 'message', max: 200 }) || null;
+  const data = await withTenant(req.tenant.id, async (db) => {
+    await db.query(
+      `INSERT INTO branch_online_settings (restaurant_id, branch_id, paused_until, paused_message)
+       VALUES ($1, $2, now() + make_interval(mins => $3::int), $4)
+       ON CONFLICT (branch_id) DO UPDATE SET paused_until = EXCLUDED.paused_until, paused_message = EXCLUDED.paused_message, updated_at = now()`,
+      [req.tenant.id, branchId, minutes, message],
+    );
+    return pauseState(db, req.tenant.id, branchId);
+  });
+  res.json(data);
+}));
+
+router.delete('/online-pause', can('availability'), ah(async (req, res) => {
+  const branchId = requireBranch(req, req.query.branch_id);
+  const data = await withTenant(req.tenant.id, async (db) => {
+    await db.query('UPDATE branch_online_settings SET paused_until = NULL, paused_message = NULL, updated_at = now() WHERE branch_id = $1 AND restaurant_id = $2', [branchId, req.tenant.id]);
+    return pauseState(db, req.tenant.id, branchId);
+  });
+  res.json(data);
+}));
+
 const LIST_SQL = `
   SELECT o.id, o.branch_id, o.folio, o.order_type, o.status, o.online_status, o.customer_id,
          o.customer_name, o.customer_phone, o.customer_address, o.delivery_reference, o.notes,
@@ -37,7 +82,7 @@ const LIST_SQL = `
          o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason
     FROM orders o`;
 
-router.get('/online-orders', requireRole(...ROLES.orders), ah(async (req, res) => {
+router.get('/online-orders', can('orders'), ah(async (req, res) => {
   const branchId = requireBranch(req, req.query.branch_id);
   const status = oneOf(req.query.status || 'activas', ['pendientes', 'activas', 'todas'], 'status');
   // Los que esperan el pago en linea todavia no existen para el restaurante.
@@ -67,7 +112,7 @@ router.get('/online-orders', requireRole(...ROLES.orders), ah(async (req, res) =
   res.json(data);
 }));
 
-router.post('/online-orders/:id/accept', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/accept', can('cashier'), ah(async (req, res) => {
   const prep = int((req.body || {}).prep_time_minutes, { field: 'prep_time_minutes', min: 1, max: 600 });
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -83,7 +128,7 @@ router.post('/online-orders/:id/accept', requireRole(...ROLES.cashier), ah(async
 }));
 
 // Rechazar: requiere motivo, que el cliente ve en su seguimiento.
-router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/reject', can('cashier'), ah(async (req, res) => {
   const reason = str((req.body || {}).reason, { field: 'reason', required: true, max: 300 });
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
@@ -113,7 +158,7 @@ router.post('/online-orders/:id/reject', requireRole(...ROLES.cashier), ah(async
 }));
 
 // Domicilio: el pedido salio con el repartidor (el cliente lo ve "en camino").
-router.post('/online-orders/:id/dispatch', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/dispatch', can('cashier'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     if (o.source !== 'web') throw notWeb();
@@ -131,7 +176,7 @@ router.post('/online-orders/:id/dispatch', requireRole(...ROLES.cashier), ah(asy
 
 // Pedido pagado en linea: al entregarlo (o recogerlo) se cierra sin pasar por
 // caja, porque el dinero ya esta en la cuenta de Clip del restaurante.
-router.post('/online-orders/:id/deliver', requireRole(...ROLES.cashier), ah(async (req, res) => {
+router.post('/online-orders/:id/deliver', can('cashier'), ah(async (req, res) => {
   const order = await withTenant(req.tenant.id, async (db) => {
     const o = await lockOrder(db, req, req.params.id);
     if (o.source !== 'web') throw notWeb();
@@ -152,6 +197,7 @@ router.post('/online-orders/:id/deliver', requireRole(...ROLES.cashier), ah(asyn
     );
     await deductOrder(db, req.tenant.id, o.id, req.user.id);
     await earnForOrder(db, req.tenant.id, o.id, req.user.id);
+    await redeemOrderVoucher(db, req.tenant.id, o.id);
     return loadOrder(db, req.tenant.id, o.id);
   });
   res.json({ order });

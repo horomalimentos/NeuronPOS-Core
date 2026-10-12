@@ -92,14 +92,22 @@ router.get('/landing', requireTenant, requireModule('landing'), ah(async (req, r
         .map((c) => ({ ...c, items: items.filter((i) => i.category_id === c.id).map(({ category_id, ...i }) => i) }))
         .filter((c) => c.items.length);
     }
+    // Destacados: solo productos activos, en el orden elegido.
+    const ids = content.show_featured ? content.featured_item_ids || [] : [];
+    const featuredRows = ids.length ? (await db.query(
+      'SELECT id, name, description, price, image_url FROM menu_items WHERE restaurant_id = $1 AND active AND id = ANY($2::uuid[])',
+      [t.id, ids],
+    )).rows : [];
+    const featured = ids.map((id) => featuredRows.find((r) => r.id === id)).filter(Boolean);
     const online = portalActive ? await getOnlineSettings(db, t.id) : null;
-    return { content, gallery, menu, online, branches: await loadBranches(db, t.id) };
+    return { content, gallery, menu, featured, online, branches: await loadBranches(db, t.id) };
   });
   res.json({
     restaurant: { slug: t.slug, name: t.name, logo_url: t.logo_url, primary_color: t.primary_color, secondary_color: t.secondary_color },
     content: data.content,
     gallery: data.gallery,
     menu: data.menu,
+    featured: data.featured,
     branches: data.branches.map(publicBranch),
     ordering: portalActive && Boolean(data.online?.enabled),
   });

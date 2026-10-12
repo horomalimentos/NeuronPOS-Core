@@ -23,6 +23,8 @@ import KitchenPage from './pos/KitchenPage';
 import MenuAdminPage from './pos/MenuAdminPage';
 import PosGate from './pos/PosGate';
 import PosSettingsPage from './pos/PosSettingsPage';
+import PromotionsPage from './pos/PromotionsPage';
+import SelfOrderKiosk from './pos/SelfOrderKiosk';
 import ReportsPage from './pos/ReportsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
@@ -41,8 +43,11 @@ import SubscriptionPage from './restaurant/SubscriptionPage';
 import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
+import AnnouncementsPage from './rh/AnnouncementsPage';
 import AttendancePage from './rh/AttendancePage';
+import ChecklistsPage from './rh/ChecklistsPage';
 import EmployeesPage from './rh/EmployeesPage';
+import IncidentsPage from './rh/IncidentsPage';
 import KioskPage from './rh/KioskPage';
 import ModuleGate from './rh/ModuleGate';
 import MyPayrollPage from './rh/MyPayrollPage';
@@ -58,6 +63,9 @@ import {
   AccountPage, ForgotPasswordPage, LoginPage, OrdersPage, RegisterPage as CustomerRegisterPage, ResetPasswordPage,
 } from './site/AccountPages';
 import CheckoutPage from './site/CheckoutPage';
+import EventsPage from './events/EventsPage';
+import EventDetailPage from './events/EventDetailPage';
+import EventPublicPage from './site/EventPublicPage';
 import OrderPage from './site/OrderPage';
 import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
@@ -82,6 +90,7 @@ export default function App() {
           <Route path="/pedir/checkout" element={<CheckoutPage />} />
           <Route path="/pedido/:token" element={<TrackOrderPage />} />
           <Route path="/pago/resultado" element={<PaymentResultPage />} />
+          <Route path="/evento/:slug" element={<EventPublicPage />} />
           <Route path="/cuenta" element={<AccountPage />} />
           <Route path="/cuenta/entrar" element={<LoginPage />} />
           <Route path="/cuenta/registro" element={<CustomerRegisterPage />} />
@@ -99,6 +108,8 @@ export default function App() {
         <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
         <Route path="/delivery/r/:branchId" element={<DeliveryRestaurantPage />} />
         <Route path="/delivery/pedido/:token" element={<DeliveryTrackPage />} />
+        {/* Kiosko de autoservicio (pantalla completa, sesion de caja) */}
+        <Route path="/autoservicio" element={<SelfOrderKiosk />} />
 
         {/* App del repartidor (propio del restaurante o de la flota) */}
         <Route path="/repartidor" element={<DriverApp />} />
@@ -133,9 +144,15 @@ export default function App() {
             <Route path="caja" element={<CashPage />} />
             <Route path="mesas" element={<TablesAdminPage />} />
             <Route path="pos/ajustes" element={<PosSettingsPage />} />
+            <Route path="promociones" element={<PromotionsPage />} />
             <Route element={<ModuleGate code="reportes" name="Reportes de ventas" />}>
               <Route path="reportes" element={<ReportsPage />} />
             </Route>
+          </Route>
+          {/* Ventas por evento (modulo eventos) */}
+          <Route element={<ModuleGate code="eventos" name="Eventos y preventas" />}>
+            <Route path="eventos" element={<EventsPage />} />
+            <Route path="eventos/:id" element={<EventDetailPage />} />
           </Route>
           {/* Menu: lo usa el POS y tambien un restaurante que solo esta en NeuronPOS Delivery */}
           <Route element={<ModuleGate code={['pos', 'marketplace']} name="Menú" />}>
@@ -174,9 +191,12 @@ export default function App() {
               <Route path="nomina/:id" element={<PayrollPeriodPage />} />
               <Route path="aclaraciones" element={<ClaimsPage />} />
               <Route path="aguinaldo" element={<AguinaldoPage />} />
+              <Route path="incidencias" element={<IncidentsPage />} />
+              <Route path="comunicados" element={<AnnouncementsPage />} />
               <Route path="ajustes" element={<RhSettingsPage />} />
             </Route>
             <Route path="checador" element={<KioskPage />} />
+            <Route path="checklists" element={<ChecklistsPage />} />
             <Route path="mi-nomina" element={<MyPayrollPage />} />
           </Route>
           {/* Domicilios (modulo domicilios) */}

@@ -191,7 +191,7 @@ describe('monedero del cliente', { skip: SKIP_DB }, () => {
     assert.equal(line.sales, 216); // 120 + 96 (el pedido en linea no es del turno)
     const counts = cut.methods.filter((m) => !['puntos', 'monedero'].includes(m.kind))
       .map((m) => ({ payment_method_id: m.payment_method_id, counted: m.expected }));
-    const close = await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts });
+    const close = await api(cajero, 'POST', `/api/pos/cash-sessions/${session.id}/close`, { counts, force: true }); // queda una orden sin cobrar
     assert.equal(close.status, 200, JSON.stringify(close.body));
     assert.equal(close.body.cut.total_difference, 0);
   });

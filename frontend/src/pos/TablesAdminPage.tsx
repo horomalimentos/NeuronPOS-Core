@@ -1,12 +1,13 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Map, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
+import { FloorPlanEditor } from './FloorPlan';
 import { posCan } from './lib';
-import type { DiningTable, Zone } from './types';
+import type { DiningTable, Zone, ZoneMapObject } from './types';
 import { usePosBranch } from './usePosBranch';
 
 /** Zonas y mesas de cada sucursal. */
@@ -15,13 +16,15 @@ export default function TablesAdminPage() {
   const { branchId, setBranchId, branches } = usePosBranch();
   const [zones, setZones] = useState<Zone[] | null>(null);
   const [tables, setTables] = useState<DiningTable[]>([]);
+  const [objects, setObjects] = useState<ZoneMapObject[]>([]);
+  const [planZone, setPlanZone] = useState<Zone | null>(null);
   const [error, setError] = useState('');
   const [editTable, setEditTable] = useState<DiningTable | 'new' | null>(null);
 
   const load = useCallback(() => {
     if (!branchId) return;
-    api<{ zones: Zone[]; tables: DiningTable[] }>(`/pos/tables?branch_id=${branchId}`)
-      .then((r) => { setZones(r.zones); setTables(r.tables); })
+    api<{ zones: Zone[]; tables: DiningTable[]; objects: ZoneMapObject[] }>(`/pos/tables?branch_id=${branchId}`)
+      .then((r) => { setZones(r.zones); setTables(r.tables); setObjects(r.objects || []); })
       .catch((e) => setError(errorMessage(e)));
   }, [branchId]);
   useEffect(load, [load]);
@@ -72,6 +75,9 @@ export default function TablesAdminPage() {
                   {z && <>
                     <button className="rounded p-1 text-gray-500 hover:text-white" onClick={() => renameZone(z)} aria-label="Renombrar zona"><Pencil className="h-3.5 w-3.5" /></button>
                     <button className="rounded p-1 text-gray-500 hover:text-red-300" onClick={() => window.confirm(`¿Borrar la zona "${z.name}"? Sus mesas quedan sin zona.`) && call(`/pos/zones/${z.id}`, 'DELETE')} aria-label="Borrar zona"><Trash2 className="h-3.5 w-3.5" /></button>
+                    <button className="ml-2 flex items-center gap-1 rounded-lg bg-gray-800 px-2 py-1 text-xs text-gray-200 hover:bg-gray-700" onClick={() => setPlanZone(z)}>
+                      <Map className="h-3.5 w-3.5" /> {z.map_enabled ? 'Editar plano' : 'Crear plano'}
+                    </button>
                   </>}
                 </div>
                 {list.length === 0 ? <p className="text-sm text-gray-600">Sin mesas.</p> : (
@@ -94,6 +100,9 @@ export default function TablesAdminPage() {
           })}
           {zones.length === 0 && tables.length === 0 && <p className="text-sm text-gray-500">Crea zonas (opcional) y mesas para tomar órdenes de comedor.</p>}
         </div>
+      )}
+      {planZone && (
+        <FloorPlanEditor zone={planZone} tables={tables} objects={objects} onClose={() => setPlanZone(null)} onSaved={() => { setPlanZone(null); load(); }} />
       )}
       {editTable && zones && (
         <TableModal table={editTable === 'new' ? null : editTable} zones={zones} branchId={branchId}

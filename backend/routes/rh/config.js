@@ -157,7 +157,7 @@ router.get('/clock-settings', manager, ah(async (req, res) => {
   const branches = await withTenant(req.tenant.id, async (db) => (await db.query(
     `SELECT b.id AS branch_id, b.name AS branch_name, coalesce(c.geo_enabled, false) AS geo_enabled,
             c.latitude, c.longitude, coalesce(c.radius_meters, 150) AS radius_meters,
-            coalesce(c.allowed_ips, '{}') AS allowed_ips
+            coalesce(c.allowed_ips, '{}') AS allowed_ips, coalesce(c.mobile_enabled, false) AS mobile_enabled
        FROM branches b LEFT JOIN hr_clock_settings c ON c.branch_id = b.id AND c.restaurant_id = b.restaurant_id
       WHERE b.restaurant_id = $1 ORDER BY b.name`,
     [req.tenant.id],
@@ -179,6 +179,9 @@ router.put('/clock-settings/:branchId', manager, ah(async (req, res) => {
   const lat = coord(b.latitude, 'latitude', 90);
   const lon = coord(b.longitude, 'longitude', 180);
   if (geo && (lat === null || lon === null)) throw badRequest('Para la geocerca indica latitud y longitud', 'MISSING_FIELD');
+  // Checada desde el celular del empleado: solo con geocerca.
+  const mobile = bool(b.mobile_enabled, 'mobile_enabled') ?? false;
+  if (mobile && !geo) throw badRequest('Para checar desde el celular activa la geocerca de la sucursal', 'GEOFENCE_REQUIRED');
   const radius = int(b.radius_meters ?? 150, { field: 'radius_meters', min: 10, max: 100000 });
   const ips = b.allowed_ips ?? [];
   if (!Array.isArray(ips) || ips.length > 50 || !ips.every((ip) => typeof ip === 'string' && validIpRule(ip))) {
@@ -188,13 +191,13 @@ router.put('/clock-settings/:branchId', manager, ah(async (req, res) => {
     const ok = await db.query('SELECT 1 FROM branches WHERE id = $1 AND restaurant_id = $2', [req.params.branchId, req.tenant.id]);
     if (!ok.rowCount) throw notFound('Sucursal no encontrada', 'BRANCH_NOT_FOUND');
     return (await db.query(
-      `INSERT INTO hr_clock_settings (restaurant_id, branch_id, geo_enabled, latitude, longitude, radius_meters, allowed_ips)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `INSERT INTO hr_clock_settings (restaurant_id, branch_id, geo_enabled, latitude, longitude, radius_meters, allowed_ips, mobile_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (branch_id) DO UPDATE SET geo_enabled = EXCLUDED.geo_enabled, latitude = EXCLUDED.latitude,
          longitude = EXCLUDED.longitude, radius_meters = EXCLUDED.radius_meters, allowed_ips = EXCLUDED.allowed_ips,
-         updated_at = now()
-       RETURNING branch_id, geo_enabled, latitude, longitude, radius_meters, allowed_ips`,
-      [req.tenant.id, req.params.branchId, geo, lat, lon, radius, ips.map((s) => s.trim())],
+         mobile_enabled = EXCLUDED.mobile_enabled, updated_at = now()
+       RETURNING branch_id, geo_enabled, latitude, longitude, radius_meters, allowed_ips, mobile_enabled`,
+      [req.tenant.id, req.params.branchId, geo, lat, lon, radius, ips.map((s) => s.trim()), mobile],
     )).rows[0];
   });
   res.json({ settings });

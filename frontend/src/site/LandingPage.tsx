@@ -19,6 +19,7 @@ export default function LandingPage() {
   const [data, setData] = useState<LandingData | null>(null);
   const [error, setError] = useState('');
   const [category, setCategory] = useState('');
+  const [slide, setSlide] = useState(0);
 
   useEffect(() => {
     portalApi<LandingData>('/public/landing', { noRedirect: true })
@@ -28,6 +29,14 @@ export default function LandingPage() {
       })
       .catch((e) => setError(errorMessage(e)));
   }, [site.seo.title, site.seo.description]);
+
+  // Portada en carrusel: rota entre las fotos de la galeria cada 5 s.
+  const slides = data?.content.hero_carousel && data.gallery.length >= 2 ? data.gallery.map((g) => g.image_url) : [];
+  useEffect(() => {
+    if (slides.length < 2) return undefined;
+    const t = setInterval(() => setSlide((n) => (n + 1) % slides.length), 5000);
+    return () => clearInterval(t);
+  }, [slides.length]);
 
   if (error) return <p className="px-6 py-24 text-center text-gray-500">{error}</p>;
   if (!data) return <div className="flex justify-center py-24 text-gray-400"><Loader2 className="h-6 w-6 animate-spin" /></div>;
@@ -51,7 +60,9 @@ export default function LandingPage() {
 
       {/* Portada */}
       <section className="relative overflow-hidden bg-brand-secondary text-white">
-        {c.hero_image_url && (
+        {slides.length >= 2 ? slides.map((src, i) => (
+          <img key={src} src={src} alt="" className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-1000 ${i === slide ? 'opacity-40' : 'opacity-0'}`} />
+        )) : c.hero_image_url && (
           <img src={c.hero_image_url} alt="" className="absolute inset-0 h-full w-full object-cover opacity-40" />
         )}
         <div className="absolute inset-0 bg-gradient-to-r from-black/60 via-black/30 to-transparent" />
@@ -72,6 +83,29 @@ export default function LandingPage() {
         </div>
         <div className="h-1.5 bg-brand" />
       </section>
+
+      {/* Destacados */}
+      {(data.featured?.length ?? 0) > 0 && (
+        <section className="mx-auto max-w-6xl px-4 py-14">
+          <h2 className="text-center text-3xl font-bold text-gray-900">{c.featured_title || 'Lo más pedido'}</h2>
+          <div className="mx-auto mt-2 h-1 w-16 rounded bg-brand" />
+          <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {data.featured!.map((it) => (
+              <article key={it.id} className="card-light overflow-hidden">
+                {it.image_url
+                  ? <img src={it.image_url} alt={it.name} className="aspect-[4/3] w-full object-cover" loading="lazy" />
+                  : <div className="flex aspect-[4/3] w-full items-center justify-center bg-gray-100"><UtensilsCrossed className="h-8 w-8 text-gray-300" /></div>}
+                <div className="p-4">
+                  <h3 className="font-semibold text-gray-900">{it.name}</h3>
+                  {it.description && <p className="mt-1 line-clamp-2 text-sm text-gray-600">{it.description}</p>}
+                  <p className="mt-2 font-bold text-brand">{formatMXN(it.price)}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+          {data.ordering && <div className="mt-8 text-center"><Link to="/pedir" className="btn-brand px-7 py-3"><ShoppingBag className="h-5 w-5" /> Pedir ahora</Link></div>}
+        </section>
+      )}
 
       {/* Acerca de */}
       {(c.about_text || c.about_title) && (

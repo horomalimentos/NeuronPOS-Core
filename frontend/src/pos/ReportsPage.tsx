@@ -5,7 +5,7 @@ import { api, errorMessage } from '../lib/api';
 import { downloadCsv } from '../lib/csv';
 import { formatDay, formatMXN } from '../lib/format';
 import { useAdmin } from '../restaurant/context';
-import { METHOD_KIND_LABEL, ORDER_TYPE_LABEL } from './lib';
+import { METHOD_KIND_LABEL, MOVEMENT_CATEGORY_LABEL, ORDER_TYPE_LABEL } from './lib';
 import type { MethodKind, OrderType } from './types';
 
 /**
@@ -16,7 +16,7 @@ import type { MethodKind, OrderType } from './types';
  */
 
 interface Totals {
-  orders: number; subtotal: number; discounts: number; tax: number; delivery_fees: number;
+  orders: number; subtotal: number; discounts: number; promotions?: number; tax: number; delivery_fees: number;
   total: number; tips: number; guests: number; average_ticket: number;
 }
 export interface Report {
@@ -30,8 +30,11 @@ export interface Report {
   by_hour: { hour: number; orders: number; total: number }[];
   by_weekday: { weekday: number; orders: number; total: number }[];
   by_payment_method: { id: string; name: string; kind: MethodKind; orders: number; amount: number; tips: number }[];
-  by_order_type: { order_type: OrderType; source: 'pos' | 'web'; orders: number; total: number }[];
+  by_order_type: { order_type: OrderType; source: 'pos' | 'web' | 'kiosko'; orders: number; total: number }[];
   by_branch: { branch_id: string; branch_name: string; orders: number; total: number; tips: number }[];
+  by_channel: { channel_id: string | null; name: string; orders: number; total: number; commission: number; net: number }[];
+  by_terminal?: { terminal: string; orders: number; payments: number; amount: number; tips: number }[];
+  cash_movements?: { category: string; kind: 'entrada' | 'salida'; movements: number; total: number }[];
   items: { menu_item_id: string; name: string; category: string | null; quantity: number; total: number; orders: number }[];
   categories: { category: string; quantity: number; total: number }[];
   modifiers: { group_name: string; name: string; quantity: number; total: number }[];
@@ -70,7 +73,7 @@ function presetRange(key: Preset, today: string): [string, string] {
 
 const pct = (part: number, whole: number) => (whole ? `${((part / whole) * 100).toFixed(1)}%` : '—');
 const typeLabel = (t: { order_type: OrderType; source: string }) =>
-  `${ORDER_TYPE_LABEL[t.order_type] || t.order_type}${t.source === 'web' ? ' (en línea)' : ''}`;
+  `${ORDER_TYPE_LABEL[t.order_type] || t.order_type}${t.source === 'web' ? ' (en línea)' : t.source === 'kiosko' ? ' (kiosko)' : ''}`;
 
 export function Delta({ now, before }: { now: number; before: number }) {
   if (!before) return <span className="text-xs text-gray-500">sin datos del periodo anterior</span>;
@@ -273,7 +276,7 @@ export default function ReportsPage() {
             <Stat label="Propinas" value={formatMXN(s.tips)} extra={<span className="text-xs text-gray-500">aparte de las ventas</span>} />
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat label="Descuentos" value={formatMXN(s.discounts)} extra={<span className="text-xs text-gray-500">{pct(s.discounts, s.subtotal)} del subtotal</span>} />
+            <Stat label="Descuentos" value={formatMXN(s.discounts)} extra={<span className="text-xs text-gray-500">{pct(s.discounts, s.subtotal)} del subtotal{s.promotions ? ` · promociones ${formatMXN(s.promotions)}` : ''}</span>} />
             <Stat label="IVA" value={formatMXN(s.tax)} />
             <Stat label="Canceladas" value={String(report.cancelled.orders)} extra={<span className="text-xs text-gray-500">{formatMXN(report.cancelled.total)}</span>} />
             <Stat label="Artículos cancelados" value={String(report.voided.items)} extra={<span className="text-xs text-gray-500">{formatMXN(report.voided.total)} ya enviados a cocina</span>} />
@@ -306,12 +309,29 @@ export default function ReportsPage() {
               <Table head={['Método', 'Órdenes', 'Cobrado', 'Propinas']}
                 rows={report.by_payment_method.map((m) => [m.name, m.orders, formatMXN(m.amount), formatMXN(m.tips)])} />
             </Section>
+            {(report.by_terminal?.length ?? 0) > 1 && (
+              <Section title="Por caja (terminal)"
+                onCsv={() => downloadCsv(file('cajas'), ['Caja', 'Órdenes', 'Pagos', 'Cobrado', 'Propinas'],
+                  report.by_terminal!.map((t) => [t.terminal, t.orders, t.payments, t.amount, t.tips]))}>
+                <Table head={['Caja', 'Órdenes', 'Cobrado', 'Propinas']}
+                  rows={report.by_terminal!.map((t) => [t.terminal, t.orders, formatMXN(t.amount), formatMXN(t.tips)])} />
+              </Section>
+            )}
             <Section title="Tipo de orden"
               onCsv={() => downloadCsv(file('tipos_de_orden'), ['Tipo', 'Órdenes', 'Ventas'], report.by_order_type.map((t) => [typeLabel(t), t.orders, t.total]))}>
               <Table head={['Tipo', 'Órdenes', 'Ventas', '%']}
                 rows={report.by_order_type.map((t) => [typeLabel(t), t.orders, formatMXN(t.total), pct(t.total, s.total)])} />
             </Section>
           </div>
+
+          {report.by_channel.some((c) => c.channel_id) && (
+            <Section title="Plataformas de delivery"
+              onCsv={() => downloadCsv(file('plataformas'), ['Plataforma', 'Órdenes', 'Ventas', 'Comisión', 'Neto'],
+                report.by_channel.map((c) => [c.name, c.orders, c.total, c.commission, c.net]))}>
+              <Table head={['Plataforma', 'Órdenes', 'Ventas', 'Comisión', 'Neto']}
+                rows={report.by_channel.map((c) => [c.name, c.orders, formatMXN(c.total), formatMXN(c.commission), formatMXN(c.net)])} />
+            </Section>
+          )}
 
           <Section title="Productos más vendidos"
             onCsv={() => downloadCsv(file('productos'), ['Producto', 'Categoría', 'Cantidad', 'Órdenes', 'Venta'],
@@ -349,6 +369,14 @@ export default function ReportsPage() {
               <Table head={['Persona', 'Órdenes', 'Ventas', 'Propinas']}
                 rows={report.staff.map((p) => [p.name, p.orders, formatMXN(p.total), formatMXN(p.tips)])} />
             </Section>
+            {(report.cash_movements?.length ?? 0) > 0 && (
+              <Section title="Efectivo de caja (entradas y salidas)"
+                onCsv={() => downloadCsv(file('movimientos_de_caja'), ['Tipo', 'Categoría', 'Movimientos', 'Total'],
+                  report.cash_movements!.map((m) => [m.kind, MOVEMENT_CATEGORY_LABEL[m.category] || m.category, m.movements, m.total]))}>
+                <Table head={['Movimiento', 'Cantidad', 'Total']}
+                  rows={report.cash_movements!.map((m) => [`${m.kind === 'salida' ? 'Salida' : 'Entrada'} · ${MOVEMENT_CATEGORY_LABEL[m.category] || m.category}`, m.movements, formatMXN(m.total)])} />
+              </Section>
+            )}
             {branches.length > 1 && !branchId && (
               <Section title="Sucursales"
                 onCsv={() => downloadCsv(file('sucursales'), ['Sucursal', 'Órdenes', 'Ventas', 'Propinas'],

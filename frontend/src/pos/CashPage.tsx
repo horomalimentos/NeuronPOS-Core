@@ -1,13 +1,15 @@
 import { ArrowDownCircle, ArrowUpCircle, Lock, Printer, Unlock } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Modal, PageHeader, Spinner } from '../components/ui';
-import { api, errorMessage } from '../lib/api';
+import { ApiError, api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
-import { useAdmin } from '../restaurant/context';
+import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
-import { formatDateTime, num, posPrefs, round2 } from './lib';
+import DenominationModal from './DenominationModal';
+import { MOVEMENT_CATEGORY_LABEL, formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
-import type { CashSession, CashSessionDetail } from './types';
+import DeviceBanner from './DeviceBanner';
+import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
 
 /**
@@ -53,12 +55,14 @@ export default function CashPage() {
         actions={<BranchSelect branches={branches} value={branchId} onChange={setBranchId} />}
       />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      <DeviceBanner branchId={branchId} onActive={(d) => { setTerminal(d.terminal); posPrefs.setTerminal(d.terminal); }} />
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <Field label="Terminal de este dispositivo">
           <input className="input w-48" value={terminal} maxLength={40}
             onChange={(e) => setTerminal(e.target.value)}
             onBlur={() => { const t = terminal.trim() || 'Caja 1'; setTerminal(t); posPrefs.setTerminal(t); }} />
         </Field>
+        {meHas(me, 'terminal_clip') && posCan.manage(me.user.role) && <ClipSerialField branchId={branchId} terminal={terminal} />}
         {openOthers.length > 0 && (
           <p className="pb-2 text-sm text-gray-400">Otras cajas abiertas: {openOthers.map((s) => (
             <button key={s.id} className="ml-1 text-brand underline" onClick={() => { setTerminal(s.terminal); posPrefs.setTerminal(s.terminal); }}>{s.terminal}</button>
@@ -114,6 +118,14 @@ export default function CashPage() {
 
 function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal: string; onOpened: () => void }) {
   const [cash, setCash] = useState('');
+  const [rate, setRate] = useState('');
+  const [usd, setUsd] = useState(false);
+  useEffect(() => {
+    api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => {
+      setUsd(r.payment_methods.some((m) => m.active && m.currency === 'USD'));
+    }).catch(() => undefined);
+    api<{ settings: PosSettings }>('/pos/settings').then((r) => setRate(String(num(r.settings.usd_rate)))).catch(() => undefined);
+  }, []);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   async function submit(e: FormEvent) {
@@ -121,7 +133,7 @@ function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal
     setSaving(true);
     setError('');
     try {
-      await api('/pos/cash-sessions/open', { method: 'POST', body: { branch_id: branchId, terminal, opening_cash: num(cash) } });
+      await api('/pos/cash-sessions/open', { method: 'POST', body: { branch_id: branchId, terminal, opening_cash: num(cash), usd_rate: rate ? num(rate) : undefined } });
       onOpened();
     } catch (err) {
       setError(errorMessage(err));
@@ -136,6 +148,11 @@ function OpenForm({ branchId, terminal, onOpened }: { branchId: string; terminal
       <Field label="Fondo inicial en efectivo">
         <input className="input text-lg font-semibold" type="number" inputMode="decimal" min="0" step="0.01" value={cash} onChange={(e) => setCash(e.target.value)} placeholder="0.00" autoFocus />
       </Field>
+      {usd && (
+        <Field label="Tipo de cambio del dólar" hint="Pesos por dólar para cobrar en este turno">
+          <input className="input" type="number" inputMode="decimal" min="0.01" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} />
+        </Field>
+      )}
       <Button type="submit" loading={saving} className="w-full py-3">Abrir caja</Button>
     </form>
   );
@@ -145,9 +162,23 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
   detail: CashSessionDetail; onChanged: () => void; onClosed: (d: CashSessionDetail) => void; onPrint: (d: CashSessionDetail) => void;
 }) {
   const { session, cut, movements } = detail;
-  const [mv, setMv] = useState({ kind: 'salida' as 'entrada' | 'salida', amount: '', reason: '' });
+  const [mv, setMv] = useState({ kind: 'salida' as 'entrada' | 'salida', amount: '', reason: '', category: 'compras' });
   const [counts, setCounts] = useState<Record<string, string>>({});
+  const [countDetail, setCountDetail] = useState<Record<string, Record<string, number>>>({});
+  const [counting, setCounting] = useState<CutLine | null>(null);
+  const [rate, setRate] = useState(session.usd_rate ? String(num(session.usd_rate)) : '');
+  const hasUsd = cut.methods.some((m) => m.currency === 'USD');
   const [notes, setNotes] = useState('');
+
+  async function saveRate() {
+    setError('');
+    try {
+      await api(`/pos/cash-sessions/${session.id}`, { method: 'PATCH', body: { usd_rate: num(rate) } });
+      onChanged();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -171,18 +202,31 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
     if (!window.confirm('¿Cerrar la caja con este corte?')) return;
     setBusy(true);
     setError('');
+    const send = (force: boolean) => api<CashSessionDetail>(`/pos/cash-sessions/${session.id}/close`, {
+      method: 'POST',
+      body: {
+        counts: cut.methods.filter((m) => counts[m.payment_method_id] !== undefined && counts[m.payment_method_id] !== '')
+          .map((m) => ({ payment_method_id: m.payment_method_id, counted: num(counts[m.payment_method_id]) })),
+        notes: notes || null,
+        count_detail: Object.keys(countDetail).length ? countDetail : undefined,
+        force: force || undefined,
+      },
+    });
     try {
-      const r = await api<CashSessionDetail>(`/pos/cash-sessions/${session.id}/close`, {
-        method: 'POST',
-        body: {
-          counts: cut.methods.filter((m) => counts[m.payment_method_id] !== undefined && counts[m.payment_method_id] !== '')
-            .map((m) => ({ payment_method_id: m.payment_method_id, counted: num(counts[m.payment_method_id]) })),
-          notes: notes || null,
-        },
-      });
-      onClosed(r);
+      onClosed(await send(false));
     } catch (err) {
-      setError(errorMessage(err));
+      // Ultima caja de la sucursal con cuentas sin cobrar: se avisa cuales.
+      const open = err instanceof ApiError && err.code === 'OPEN_ORDERS' ? (err.data?.orders as { folio: number; table_name: string | null; customer_name: string | null; total: string }[]) : null;
+      if (open && window.confirm(`${err instanceof Error ? err.message : ''}:\n\n${open.map((o) => `• Folio ${o.folio}${o.table_name ? ` · Mesa ${o.table_name}` : ''}${o.customer_name ? ` · ${o.customer_name}` : ''} · ${formatMXN(o.total)}`).join('\n')}\n\n¿Cerrar la caja de todos modos?`)) {
+        try {
+          onClosed(await send(true));
+          return;
+        } catch (err2) {
+          setError(errorMessage(err2));
+        }
+      } else if (!open) {
+        setError(errorMessage(err));
+      }
       setBusy(false);
     }
   }
@@ -202,16 +246,27 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
         <Stat label="Propinas" value={formatMXN(cut.total_tips)} />
         <Stat label="Efectivo esperado" value={formatMXN(cut.expected_cash)} strong />
       </div>
+      {hasUsd && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Field label="Tipo de cambio del dólar (este turno)">
+            <input className="input w-32" type="number" inputMode="decimal" min="0.01" step="0.0001" value={rate} onChange={(e) => setRate(e.target.value)} />
+          </Field>
+          <Button variant="secondary" onClick={saveRate} disabled={!rate || num(rate) === num(session.usd_rate)}>Guardar tipo de cambio</Button>
+        </div>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
           <h3 className="mb-3 font-semibold text-white">Entradas y salidas de efectivo</h3>
-          <form onSubmit={addMovement} className="mb-4 grid gap-2 sm:grid-cols-[auto_8rem_1fr_auto]">
+          <form onSubmit={addMovement} className="mb-4 grid gap-2 sm:grid-cols-[auto_8rem_auto_1fr_auto]">
             <select className="input" value={mv.kind} onChange={(e) => setMv({ ...mv, kind: e.target.value as 'entrada' | 'salida' })} aria-label="Tipo">
               <option value="salida">Salida</option>
               <option value="entrada">Entrada</option>
             </select>
             <input className="input" type="number" inputMode="decimal" min="0.01" step="0.01" required placeholder="Monto" value={mv.amount} onChange={(e) => setMv({ ...mv, amount: e.target.value })} />
+            <select className="input" value={mv.category} onChange={(e) => setMv({ ...mv, category: e.target.value })} aria-label="Categoría">
+              {Object.entries(MOVEMENT_CATEGORY_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
             <input className="input" required maxLength={200} placeholder="Motivo (ej. compra de hielo)" value={mv.reason} onChange={(e) => setMv({ ...mv, reason: e.target.value })} />
             <Button type="submit" loading={busy}>Agregar</Button>
           </form>
@@ -220,7 +275,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
               {movements.map((m) => (
                 <li key={m.id} className="flex items-center gap-2 py-2">
                   {m.kind === 'entrada' ? <ArrowDownCircle className="h-4 w-4 text-emerald-400" /> : <ArrowUpCircle className="h-4 w-4 text-red-400" />}
-                  <span className="flex-1 text-gray-200">{m.reason}<span className="block text-xs text-gray-500">{formatDateTime(m.created_at)} · {m.created_by_name}</span></span>
+                  <span className="flex-1 text-gray-200">{m.reason}<span className="block text-xs text-gray-500">{m.category && `${MOVEMENT_CATEGORY_LABEL[m.category]} · `}{formatDateTime(m.created_at)} · {m.created_by_name}</span></span>
                   <span className={m.kind === 'entrada' ? 'text-emerald-300' : 'text-red-300'}>{m.kind === 'entrada' ? '+' : '-'}{formatMXN(m.amount)}</span>
                 </li>
               ))}
@@ -240,8 +295,12 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
                 const diff = v === undefined || v === '' ? null : round2(num(v) - m.expected);
                 return (
                   <tr key={m.payment_method_id}>
-                    <td className="py-2 text-gray-200">{m.name}<span className="block text-xs text-gray-500">{m.payments} pagos{m.tips ? ` · propinas ${formatMXN(m.tips)}` : ''}</span></td>
-                    <td className="py-2 text-right text-gray-300">{formatMXN(m.expected)}</td>
+                    <td className="py-2 text-gray-200">{m.name}<span className="block text-xs text-gray-500">{m.payments} pagos{m.tips ? ` · propinas ${formatMXN(m.tips)}` : ''}</span>
+                      {m.kind === 'efectivo' && (
+                        <button type="button" className="text-xs text-brand hover:underline" onClick={() => setCounting(m)}>Contar billetes</button>
+                      )}
+                    </td>
+                    <td className="py-2 text-right text-gray-300">{formatMoney(m.expected, m.currency)}</td>
                     <td className="py-2 pl-2 text-right">
                       {m.kind === 'puntos' || m.kind === 'monedero' ? <span className="text-xs text-gray-500">No se cuenta</span> : (
                         <input className="input w-28 py-1.5 text-right" type="number" inputMode="decimal" min="0" step="0.01"
@@ -250,7 +309,7 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
                       )}
                     </td>
                     <td className={`py-2 text-right font-semibold ${diff === null ? 'text-gray-600' : diff < 0 ? 'text-red-400' : diff > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>
-                      {diff === null ? '—' : formatMXN(diff)}
+                      {diff === null ? '—' : formatMoney(diff, m.currency)}
                     </td>
                   </tr>
                 );
@@ -260,6 +319,15 @@ function OpenSessionPanel({ detail, onChanged, onClosed, onPrint }: {
           <Field label="Notas del corte"><textarea className="input" rows={2} maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
           <Button type="submit" variant="danger" loading={busy} className="mt-4 w-full">Cerrar caja</Button>
         </form>
+        {counting && (
+          <DenominationModal currency={counting.currency || 'MXN'} initial={countDetail[counting.currency || 'MXN']}
+            onClose={() => setCounting(null)}
+            onDone={(total, detail) => {
+              setCounts({ ...counts, [counting.payment_method_id]: total.toFixed(2) });
+              setCountDetail({ ...countDetail, [counting.currency || 'MXN']: detail });
+              setCounting(null);
+            }} />
+        )}
       </div>
     </div>
   );
@@ -299,9 +367,9 @@ function CutSummary({ detail }: { detail: CashSessionDetail }) {
               <td className="py-2 text-gray-200">{m.name}</td>
               <td className="py-2 text-right">{formatMXN(m.sales)}</td>
               <td className="py-2 text-right">{formatMXN(m.tips)}</td>
-              <td className="py-2 text-right">{formatMXN(m.expected)}</td>
-              <td className="py-2 text-right">{m.counted === undefined ? '—' : formatMXN(m.counted)}</td>
-              <td className={`py-2 text-right font-semibold ${num(m.difference) < 0 ? 'text-red-400' : num(m.difference) > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>{m.difference === undefined ? '—' : formatMXN(m.difference)}</td>
+              <td className="py-2 text-right">{formatMoney(m.expected, m.currency)}</td>
+              <td className="py-2 text-right">{m.counted === undefined ? '—' : formatMoney(m.counted, m.currency)}</td>
+              <td className={`py-2 text-right font-semibold ${num(m.difference) < 0 ? 'text-red-400' : num(m.difference) > 0 ? 'text-amber-300' : 'text-emerald-400'}`}>{m.difference === undefined ? '—' : formatMoney(m.difference, m.currency)}</td>
             </tr>
           ))}
         </tbody>
@@ -312,6 +380,38 @@ function CutSummary({ detail }: { detail: CashSessionDetail }) {
         </ul>
       )}
       {session.notes && <p className="rounded-lg bg-gray-800 p-3 text-gray-300">{session.notes}</p>}
+    </div>
+  );
+}
+
+/** Numero de serie de la terminal Clip de esta caja (lo configura el gerente). */
+function ClipSerialField({ branchId, terminal }: { branchId: string; terminal: string }) {
+  const [serial, setSerial] = useState('');
+  const [saved, setSaved] = useState('');
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    if (!branchId) return;
+    api<{ serial_number: string | null }>(`/pos/clip/terminal?branch_id=${branchId}&terminal=${encodeURIComponent(terminal)}`)
+      .then((r) => { setSerial(r.serial_number || ''); setSaved(r.serial_number || ''); }).catch(() => undefined);
+  }, [branchId, terminal]);
+  async function save() {
+    setMsg('');
+    try {
+      const r = await api<{ serial_number: string | null }>('/pos/clip/terminal', { method: 'PUT', body: { branch_id: branchId, terminal, serial_number: serial || null } });
+      setSaved(r.serial_number || '');
+      setSerial(r.serial_number || '');
+      setMsg(r.serial_number ? 'Terminal guardada' : 'Terminal quitada');
+    } catch (err) {
+      setMsg(errorMessage(err));
+    }
+  }
+  return (
+    <div className="flex items-end gap-2">
+      <Field label="Terminal Clip de esta caja (número de serie)">
+        <input className="input w-48 uppercase" value={serial} maxLength={40} placeholder="Ej. P8XXXXXXXX" onChange={(e) => setSerial(e.target.value)} />
+      </Field>
+      <Button variant="secondary" onClick={save} disabled={serial.toUpperCase() === saved}>Guardar</Button>
+      {msg && <span className="pb-2 text-sm text-gray-400">{msg}</span>}
     </div>
   );
 }

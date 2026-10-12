@@ -9,7 +9,7 @@ import { canManage, useAdmin } from './context';
 
 interface WebsiteData { content: SiteContent; gallery: GalleryImage[] }
 
-type TextKey = Exclude<keyof SiteContent, 'show_menu' | 'show_gallery'>;
+type TextKey = Exclude<keyof SiteContent, 'show_menu' | 'show_gallery' | 'show_featured' | 'hero_carousel' | 'featured_item_ids'>;
 
 const SECTIONS: { title: string; hint?: string; fields: { key: TextKey; label: string; long?: boolean; image?: boolean; placeholder?: string; max?: number }[] }[] = [
   {
@@ -67,6 +67,9 @@ export default function WebsitePage() {
   const [ok, setOk] = useState('');
   const [saving, setSaving] = useState(false);
   const [newImage, setNewImage] = useState({ image_url: '', caption: '' });
+  // Productos del menu para elegir destacados (si tiene punto de venta).
+  const [menuItems, setMenuItems] = useState<{ id: string; name: string; image_url: string | null }[]>([]);
+  useEffect(() => { api<{ items: { id: string; name: string; image_url: string | null; active: boolean }[] }>('/pos/menu').then((m) => setMenuItems(m.items)).catch(() => setMenuItems([])); }, []);
 
   const load = useCallback(() => {
     api<WebsiteData>('/website').then((d) => { setData(d); setForm(d.content); }).catch((e) => setError(errorMessage(e)));
@@ -158,6 +161,41 @@ export default function WebsitePage() {
               </label>
               <Field label="Título de la galería"><input className="input" maxLength={120} placeholder="Galería" value={form.gallery_title || ''} onChange={(e) => setForm({ ...form, gallery_title: e.target.value })} /></Field>
             </div>
+          </div>
+        </Section>
+        <Section title="Portada en carrusel y destacados" hint="El carrusel usa las fotos de la galería (necesita la galería visible y al menos 2 fotos).">
+          <div className="space-y-4">
+            <label className="flex items-center gap-3 text-sm text-gray-300">
+              <Toggle label="Portada en carrusel" checked={form.hero_carousel === true} onChange={(v) => setForm({ ...form, hero_carousel: v })} /> La portada rota entre las fotos de la galería
+            </label>
+            <label className="flex items-center gap-3 text-sm text-gray-300">
+              <Toggle label="Mostrar destacados" checked={form.show_featured === true} onChange={(v) => setForm({ ...form, show_featured: v })} /> Mostrar platillos destacados después de la portada
+            </label>
+            {form.show_featured && (
+              <>
+                <Field label="Título de los destacados"><input className="input" maxLength={120} placeholder="Lo más pedido" value={form.featured_title || ''} onChange={(e) => setForm({ ...form, featured_title: e.target.value })} /></Field>
+                {menuItems.length === 0 ? <p className="text-sm text-gray-500">Agrega productos en Menú para elegir destacados.</p> : (
+                  <div>
+                    <span className="label">Platillos (hasta 8, en el orden en que los marques)</span>
+                    <div className="grid max-h-64 gap-1 overflow-y-auto sm:grid-cols-2">
+                      {menuItems.map((it) => {
+                        const ids = form.featured_item_ids || [];
+                        const pos = ids.indexOf(it.id);
+                        return (
+                          <label key={it.id} className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm text-gray-300 hover:bg-gray-800/60">
+                            <input type="checkbox" checked={pos >= 0} disabled={pos < 0 && ids.length >= 8}
+                              onChange={(e) => setForm({ ...form, featured_item_ids: e.target.checked ? [...ids, it.id] : ids.filter((x) => x !== it.id) })} />
+                            {pos >= 0 && <span className="w-5 text-center text-xs font-bold text-brand">{pos + 1}</span>}
+                            <span className="truncate">{it.name}</span>
+                            {!it.image_url && <span className="ml-auto text-xs text-gray-600">sin foto</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </Section>
         <div className="sticky bottom-4 flex justify-end">
