@@ -1,9 +1,53 @@
-// Service worker de NeuronPOS: solo notificaciones push (adaptado de Horom).
-// No guarda nada en cache, asi que una actualizacion nunca se queda atorada.
+// Service worker de NeuronPOS: notificaciones push (adaptado de Horom) y, para
+// la caja sin internet, una copia del panel para abrirlo sin conexion.
+// Las paginas se piden primero a la red (una actualizacion nunca se queda
+// atorada) y solo si no hay red se usa la copia; los archivos de /assets
+// llevan hash en el nombre, asi que se guardan una vez y no cambian.
 // El backend manda { title, body, link, tag, icon, driver } (services/push.js).
 
+const SHELL = 'npc-shell-v1';
+const MAX_ASSETS = 150;
+
 self.addEventListener('install', () => self.skipWaiting());
-self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('activate', (event) => event.waitUntil(
+  caches.keys()
+    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('npc-shell-') && k !== SHELL).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim()),
+));
+
+async function trim(cache) {
+  const keys = (await cache.keys()).filter((r) => new URL(r.url).pathname.startsWith('/assets/'));
+  for (const req of keys.slice(0, Math.max(0, keys.length - MAX_ASSETS))) await cache.delete(req);
+}
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin || url.pathname.startsWith('/api/')) return;
+  // Paginas del panel: red primero; sin red, la ultima copia.
+  if (req.mode === 'navigate') {
+    if (!url.pathname.startsWith('/admin')) return;
+    event.respondWith(fetch(req).then((res) => {
+      if (res.ok) {
+        const copy = res.clone();
+        caches.open(SHELL).then((c) => c.put('/admin', copy));
+      }
+      return res;
+    }).catch(() => caches.open(SHELL).then((c) => c.match('/admin')).then((hit) => hit || Response.error())));
+    return;
+  }
+  // JS, CSS e imagenes con hash: de la copia si ya estan.
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(caches.open(SHELL).then(async (c) => {
+      const hit = await c.match(req);
+      if (hit) return hit;
+      const res = await fetch(req);
+      if (res.ok) { await c.put(req, res.clone()); await trim(c); }
+      return res;
+    }));
+  }
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
