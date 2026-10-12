@@ -14,7 +14,7 @@ export default function SignupShell({ icon, title, subtitle, children }: {
     <div className="relative min-h-screen overflow-hidden bg-gray-950 px-4 py-8">
       <div className="pointer-events-none absolute -right-40 -top-40 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
       <div className="relative mx-auto max-w-2xl">
-        <Link to={nayoPath()} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white">
+        <Link to={nayoPath('/socios')} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white">
           <ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" />
         </Link>
         <div className="card overflow-hidden shadow-2xl">
