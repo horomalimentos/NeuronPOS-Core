@@ -1,6 +1,6 @@
 // Modulo POS. Todas las rutas requieren usuario del restaurante y el modulo
 // 'pos' contratado (requireModule responde 402 si no). El menu tambien lo
-// usa un restaurante que solo esta en NeuronPOS Delivery (modulo marketplace).
+// usa un restaurante que solo esta en Nayo (modulo marketplace).
 import { Router } from 'express';
 import { authenticateUser } from '../../middleware/auth.js';
 import { requireAnyModule, requireModule } from '../../middleware/requireModule.js';

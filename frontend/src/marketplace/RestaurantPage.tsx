@@ -16,7 +16,7 @@ import { REASON_LABEL, type NearbyRestaurant } from './lib';
 interface Quote { totals: { subtotal: string | number; delivery_fee: string | number; total: string | number } }
 
 /**
- * Menu de un restaurante en NeuronPOS Delivery, carrito y datos de entrega.
+ * Menu de un restaurante en Nayo, carrito y datos de entrega.
  * Pago en efectivo al recibir o con tarjeta (Clip de NeuronPOS). El
  * servidor vuelve a valuar todo y rechaza el pedido si ya no hay
  * repartidores conectados que cubran al restaurante.
@@ -35,7 +35,7 @@ export default function RestaurantPage() {
   const load = useCallback(() => {
     const q = location ? `?lat=${location.latitude}&lng=${location.longitude}` : '';
     api<PortalMenu & { restaurant: NearbyRestaurant }>(`/marketplace/restaurants/${branchId}${q}`, { noRedirect: true })
-      .then((d) => { setData(d); document.title = `${d.restaurant.name} · NeuronPOS Delivery`; })
+      .then((d) => { setData(d); document.title = `${d.restaurant.name} · Nayo`; })
       .catch((e) => setError(errorMessage(e)));
   }, [branchId, location]);
   useEffect(() => { resetBranding(); load(); }, [load]);
@@ -49,7 +49,7 @@ export default function RestaurantPage() {
 
   return (
     <Page>
-      <Link to="/delivery" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Restaurantes</Link>
+      <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Restaurantes</Link>
       <header className="card mb-6 flex flex-wrap items-center gap-4 p-5">
         {r.logo_url ? <img src={r.logo_url} alt="" className="h-16 w-16 rounded-xl object-cover" /> : <div className="rounded-xl bg-gray-800 p-4"><Store className="h-8 w-8 text-gray-500" /></div>}
         <div className="min-w-0 flex-1">
@@ -123,7 +123,7 @@ export default function RestaurantPage() {
                 ordersStore.set([{ token, restaurant: r.name, at: new Date().toISOString() }, ...ordersStore.get()].slice(0, 10));
                 clearCart();
                 if (paymentUrl) window.location.assign(paymentUrl);
-                else navigate(`/delivery/pedido/${token}`);
+                else navigate(`/nayo/pedido/${token}`);
               }} onRefresh={load} />
           )}
         </aside>

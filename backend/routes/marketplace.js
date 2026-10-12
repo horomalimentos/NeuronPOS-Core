@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 1).
+// Nayo (fase 1).
 //
 // marketplacePublicRouter (sin tenant, /api/marketplace):
 //   - GET  /info         tarifas de envio y reglas publicas.
@@ -66,7 +66,7 @@ function readPhone(v, field = 'phone') {
   return phone;
 }
 
-const closedError = () => new HttpError(403, 'NeuronPOS Delivery no esta recibiendo registros por ahora', 'MARKETPLACE_DISABLED');
+const closedError = () => new HttpError(403, 'Nayo no esta recibiendo registros por ahora', 'MARKETPLACE_DISABLED');
 
 // ---------------------------------------------------------------------------
 // Publico
@@ -107,7 +107,7 @@ marketplacePublicRouter.post('/restaurants', signupLimiter, ah(async (req, res) 
       fields: {
         slug, name, status: 'active', activated_at: new Date().toISOString(),
         contact_name: admin.name, contact_email: admin.email, contact_phone: phone,
-        notes: 'Registro propio en NeuronPOS Delivery',
+        notes: 'Registro propio en Nayo',
       },
       moduleCodes: ['marketplace'],
       branchName: 'Matriz',
@@ -370,14 +370,14 @@ marketplaceRouter.post('/listings/:branchId/pause', requireRole('admin', 'gerent
         WHERE restaurant_id = $1 AND branch_id = $2`,
       [rid, req.params.branchId, minutes],
     );
-    if (!rowCount) throw notFound('Esta sucursal aun no tiene ficha en NeuronPOS Delivery', 'LISTING_NOT_FOUND');
+    if (!rowCount) throw notFound('Esta sucursal aun no tiene ficha en Nayo', 'LISTING_NOT_FOUND');
     return (await readListings(db, rid, req.params.branchId))[0];
   });
   res.json({ listing });
 }));
 
 // ---------------------------------------------------------------------------
-// Restaurante: pedidos que llegan por NeuronPOS Delivery
+// Restaurante: pedidos que llegan por Nayo
 // ---------------------------------------------------------------------------
 
 const STAFF = ['admin', 'gerente', 'cajero'];

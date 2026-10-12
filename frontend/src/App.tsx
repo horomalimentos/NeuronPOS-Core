@@ -102,12 +102,15 @@ export default function App() {
         {/* Instaladores de NeuronPOS y Neuron KDS */}
         <Route path="/descargas" element={<DownloadsPage />} />
 
-        {/* NeuronPOS Delivery: registro gratis de restaurantes y repartidores */}
-        <Route path="/delivery" element={<DeliveryLanding />} />
-        <Route path="/delivery/restaurantes" element={<RestaurantSignupPage />} />
-        <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
-        <Route path="/delivery/r/:branchId" element={<DeliveryRestaurantPage />} />
-        <Route path="/delivery/pedido/:token" element={<DeliveryTrackPage />} />
+        {/* Nayo: registro gratis de restaurantes y repartidores. /nayo es la
+            ruta canonica; /delivery sigue sirviendo para los enlaces viejos. */}
+        {['/nayo', '/delivery'].flatMap((base) => [
+          <Route key={base} path={base} element={<DeliveryLanding />} />,
+          <Route key={`${base}/restaurantes`} path={`${base}/restaurantes`} element={<RestaurantSignupPage />} />,
+          <Route key={`${base}/repartidores`} path={`${base}/repartidores`} element={<DriverSignupPage />} />,
+          <Route key={`${base}/r`} path={`${base}/r/:branchId`} element={<DeliveryRestaurantPage />} />,
+          <Route key={`${base}/pedido`} path={`${base}/pedido/:token`} element={<DeliveryTrackPage />} />,
+        ])}
         {/* Kiosko de autoservicio (pantalla completa, sesion de caja) */}
         <Route path="/autoservicio" element={<SelfOrderKiosk />} />
 
@@ -154,12 +157,12 @@ export default function App() {
             <Route path="eventos" element={<EventsPage />} />
             <Route path="eventos/:id" element={<EventDetailPage />} />
           </Route>
-          {/* Menu: lo usa el POS y tambien un restaurante que solo esta en NeuronPOS Delivery */}
+          {/* Menu: lo usa el POS y tambien un restaurante que solo esta en Nayo */}
           <Route element={<ModuleGate code={['pos', 'marketplace']} name="Menú" />}>
             <Route path="menu" element={<MenuAdminPage />} />
           </Route>
-          {/* NeuronPOS Delivery (modulo marketplace, sin costo) */}
-          <Route element={<ModuleGate code="marketplace" name="NeuronPOS Delivery" />}>
+          {/* Nayo (modulo marketplace, sin costo) */}
+          <Route element={<ModuleGate code="marketplace" name="Nayo" />}>
             <Route path="delivery" element={<ListingPage />} />
           </Route>
           {/* Clientes: modulos lealtad y monedero */}

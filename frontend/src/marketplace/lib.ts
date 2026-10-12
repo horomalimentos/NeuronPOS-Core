@@ -1,6 +1,6 @@
 import type { Point } from '../components/ZoneMap';
 
-/** Reglas publicas de NeuronPOS Delivery (GET /marketplace/info). */
+/** Reglas publicas de Nayo (GET /marketplace/info). */
 export interface MarketplaceInfo {
   enabled: boolean;
   driver_share_pct: number;

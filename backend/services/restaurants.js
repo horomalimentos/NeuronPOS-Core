@@ -47,7 +47,7 @@ export async function getDeliverySettings(db, restaurantId) {
 }
 
 /**
- * Alta de un restaurante (Panel o registro en NeuronPOS Delivery): la fila,
+ * Alta de un restaurante (Panel o registro en Nayo): la fila,
  * un registro por modulo del catalogo (habilitados los de moduleCodes),
  * ajustes por defecto, la primera sucursal y, si viene, su administrador.
  * fields: columnas de restaurants ya validadas. Regresa { id, branchId, userId }.

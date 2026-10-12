@@ -22,7 +22,7 @@ import type { Point } from '../components/ZoneMap';
 
 const POLL_MS = 15000;
 
-/** Datos del repartidor de la flota / NeuronPOS Delivery (GET /fleet/me). */
+/** Datos del repartidor de la flota / Nayo (GET /fleet/me). */
 interface FleetMe {
   id: string; name: string; on_duty: boolean; status: DriverStatus; self_registered: boolean;
   base: Point | null; radius_km: number | null; review_note: string | null;
@@ -123,7 +123,7 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
           <Button type="submit" loading={loading} className="w-full">Entrar</Button>
           {tab === 'flota' && (
             <p className="text-center text-sm text-gray-400">
-              ¿Quieres repartir con NeuronPOS Delivery? <Link to="/delivery/repartidores" className="font-semibold text-brand">Regístrate</Link>
+              ¿Quieres repartir con Nayo? <Link to="/nayo/repartidores" className="font-semibold text-brand">Regístrate</Link>
             </p>
           )}
         </form>
@@ -467,7 +467,7 @@ function FinishSheet({ job, mode, fleet, onClose, onConfirm }: {
 }
 
 // ---------------------------------------------------------------------------
-// NeuronPOS Delivery: estado del registro y zona de reparto
+// Nayo: estado del registro y zona de reparto
 // ---------------------------------------------------------------------------
 
 function ReviewNotice({ me }: { me: FleetMe }) {

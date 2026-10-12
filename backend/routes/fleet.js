@@ -87,7 +87,7 @@ router.get('/me', ah(async (req, res) => {
   res.json({ driver: driverMe(req.fleetDriver), ...data });
 }));
 
-// Zona de trabajo (NeuronPOS Delivery): epicentro y km a la redonda.
+// Zona de trabajo (Nayo): epicentro y km a la redonda.
 router.put('/zone', ah(async (req, res) => {
   const body = req.body || {};
   const base = readPoint(body.base, 'base');
@@ -187,7 +187,7 @@ router.post('/offers/:id/decline', ah(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-// NeuronPOS Delivery: pedidos de la zona, entrega y cuenta del repartidor.
+// Nayo: pedidos de la zona, entrega y cuenta del repartidor.
 // ---------------------------------------------------------------------------
 
 router.get('/marketplace', ah(async (req, res) => {

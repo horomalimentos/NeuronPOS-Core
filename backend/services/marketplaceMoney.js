@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 3): el repartidor y el dinero.
+// Nayo (fase 3): el repartidor y el dinero.
 //
 // - Pedidos disponibles para un repartidor: aceptados o listos, sin
 //   repartidor, del restaurante dentro de su radio. Los de efectivo no se le
@@ -272,8 +272,8 @@ export async function createOrderCheckout(marketplaceOrderId) {
     const row = await createLink(db, {
       purpose: 'pedido',
       amount: Number(m.total),
-      description: `NeuronPOS Delivery - ${m.name}`,
-      back: `${platformSiteUrl()}/delivery/pedido/${m.public_token}`,
+      description: `Nayo - ${m.name}`,
+      back: `${platformSiteUrl()}/nayo/pedido/${m.public_token}`,
       orderId: m.id,
     });
     return { payment_url: row.payment_url, expires_at: row.expires_at };
@@ -290,7 +290,7 @@ export async function createDebtCheckout(driverId, amount = null) {
     const min = Math.min(10, debt);
     if (!Number.isFinite(pay) || pay < min || pay > debt) throw badRequest(`Paga de $${min.toFixed(2)} a $${debt.toFixed(2)}`, 'INVALID_AMOUNT');
     const row = await createLink(db, {
-      purpose: 'adeudo', amount: pay, description: 'NeuronPOS Delivery - pago de adeudo', back: `${platformSiteUrl()}/repartidor`, driverId,
+      purpose: 'adeudo', amount: pay, description: 'Nayo - pago de adeudo', back: `${platformSiteUrl()}/repartidor`, driverId,
     });
     return { payment_url: row.payment_url, amount: pay, expires_at: row.expires_at };
   });

@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 2) contra Postgres: el cliente ve los
+// Nayo (fase 2) contra Postgres: el cliente ve los
 // restaurantes cercanos y pide. Cubre: sin repartidor en turno que cubra al
 // restaurante no se puede pedir (como en Horom); envio por km de la tabla;
 // precios del servidor (se ignora el precio que mande el cliente), pedido
@@ -14,7 +14,7 @@ const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const LEJOS = { latitude: 31.8199, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let branchId; let taco; let salsaVerde; let driverToken; let driverId;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });

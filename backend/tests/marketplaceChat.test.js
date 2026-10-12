@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 4) contra Postgres: chat de tres partes por pedido.
+// Nayo (fase 4) contra Postgres: chat de tres partes por pedido.
 // Cubre: cliente (token), restaurante (RLS) y repartidor (solo el que lo
 // lleva) leen y escriben; otro repartidor u otro restaurante no; el
 // restaurante no puede escribir como cliente; al terminar es solo lectura.
@@ -10,7 +10,7 @@ const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: fase 4 (chat del pedido)', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 4 (chat del pedido)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let R2; let branchId; let taco; let juan; let pedro; let order; let mid;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });

@@ -11,7 +11,7 @@ import SignupShell from './SignupShell';
 import ZoneFields from './ZoneFields';
 
 /**
- * Registro de repartidor de NeuronPOS Delivery: datos, vehiculo, epicentro y
+ * Registro de repartidor de Nayo: datos, vehiculo, epicentro y
  * km a la redonda. Queda en revision hasta que NeuronPOS lo aprueba; mientras
  * puede entrar a su app (/repartidor) y ver el estado.
  */
@@ -27,7 +27,7 @@ export default function DriverSignupPage() {
 
   useEffect(() => {
     resetBranding();
-    document.title = 'Reparte con NeuronPOS Delivery';
+    document.title = 'Reparte con Nayo';
     api<MarketplaceInfo>('/marketplace/info', { noRedirect: true }).then(setInfo).catch(() => {});
   }, []);
 

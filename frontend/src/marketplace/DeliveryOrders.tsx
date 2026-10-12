@@ -21,7 +21,7 @@ const LABEL: Record<DeliveryOrder['status'], string> = {
 const POLL_MS = 15000;
 
 /**
- * Pedidos que llegan por NeuronPOS Delivery: aceptar (entra a cocina) o
+ * Pedidos que llegan por Nayo: aceptar (entra a cocina) o
  * rechazar con motivo, y marcar listo para que el repartidor lo recoja.
  * El repartidor paga la comida al recogerla.
  */

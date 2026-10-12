@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 2): restaurantes cercanos, menu, cotizacion y
+// Nayo (fase 2): restaurantes cercanos, menu, cotizacion y
 // alta del pedido del cliente.
 //
 // Un restaurante se puede pedir si su ficha esta publicada (sin bloqueo ni
@@ -113,7 +113,7 @@ function evaluate(c, point, { settings, tiers, drivers }) {
 
 async function context(db) {
   const settings = await getMarketplaceSettings(db);
-  if (!settings.enabled) throw conflict('NeuronPOS Delivery no esta recibiendo pedidos por ahora', 'MARKETPLACE_DISABLED');
+  if (!settings.enabled) throw conflict('Nayo no esta recibiendo pedidos por ahora', 'MARKETPLACE_DISABLED');
   return { settings, tiers: await listFeeTiers(db), drivers: await onlineDrivers(db) };
 }
 
@@ -134,7 +134,7 @@ export async function restaurantFor(branchId, point) {
   return withPlatform(async (db) => {
     const ctx = await context(db);
     const [c] = await loadCandidates(db, { branchId });
-    if (!c) throw notFound('Este restaurante no esta disponible en NeuronPOS Delivery', 'LISTING_NOT_FOUND');
+    if (!c) throw notFound('Este restaurante no esta disponible en Nayo', 'LISTING_NOT_FOUND');
     return point ? evaluate(c, point, ctx) : { ...evaluate(c, c.point, ctx), distance_km: null, delivery_fee: null, can_order: false, reason: 'sin_ubicacion' };
   });
 }
@@ -163,7 +163,7 @@ export function readMarketplaceOrder(body = {}, { quote = false } = {}) {
   };
   if (!input.location) throw badRequest('Marca tu domicilio en el mapa', 'LOCATION_REQUIRED');
   if (input.payment_method === 'tarjeta') {
-    if (!cardPaymentsAvailable()) throw badRequest('Por ahora NeuronPOS Delivery solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
+    if (!cardPaymentsAvailable()) throw badRequest('Por ahora Nayo solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
     input.pay_with = null;
   }
   if (input.pay_with !== null && (!Number.isFinite(input.pay_with) || input.pay_with < 0 || input.pay_with > 100000)) {

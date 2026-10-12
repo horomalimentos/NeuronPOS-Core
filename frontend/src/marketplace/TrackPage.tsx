@@ -29,7 +29,7 @@ const STEPS: { key: Status; label: string; Icon: typeof Check }[] = [
 const POLL_MS = 15000;
 const PAY_POLL_MS = 4000;
 
-/** Seguimiento del pedido de NeuronPOS Delivery (/delivery/pedido/:token). */
+/** Seguimiento del pedido de Nayo (/nayo/pedido/:token). */
 export default function TrackPage() {
   const { token = '' } = useParams();
   const [params] = useSearchParams();
@@ -43,7 +43,7 @@ export default function TrackPage() {
   }, [token]);
   useEffect(() => {
     resetBranding();
-    document.title = 'Tu pedido · NeuronPOS Delivery';
+    document.title = 'Tu pedido · Nayo';
     load();
   }, [load]);
   // Esperando el pago: se consulta mas seguido (el servidor concilia con Clip).
@@ -58,7 +58,7 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link to="/delivery" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> NeuronPOS Delivery</Link>
+        <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Nayo</Link>
         {!o ? (error ? <Alert>{error}</Alert> : <Spinner />) : (
           <div className="space-y-4">
             <section className="card p-5">

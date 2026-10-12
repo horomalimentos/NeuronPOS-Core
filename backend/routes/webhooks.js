@@ -1,6 +1,6 @@
 // Webhooks de Clip.
 //
-//   POST /api/webhooks/clip/plataforma     cobros de suscripcion y de NeuronPOS Delivery (cuenta de la plataforma)
+//   POST /api/webhooks/clip/plataforma     cobros de suscripcion y de Nayo (cuenta de la plataforma)
 //   POST /api/webhooks/clip/r/:restaurante pagos de pedidos (cuenta del restaurante; id o slug)
 //
 // Como en el NeuronPOS original, el cuerpo del webhook NO se cree: solo
@@ -52,7 +52,7 @@ async function handle(req, res, scope, webhookSecret) {
   let matched = false;
   try {
     let r = checkoutId ? await reconcileCheckoutId(scope, checkoutId) : { matched: false };
-    // La cuenta de la plataforma tambien cobra NeuronPOS Delivery (pedidos con tarjeta y adeudos).
+    // La cuenta de la plataforma tambien cobra Nayo (pedidos con tarjeta y adeudos).
     if (!r.matched && checkoutId && scope.kind === 'platform') r = await reconcileMarketplaceCheckoutId(checkoutId);
     matched = r.matched;
   } catch (err) {

@@ -48,7 +48,7 @@ export function ChatButton({ chatKey, count, title, me, path, call, className = 
 }
 
 /**
- * Chat de tres partes de un pedido de NeuronPOS Delivery. path es la ruta de
+ * Chat de tres partes de un pedido de Nayo. path es la ruta de
  * mensajes de quien lo usa (cliente por token, restaurante o repartidor).
  */
 export default function OrderChat({ me, path, call, onSeen }: {

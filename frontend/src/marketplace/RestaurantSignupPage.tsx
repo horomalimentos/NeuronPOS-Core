@@ -9,7 +9,7 @@ import SignupShell from './SignupShell';
 interface Created { restaurant: { id: string; slug: string; name: string }; admin_url: string }
 
 /**
- * Registro gratis de un restaurante en NeuronPOS Delivery: datos del
+ * Registro gratis de un restaurante en Nayo: datos del
  * negocio, ubicacion en el mapa y la cuenta del administrador. Crea su
  * cuenta de NeuronPOS (solo con el modulo Delivery, sin costo) y le da la
  * direccion de su panel para subir menu y horario.
@@ -20,7 +20,7 @@ export default function RestaurantSignupPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Created | null>(null);
-  useEffect(() => { resetBranding(); document.title = 'Registra tu restaurante · NeuronPOS Delivery'; }, []);
+  useEffect(() => { resetBranding(); document.title = 'Registra tu restaurante · Nayo'; }, []);
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
 
   async function submit(e: FormEvent) {
@@ -46,7 +46,7 @@ export default function RestaurantSignupPage() {
     return (
       <SignupShell icon={<CheckCircle2 className="h-8 w-8" />} title="¡Listo!" subtitle={`${done.restaurant.name} ya tiene su cuenta`}>
         <div className="space-y-4 text-sm text-gray-300">
-          <p>Entra a tu panel con tu correo y contraseña. Antes de aparecer en NeuronPOS Delivery te falta:</p>
+          <p>Entra a tu panel con tu correo y contraseña. Antes de aparecer en Nayo te falta:</p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>Subir tu menú (Menú).</li>
             <li>Poner tu horario (Sucursales › Horario).</li>
