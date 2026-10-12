@@ -89,6 +89,11 @@ CLIP_API_KEY=
 CLIP_SECRET_KEY=
 CLIP_WEBHOOK_SECRET=
 
+# Cuenta de Stripe de la plataforma (opcional): si esta, mensualidades y Nayo
+# se cobran con Stripe en vez de Clip.
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+
 # NO cambiar ni perder: cifra las cuentas de Clip de los restaurantes. Respaldala.
 PAYMENT_SECRETS_KEY=$(openssl rand -base64 32)
 

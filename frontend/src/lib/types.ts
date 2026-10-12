@@ -120,7 +120,7 @@ export interface Invoice {
   amount_mxn: string;
   status: InvoiceStatus;
   paid_at: string | null;
-  paid_method: 'clip' | 'manual' | 'sin_cargo' | null;
+  paid_method: 'clip' | 'stripe' | 'manual' | 'sin_cargo' | null;
   paid_reference: string | null;
   paid_note: string | null;
   last_sent_at: string | null;
@@ -147,6 +147,8 @@ export interface PlatformSettings {
   billing_auto: boolean;
   billing_timezone: string;
   clip: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string; restaurant_webhook_url_example: string };
+  stripe: { configured: boolean; test_mode: boolean; webhook_secret_configured: boolean; webhook_url: string };
+  provider: 'stripe' | 'clip' | null;
   secrets_key_configured: boolean;
 }
 

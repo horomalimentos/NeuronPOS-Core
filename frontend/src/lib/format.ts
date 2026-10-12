@@ -25,7 +25,7 @@ export const INVOICE_STATUS_STYLE = {
   paid: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/30',
   void: 'bg-gray-500/15 text-gray-300 ring-gray-500/30',
 } as const;
-export const PAID_METHOD_LABEL = { clip: 'Clip', manual: 'Manual', sin_cargo: 'Sin cargo' } as const;
+export const PAID_METHOD_LABEL = { clip: 'Clip', stripe: 'Stripe', manual: 'Manual', sin_cargo: 'Sin cargo' } as const;
 
 /** Fecha de calendario 'YYYY-MM-DD' sin correrse por la zona horaria del navegador. */
 export const formatDay = (v: string | null | undefined) => {

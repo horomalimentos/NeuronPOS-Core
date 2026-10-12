@@ -77,7 +77,7 @@ export default function MarketplaceSection({ onDuty }: { onDuty: boolean }) {
     <section className="space-y-3">
       <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">Nayo</h2>
       {error && <Alert>{error}</Alert>}
-      {back === 'ok' && <Alert kind="success">Recibimos tu pago. Tu saldo se actualiza en cuanto Clip lo confirma.</Alert>}
+      {back === 'ok' && <Alert kind="success">Recibimos tu pago. Tu saldo se actualiza en cuanto se confirma.</Alert>}
 
       <div className={`card p-4 ${board.cash_blocked ? 'border-red-700/60' : ''}`}>
         <div className="flex items-start justify-between gap-3">
@@ -221,7 +221,7 @@ function PayDebt({ debt, onClose }: { debt: number; onClose: () => void }) {
   return (
     <Modal title="Pagar adeudo" onClose={onClose}>
       <div className="space-y-3">
-        <p className="text-sm text-gray-400">Debes {formatMXN(debt)}. Puedes pagar todo o una parte con tarjeta (Clip).</p>
+        <p className="text-sm text-gray-400">Debes {formatMXN(debt)}. Puedes pagar todo o una parte con tarjeta.</p>
         <Field label="Monto"><input className="input" type="number" min={1} max={debt} step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
         {error && <Alert>{error}</Alert>}
         <Button className="w-full" loading={busy} onClick={pay}><CreditCard className="h-4 w-4" /> Ir a pagar</Button>

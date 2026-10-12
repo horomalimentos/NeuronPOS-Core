@@ -3,6 +3,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import { env } from '../config/env.js';
 import {
   createStripeClient, formEncode, normalizeStripeStatus, setStripeTransport, verifyStripeSignature,
 } from '../services/stripe/client.js';
@@ -40,8 +41,14 @@ test('sin llave o con error de Stripe lanza StripeError', async () => {
 });
 
 test('en pruebas nunca usa la API real', async () => {
-  await assert.rejects(createStripeClient({ secretKey: 'sk' }).createCheckout({ amount: 10, description: 'x', redirect: {} }),
-    { code: 'STRIPE_DISABLED_IN_TESTS' });
+  const was = env.isTest;
+  env.isTest = true;
+  try {
+    await assert.rejects(createStripeClient({ secretKey: 'sk' }).createCheckout({ amount: 10, description: 'x', redirect: {} }),
+      { code: 'STRIPE_DISABLED_IN_TESTS' });
+  } finally {
+    env.isTest = was;
+  }
 });
 
 test('normaliza el estado de la sesion', () => {
