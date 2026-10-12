@@ -115,3 +115,11 @@ export async function createRestaurant(ctx, owner, slug, { modules = [], status 
   if (login.status !== 200) throw new Error(`login fallo: ${JSON.stringify(login.body)}`);
   return { id: res.body.restaurant.id, slug, email, password, token: login.body.token, detail: res.body };
 }
+
+/** Cliente de Nayo registrado y con el correo ya confirmado; regresa su token. */
+export async function nayoShopper(ctx, body) {
+  const r = await ctx.request('POST', '/api/marketplace/account/register', { body });
+  const { withPlatform } = await import('../config/database.js');
+  await withPlatform((db) => db.query('UPDATE nayo_customers SET email_verified_at = now() WHERE id = $1', [r.body.customer.id]));
+  return r.body.token;
+}

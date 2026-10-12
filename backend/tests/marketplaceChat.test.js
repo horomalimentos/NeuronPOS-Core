@@ -4,7 +4,7 @@
 // restaurante no puede escribir como cliente; al terminar es solo lectura.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SKIP_DB, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, ownerToken, setupDb, nayoShopper } from './helpers.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
@@ -34,9 +34,7 @@ describe('Nayo: fase 4 (chat del pedido)', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
-    shopper = (await ctx.request('POST', '/api/marketplace/account/register', {
-      body: { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' },
-    })).body.token;
+    shopper = await nayoShopper(ctx, { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' });
     owner = await ownerToken(ctx);
     R = await signup('Tacos Pepa', 'pepa@tacos.test');
     R2 = await signup('Sushi Ken', 'ken@sushi.test');

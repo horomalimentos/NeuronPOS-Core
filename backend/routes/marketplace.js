@@ -38,7 +38,10 @@ import {
 import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
-import { sendNayoOrderReceived, sendNayoReset, sendNayoWelcome } from '../services/nayoEmails.js';
+import { verifyGoogleIdToken } from '../services/googleSignIn.js';
+import {
+  sendNayoOrderReceived, sendNayoReset, sendNayoVerifyCode, sendNayoWelcome,
+} from '../services/nayoEmails.js';
 import { RESET_TTL_MINUTES, hashToken, readResetToken } from '../services/passwordReset.js';
 import { loadMenu } from './pos/menu.js';
 import { restaurantSiteUrl } from '../services/urls.js';
@@ -245,7 +248,29 @@ const loginLimiter = rateLimit({
   message: { error: 'Demasiados intentos. Espera unos minutos.', code: 'RATE_LIMITED' },
 });
 
-const ACCOUNT_COLUMNS = 'id, name, phone, email';
+const ACCOUNT_COLUMNS = 'id, name, phone, email, (email_verified_at IS NOT NULL) AS email_verified';
+
+// Verificacion del correo: codigo de 6 digitos, vence en 15 minutos, 5 intentos.
+const VERIFY_MINUTES = 15;
+const VERIFY_ATTEMPTS = 5;
+
+/** Genera y manda un codigo nuevo (no mas de uno por minuto). */
+async function sendVerifyCode(db, customer) {
+  const c = (await db.query(
+    'SELECT verify_expires_at FROM nayo_customers WHERE id = $1 AND email_verified_at IS NULL FOR UPDATE', [customer.id],
+  )).rows[0];
+  if (!c) return false;
+  const issuedAt = c.verify_expires_at ? new Date(c.verify_expires_at).getTime() - VERIFY_MINUTES * 60000 : 0;
+  if (Date.now() - issuedAt < 60000) return false;
+  const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+  await db.query(
+    `UPDATE nayo_customers SET verify_code_hash = $2, verify_expires_at = now() + make_interval(mins => $3::int), verify_attempts = 0
+      WHERE id = $1`,
+    [customer.id, hashToken(`${customer.id}:${code}`), VERIFY_MINUTES],
+  );
+  void sendNayoVerifyCode(customer, code, VERIFY_MINUTES);
+  return true;
+}
 
 marketplacePublicRouter.post('/account/register', signupLimiter, ah(async (req, res) => {
   const body = req.body || {};
@@ -255,13 +280,14 @@ marketplacePublicRouter.post('/account/register', signupLimiter, ah(async (req, 
     const exists = await db.query('SELECT 1 FROM nayo_customers WHERE email = $1', [account.email]);
     if (exists.rowCount) throw new HttpError(409, 'Ya hay una cuenta con ese correo; inicia sesion', 'EMAIL_TAKEN');
     const hash = await bcrypt.hash(account.password, 12);
-    return (await db.query(
+    const row = (await db.query(
       `INSERT INTO nayo_customers (name, phone, email, password_hash, last_login_at)
        VALUES ($1, $2, $3, $4, now()) RETURNING ${ACCOUNT_COLUMNS}`,
       [account.name, phone, account.email, hash],
     )).rows[0];
+    await sendVerifyCode(db, row);
+    return row;
   });
-  void sendNayoWelcome(customer);
   res.status(201).json({ token: signNayoToken(customer), customer });
 }));
 
@@ -296,7 +322,7 @@ marketplacePublicRouter.post('/account/reset', loginLimiter, ah(async (req, res)
   const hash = await bcrypt.hash(password, 12);
   const customer = await withPlatform(async (db) => (await db.query(
     `UPDATE nayo_customers SET password_hash = $2, password_changed_at = now(), reset_token_hash = NULL, reset_expires_at = NULL,
-            last_login_at = now(), updated_at = now()
+            email_verified_at = COALESCE(email_verified_at, now()), last_login_at = now(), updated_at = now()
       WHERE reset_token_hash = $1 AND reset_expires_at > now() AND active
       RETURNING ${ACCOUNT_COLUMNS}`,
     [hashToken(token), hash],
@@ -314,13 +340,91 @@ marketplacePublicRouter.post('/account/login',
   const row = await withPlatform(async (db) => (await db.query(
     `SELECT ${ACCOUNT_COLUMNS}, password_hash, active FROM nayo_customers WHERE email = $1`, [email],
   )).rows[0]);
+  if (row && !row.password_hash) {
+    throw new HttpError(401, 'Esta cuenta entra con Google. Usa "Continuar con Google" o pide una contraseña en ¿Olvidaste tu contraseña?', 'USE_GOOGLE');
+  }
   if (!row || !(await bcrypt.compare(password, row.password_hash))) {
     throw new HttpError(401, 'Correo o contrasena incorrectos', 'INVALID_CREDENTIALS');
   }
   if (!row.active) throw new HttpError(403, 'Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
   await withPlatform((db) => db.query('UPDATE nayo_customers SET last_login_at = now() WHERE id = $1', [row.id]));
-  const customer = { id: row.id, name: row.name, phone: row.phone, email: row.email };
+  const customer = { id: row.id, name: row.name, phone: row.phone, email: row.email, email_verified: row.email_verified };
   res.json({ token: signNayoToken(customer), customer });
+}));
+
+// Como se puede entrar: el boton de Google sale solo si hay GOOGLE_CLIENT_ID.
+marketplacePublicRouter.get('/account/options', (req, res) => {
+  res.json({ google_client_id: env.googleClientId || null });
+});
+
+// Continuar con Google: entra a la cuenta ligada a esa persona de Google; si no
+// hay, liga la cuenta con el mismo correo (Google ya lo verifico) o crea una
+// nueva sin contrasena ni telefono (el telefono se pide en el primer pedido).
+marketplacePublicRouter.post('/account/google', loginLimiter, ah(async (req, res) => {
+  const g = await verifyGoogleIdToken((req.body || {}).credential);
+  const { customer, created } = await withPlatform(async (db) => {
+    const found = (await db.query(
+      `SELECT ${ACCOUNT_COLUMNS}, active, google_sub FROM nayo_customers WHERE google_sub = $1 OR email = $2
+        ORDER BY (google_sub = $1) DESC NULLS LAST LIMIT 1 FOR UPDATE`,
+      [g.sub, g.email],
+    )).rows[0];
+    if (found) {
+      if (!found.active) throw new HttpError(403, 'Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
+      if (found.google_sub && found.google_sub !== g.sub) {
+        throw new HttpError(409, 'Ese correo ya está ligado a otra cuenta de Google', 'GOOGLE_MISMATCH');
+      }
+      const row = (await db.query(
+        `UPDATE nayo_customers SET google_sub = $2, email_verified_at = COALESCE(email_verified_at, now()), last_login_at = now(), updated_at = now()
+          WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+        [found.id, g.sub],
+      )).rows[0];
+      return { customer: row, created: false };
+    }
+    const row = (await db.query(
+      `INSERT INTO nayo_customers (name, email, google_sub, email_verified_at, last_login_at)
+       VALUES ($1, $2, $3, now(), now()) RETURNING ${ACCOUNT_COLUMNS}`,
+      [g.name, g.email, g.sub],
+    )).rows[0];
+    return { customer: row, created: true };
+  });
+  if (created) void sendNayoWelcome(customer);
+  res.status(created ? 201 : 200).json({ token: signNayoToken(customer), customer });
+}));
+
+// Confirmar el correo con el codigo que le mandamos.
+marketplacePublicRouter.post('/account/verify', loginLimiter, authenticateNayo, ah(async (req, res) => {
+  const me = req.nayoCustomer;
+  if (me.email_verified) return res.json({ customer: me });
+  const code = String((req.body || {}).code || '').replace(/\D/g, '');
+  const customer = await withPlatform(async (db) => {
+    const c = (await db.query(
+      'SELECT verify_code_hash, verify_expires_at, verify_attempts FROM nayo_customers WHERE id = $1 FOR UPDATE', [me.id],
+    )).rows[0];
+    if (!c.verify_code_hash || new Date(c.verify_expires_at) < new Date() || c.verify_attempts >= VERIFY_ATTEMPTS) {
+      throw badRequest('El código ya venció. Pide otro.', 'VERIFY_CODE_EXPIRED');
+    }
+    const a = hashToken(`${me.id}:${code}`);
+    const b = c.verify_code_hash;
+    if (code.length !== 6 || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      // Sin throw aqui: la transaccion debe guardar el intento.
+      await db.query('UPDATE nayo_customers SET verify_attempts = verify_attempts + 1 WHERE id = $1', [me.id]);
+      return null;
+    }
+    return (await db.query(
+      `UPDATE nayo_customers SET email_verified_at = now(), verify_code_hash = NULL, verify_expires_at = NULL, verify_attempts = 0, updated_at = now()
+        WHERE id = $1 RETURNING ${ACCOUNT_COLUMNS}`,
+      [me.id],
+    )).rows[0];
+  });
+  if (!customer) throw badRequest('Ese código no es correcto', 'INVALID_VERIFY_CODE');
+  void sendNayoWelcome(customer);
+  return res.json({ customer });
+}));
+
+marketplacePublicRouter.post('/account/verify/resend', loginLimiter, authenticateNayo, ah(async (req, res) => {
+  if (req.nayoCustomer.email_verified) return res.json({ ok: true, sent: false });
+  const sent = await withPlatform((db) => sendVerifyCode(db, req.nayoCustomer));
+  return res.json({ ok: true, sent });
 }));
 
 // Mi cuenta y mis pedidos recientes.
@@ -336,11 +440,16 @@ marketplacePublicRouter.get('/account', authenticateNayo, ah(async (req, res) =>
 
 marketplacePublicRouter.post('/orders', orderLimiter, authenticateNayo, ah(async (req, res) => {
   const me = req.nayoCustomer;
+  if (!me.email_verified) throw new HttpError(403, 'Confirma tu correo con el código que te mandamos para poder pedir', 'EMAIL_NOT_VERIFIED');
   const body = req.body || {};
   // Nombre y telefono salen de la cuenta si el cliente no los cambia.
   const c = body.customer || {};
   const input = readMarketplaceOrder({ ...body, customer: { name: c.name || me.name, phone: c.phone || me.phone } });
   const order = await createMarketplaceOrder({ ...input, customer_id: me.id });
+  // Las cuentas de Google no traen telefono: se queda el del primer pedido.
+  if (!me.phone) {
+    await withPlatform((db) => db.query('UPDATE nayo_customers SET phone = $2, updated_at = now() WHERE id = $1 AND phone IS NULL', [me.id, input.phone]));
+  }
   // Con tarjeta el pedido llega al restaurante hasta que se paga; el correo es para los pedidos ya confirmados.
   if (order.status !== 'pago_pendiente') void sendNayoOrderReceived(me, order);
   res.status(201).json({ order });

@@ -50,7 +50,12 @@ export const contactStore = store<Contact>(KEYS.contact, { name: '', phone: '', 
 export const ordersStore = store<{ token: string; restaurant: string; at: string }[]>(KEYS.orders, []);
 
 /** Cliente de Nayo con sesion (el token va aparte, en session 'nayo'). */
-export interface NayoAccount { id: string; name: string; phone: string; email: string }
+/** Las cuentas de Google no traen telefono hasta su primer pedido. */
+export interface NayoAccount {
+  id: string; name: string; phone: string | null; email: string;
+  /** false hasta escribir el codigo que llega por correo (sin el campo: cuenta anterior, ya confirmada). */
+  email_verified?: boolean;
+}
 export const accountStore = store<NayoAccount | null>('npd_account', null);
 
 export function signIn(token: string, customer: NayoAccount) {

@@ -27,6 +27,16 @@ export function sendNayoWelcome(customer) {
   });
 }
 
+/** Codigo para verificar el correo al crear la cuenta. */
+export function sendNayoVerifyCode(customer, code, minutes) {
+  return send({
+    to: customer.email,
+    subject: `${code} es tu código de Nayo`,
+    title: 'Confirma tu correo',
+    text: `Hola ${customer.name}, tu código para confirmar tu correo en Nayo es:\n\n${code}\n\nVence en ${minutes} minutos. Si no fuiste tú, ignora este correo.`,
+  });
+}
+
 /** Liga para cambiar la contrasena. El token va en el fragmento (#): no llega a logs ni Referer. */
 export function sendNayoReset(customer, token) {
   return send({

@@ -83,6 +83,9 @@ export const env = {
   // Llave de navegador de Google Maps (Maps JavaScript + Geocoding), restringida
   // por dominio a neuronpos.app. Sin llave los mapas usan OpenStreetMap.
   googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  // "Continuar con Google" en Nayo: ID de cliente OAuth (tipo Aplicacion web,
+  // termina en .apps.googleusercontent.com; no es secreto). Sin el, no sale el boton.
+  googleClientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
   whatsappGraphUrl: (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0').replace(/\/+$/, ''),

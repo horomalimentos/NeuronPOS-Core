@@ -7,7 +7,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClipMock } from './clipMock.js';
-import { SKIP_DB, createRestaurant, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, createRestaurant, ownerToken, setupDb, nayoShopper } from './helpers.js';
 import { createStripeMock, stripeSignature } from './stripeMock.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
@@ -121,9 +121,9 @@ describe('Stripe de la plataforma', { skip: SKIP_DB }, () => {
     await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });
 
     assert.equal((await pub('GET', '/info')).body.card_payments, true);
-    const shopper = (await pub('POST', '/account/register', {
+    const shopper = await nayoShopper(ctx, {
       name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1',
-    })).body.token;
+    });
     const res = await ctx.request('POST', '/api/marketplace/orders', { token: shopper, body: {
       branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 4 }], location: CERCA, payment_method: 'tarjeta',
       customer: { name: 'Maria Lopez', phone: '656 123 4567' }, address: { address: 'Calle Uno 123, Centro' },

@@ -6,7 +6,7 @@ import ZoneMap, { type Point } from '../components/ZoneMap';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage, nayoApi, ApiError } from '../lib/api';
 import { useNayoLive } from '../lib/live';
-import NayoAccountForm from './NayoAccountForm';
+import NayoAccountForm, { VerifyEmailForm } from './NayoAccountForm';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import ItemModal from '../site/ItemModal';
@@ -154,16 +154,18 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
 }) {
   const account = useStore(accountStore);
   // Para pedir hay que tener cuenta de Nayo.
-  if (!account) {
+  if (!account || account.email_verified === false) {
     return (
       <div className="card mt-4 space-y-3 p-4">
-        <h2 className="flex items-center gap-2 font-semibold text-white"><UserRound className="h-5 w-5 text-brand" /> Tu cuenta</h2>
-        <NayoAccountForm />
+        <h2 className="flex items-center gap-2 font-semibold text-white">
+          <UserRound className="h-5 w-5 text-brand" /> {account ? 'Confirma tu correo' : 'Tu cuenta'}
+        </h2>
+        {account ? <VerifyEmailForm account={account} /> : <NayoAccountForm />}
       </div>
     );
   }
   return <CheckoutForm key={account.id} {...{ branchId, restaurant, location, lines, onDone, onRefresh }}
-    contact={{ ...contact, name: contact.name || account.name, phone: contact.phone || account.phone }} account={account} />;
+    contact={{ ...contact, name: contact.name || account.name, phone: contact.phone || account.phone || '' }} account={account} />;
 }
 
 function CheckoutForm({ branchId, restaurant, location, contact, account, lines, onDone, onRefresh }: {

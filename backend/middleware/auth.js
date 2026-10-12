@@ -181,7 +181,7 @@ export async function authenticateNayo(req, res, next) {
     const payload = readToken(req, { audience: NAYO_AUDIENCE });
     if (payload.typ !== 'nayo' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
     const customer = await withPlatform(async (db) => (await db.query(
-      'SELECT id, name, phone, email, active, password_changed_at FROM nayo_customers WHERE id = $1',
+      'SELECT id, name, phone, email, (email_verified_at IS NOT NULL) AS email_verified, active, password_changed_at FROM nayo_customers WHERE id = $1',
       [payload.sub],
     )).rows[0]);
     if (!customer) throw unauthorized('Cuenta no encontrada', 'INVALID_TOKEN');
