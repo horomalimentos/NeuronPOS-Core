@@ -5,6 +5,7 @@ import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
+import { useNayoLive } from '../lib/live';
 import { locationStore, useStore } from './customer';
 import { REASON_LABEL, type NearbyRestaurant } from './lib';
 
@@ -29,6 +30,8 @@ export default function NearbyRestaurants() {
     const t = setInterval(() => { if (document.visibilityState === 'visible') load(); }, POLL_MS);
     return () => clearInterval(t);
   }, [load]);
+  // Al instante cuando un repartidor se conecta o desconecta (la consulta cada minuto queda de respaldo).
+  useNayoLive(load);
 
   if (editing || !location) {
     return (
