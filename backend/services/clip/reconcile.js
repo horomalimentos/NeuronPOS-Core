@@ -5,7 +5,7 @@
 // disparan esta funcion, que pregunta a Clip server-to-server
 // (GET /v2/checkout/{id}) con las credenciales DUENAS del checkout:
 //   - suscripcion -> cuenta de la plataforma (Stripe o Clip, platformGateway.js)
-//   - pedido y recarga (monedero) -> cuenta de Clip del restaurante del checkout
+//   - pedido y recarga (monedero) -> cuenta del restaurante del checkout (Stripe o Clip)
 // Valida id, monto y moneda, normaliza el estado y, si esta pagado, aplica el
 // pago una sola vez (applied_at, con la fila bloqueada).
 //
@@ -13,7 +13,8 @@
 // suscripcion; el de un restaurante solo busca, con RLS de ese restaurante,
 // checkouts de sus pedidos. Un webhook de A nunca toca nada de B.
 import { withPlatform, withTenant } from '../../config/database.js';
-import { fetchPlatformCheckout } from '../platformGateway.js';
+import { fetchPlatformCheckout, paymentReference, stripeMismatch } from '../platformGateway.js';
+import { createStripeClient, normalizeStripeStatus } from '../stripe/client.js';
 import { createClipClient, hasCheckoutCredentials } from './client.js';
 import { checkoutMismatch, normalizeClipStatus, rawStatusOf } from './status.js';
 
@@ -36,7 +37,8 @@ async function credentialsFor(checkout) {
 
 /**
  * Estado del checkout en su proveedor. Suscripcion: cuenta de la plataforma
- * (Stripe o Clip, segun la liga). Pedido y recarga: Clip del restaurante.
+ * (Stripe o Clip, segun la liga). Pedido y recarga: cuenta del restaurante
+ * (Stripe o Clip, segun la liga).
  * undefined = sin credenciales; null = el proveedor no respondio.
  */
 async function fetchCheckout(local) {
@@ -48,6 +50,12 @@ async function fetchCheckout(local) {
     console.error(`[ClipReconciler] credenciales ilegibles para ${local.checkout_id}:`, err.message);
     return undefined;
   }
+  if (local.provider === 'stripe') {
+    if (!creds.stripeSecretKey) return undefined;
+    const data = await createStripeClient({ secretKey: creds.stripeSecretKey }).getCheckout(local.checkout_id);
+    if (!data) return null;
+    return { data, mismatch: stripeMismatch(local, data), status: normalizeStripeStatus(data), reference: paymentReference(data) };
+  }
   if (!hasCheckoutCredentials(creds)) return undefined;
   const data = await createClipClient(creds).getCheckout(local.checkout_id);
   if (!data) return null;
@@ -55,7 +63,7 @@ async function fetchCheckout(local) {
     data,
     mismatch: checkoutMismatch(local, data),
     status: normalizeClipStatus(rawStatusOf(data), data),
-    reference: data.transaction_id || data.receipt_no || null,
+    reference: paymentReference(data),
   };
 }
 

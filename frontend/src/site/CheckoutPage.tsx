@@ -383,7 +383,7 @@ export default function CheckoutPage() {
               )
             ) : payOnline ? (
               <p className="text-sm text-gray-600">
-                Te llevaremos a la página segura de Clip para pagar con tarjeta de crédito o débito. Tu pedido se envía al restaurante en cuanto se confirme el pago.
+                Te llevaremos a una página segura para pagar con tarjeta de crédito o débito. Tu pedido se envía al restaurante en cuanto se confirme el pago.
               </p>
             ) : (
               <>
@@ -434,7 +434,7 @@ export default function CheckoutPage() {
               {quoteError && <Notice kind="error">{quoteError}</Notice>}
               {error && <Notice kind="error">{error}</Notice>}
               <button type="submit" className="btn-brand mt-2 w-full py-3.5 text-base" disabled={sending || !quote || !config.ordering_available || (payWallet && (!customer || walletShort)) || Boolean(zone && !point) || (when === 'despues' && Boolean(scheduling) && !scheduledFor)}>
-                {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con Clip' : payWallet ? 'Pagar con monedero' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
+                {sending && <Loader2 className="h-4 w-4 animate-spin" />} {payOnline ? 'Pagar con tarjeta' : payWallet ? 'Pagar con monedero' : 'Hacer pedido'} {quote && `· ${formatMXN(quote.total)}`}
               </button>
             </div>
           </div>

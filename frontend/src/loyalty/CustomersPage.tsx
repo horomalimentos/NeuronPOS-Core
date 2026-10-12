@@ -412,7 +412,7 @@ function WalletSettingsForm() {
     setBusy(false);
   };
   const toggles: [keyof WalletSettings, string, string][] = [
-    ['topups_enabled', 'Recargas en línea', 'El cliente recarga desde su cuenta del sitio con tarjeta (tu cuenta de Clip de Pedidos en línea).'],
+    ['topups_enabled', 'Recargas en línea', 'El cliente recarga desde su cuenta del sitio con tarjeta (tu cuenta de Stripe o Clip de Pedidos en línea).'],
     ['web_enabled', 'Pagar pedidos en línea con monedero', 'Solo si el saldo cubre todo el pedido.'],
     ['require_code', 'Pedir el código del cliente en caja', 'El mismo código de 6 dígitos de los puntos; cambia cada 5 minutos.'],
   ];

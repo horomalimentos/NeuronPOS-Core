@@ -10,10 +10,9 @@
 // - Pedido en linea rechazado: el dinero regresa al monedero.
 import { withTenant } from '../config/database.js';
 import { HttpError, badRequest } from '../utils/http.js';
-import { createClipClient, hasCheckoutCredentials } from './clip/client.js';
 import { verifyCustomerCode } from './loyalty.js';
 import { toCents } from './posMath.js';
-import { restaurantSiteUrl, restaurantWebhookUrl } from './urls.js';
+import { restaurantSiteUrl } from './urls.js';
 
 export const DEFAULT_WALLET_SETTINGS = {
   topups_enabled: true,
@@ -220,24 +219,21 @@ export function checkTopupAmount(s, amount, balance) {
   return n;
 }
 
-/** Crea la liga de Clip de una recarga (cuenta del restaurante). */
+/** Crea la liga de una recarga con la cuenta del restaurante (Stripe o Clip). */
 export async function createTopupCheckout(db, tenant, customer, amount, creds) {
-  if (!hasCheckoutCredentials(creds)) {
-    throw new HttpError(409, 'Este restaurante no tiene configurado el pago en línea', 'ONLINE_PAYMENT_UNAVAILABLE');
-  }
+  const { createRestaurantCheckout } = await import('./restaurantPayments.js');
   const back = `${restaurantSiteUrl(tenant)}/cuenta?recarga=`;
-  const link = await createClipClient(creds).createCheckout({
+  const link = await createRestaurantCheckout(tenant, creds, {
     amount,
     description: `${tenant.name} - recarga de monedero`,
-    redirect: { success: `${back}ok`, error: `${back}error`, default: `${back}cancelada` },
-    webhookUrl: restaurantWebhookUrl(tenant),
+    redirect: { success: `${back}ok`, error: `${back}error`, cancel: `${back}cancelada` },
     metadata: { tipo: 'recarga', customer_id: customer.id, restaurant_id: tenant.id },
   });
   const row = (await db.query(
     `INSERT INTO clip_checkouts (restaurant_id, purpose, customer_id, checkout_id, payment_url, amount, currency,
-                                 expires_at, response_data)
-     VALUES ($1, 'recarga', $2, $3, $4, $5, 'MXN', $6, $7) RETURNING *`,
-    [tenant.id, customer.id, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw)],
+                                 expires_at, response_data, provider)
+     VALUES ($1, 'recarga', $2, $3, $4, $5, 'MXN', $6, $7, $8) RETURNING *`,
+    [tenant.id, customer.id, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw), link.provider],
   )).rows[0];
   return { id: row.id, url: row.payment_url };
 }

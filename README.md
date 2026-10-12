@@ -137,6 +137,7 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `CLIP_API_URL` | API de Clip | `https://api.payclip.com` |
 | `STRIPE_SECRET_KEY` | Llave secreta (`sk_live_…` / `sk_test_…`) de la cuenta de Stripe **de la plataforma**. Si está, las ligas nuevas de mensualidades y de Nayo se crean con Stripe en vez de Clip | — |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret (`whsec_…`) del webhook `PUBLIC_API_URL/api/webhooks/stripe/plataforma` (eventos `checkout.session.completed` y `checkout.session.expired`); si se define, la firma `Stripe-Signature` es obligatoria | — |
+| — | Cada restaurante puede capturar además su propia clave secreta de Stripe (y el secreto del webhook `PUBLIC_API_URL/api/webhooks/stripe/r/<id>`) en Pedidos en línea › Pago en línea; si la tiene, sus pedidos en línea y recargas del monedero se cobran con Stripe en vez de Clip | — |
 | `PAYMENT_SECRETS_KEY` | Llave de 32 bytes (base64 o hex) para cifrar las credenciales de Clip de cada restaurante. **No se cambia** una vez en uso | — |
 | `BILLING_TIMEZONE` | Zona horaria de día de cobro, vencimiento y gracia | `America/Mexico_City` |
 | `BILLING_AUTO` | `true` = generar facturas, marcar vencidas y suspender solas (cada hora) | `true` |

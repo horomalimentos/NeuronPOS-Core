@@ -165,7 +165,7 @@ export default function OnlineSettingsPage() {
             </div>
           </div>
         )}
-        <p className="text-xs text-gray-500">Pago al recoger o al recibir (efectivo o tarjeta): se cobra en la caja del punto de venta. Para cobrar en línea, configura Clip abajo.</p>
+        <p className="text-xs text-gray-500">Pago al recoger o al recibir (efectivo o tarjeta): se cobra en la caja del punto de venta. Para cobrar en línea, configura Stripe o Clip abajo.</p>
         <div className="flex justify-end"><Button type="submit" loading={saving}><Save className="h-4 w-4" /> Guardar</Button></div>
       </form>
 

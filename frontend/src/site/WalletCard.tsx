@@ -87,7 +87,7 @@ export default function WalletCard() {
               </button>
             </span>
           </label>
-          <p className="text-xs text-gray-500">Pagas en la página segura de Clip. El saldo no se devuelve en efectivo.</p>
+          <p className="text-xs text-gray-500">Pagas en una página segura. El saldo no se devuelve en efectivo.</p>
         </form>
       ) : (
         <p className="text-sm text-gray-500">Para recargar, pide en caja que te abonen o espera a que el restaurante active las recargas en línea.</p>

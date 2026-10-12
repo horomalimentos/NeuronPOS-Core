@@ -1,6 +1,7 @@
 // Webhooks de Clip y de Stripe.
 //
 //   POST /api/webhooks/stripe/plataforma   cobros de suscripcion y de Nayo con Stripe (firma Stripe-Signature)
+//   POST /api/webhooks/stripe/r/:restaurante pedidos y recargas con el Stripe del restaurante (id o slug)
 //   POST /api/webhooks/clip/plataforma     cobros de suscripcion y de Nayo (cuenta de la plataforma)
 //   POST /api/webhooks/clip/r/:restaurante pagos de pedidos (cuenta del restaurante; id o slug)
 //
@@ -69,15 +70,12 @@ router.post(['/clip/plataforma', '/clip/platform'], ah(async (req, res) => {
   await handle(req, res, { kind: 'platform' }, platformClipCredentials().webhookSecret);
 }));
 
-// Stripe (cuenta de la plataforma). Como con Clip, el evento no se cree: solo
-// dice que sesion consultar. Con STRIPE_WEBHOOK_SECRET la firma es obligatoria.
-router.post('/stripe/plataforma', ah(async (req, res) => {
-  const scope = { kind: 'platform' };
+/** Webhook de Stripe: el evento no se cree, solo dice que sesion consultar. */
+async function handleStripe(req, res, scope, webhookSecret) {
   const event = req.body && typeof req.body === 'object' ? req.body : {};
   const obj = event.data?.object;
   const checkoutId = obj?.object === 'checkout.session' && typeof obj.id === 'string' ? obj.id : null;
   const eventType = typeof event.type === 'string' ? event.type.slice(0, 100) : null;
-  const { webhookSecret } = platformStripeCredentials();
   let signatureValid = null;
   if (webhookSecret) {
     signatureValid = verifyStripeSignature(req.rawBody, req.headers['stripe-signature'], webhookSecret);
@@ -90,7 +88,7 @@ router.post('/stripe/plataforma', ah(async (req, res) => {
   try {
     if (checkoutId) {
       let r = await reconcileCheckoutId(scope, checkoutId);
-      if (!r.matched) r = await reconcileMarketplaceCheckoutId(checkoutId);
+      if (!r.matched && scope.kind === 'platform') r = await reconcileMarketplaceCheckoutId(checkoutId);
       matched = r.matched;
     }
   } catch (err) {
@@ -99,22 +97,42 @@ router.post('/stripe/plataforma', ah(async (req, res) => {
   }
   await logEvent(scope, { checkoutId, eventType, signatureValid, matched, payload: event });
   res.json({ received: true });
+}
+
+// Stripe de la plataforma. Con STRIPE_WEBHOOK_SECRET la firma es obligatoria.
+router.post('/stripe/plataforma', ah(async (req, res) => {
+  await handleStripe(req, res, { kind: 'platform' }, platformStripeCredentials().webhookSecret);
 }));
 
-router.post('/clip/r/:ref', ah(async (req, res) => {
-  const ref = String(req.params.ref || '').toLowerCase();
+async function findRestaurantRef(raw) {
+  const ref = String(raw || '').toLowerCase();
   let restaurant = null;
   if (UUID_RE.test(ref)) restaurant = (await pool.query('SELECT id, slug FROM restaurants WHERE id = $1', [ref])).rows[0];
   else if (SLUG_RE.test(ref)) restaurant = (await pool.query('SELECT id, slug FROM restaurants WHERE slug = $1', [ref])).rows[0];
   if (!restaurant) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
-  let secret = '';
+  return restaurant;
+}
+
+async function restaurantCreds(restaurantId) {
   try {
-    secret = (await loadRestaurantClipCredentials(restaurant.id)).webhookSecret;
+    return await loadRestaurantClipCredentials(restaurantId);
   } catch (err) {
-    console.error('[Clip webhook] no se pudieron leer las credenciales:', err.message);
+    console.error('[webhook] no se pudieron leer las credenciales:', err.message);
     throw new HttpError(503, 'Credenciales de pago no disponibles', 'SECRETS_UNAVAILABLE');
   }
-  await handle(req, res, { kind: 'restaurant', restaurantId: restaurant.id }, secret);
+}
+
+// Stripe de un restaurante: con su signing secret guardado la firma es obligatoria.
+router.post('/stripe/r/:ref', ah(async (req, res) => {
+  const restaurant = await findRestaurantRef(req.params.ref);
+  const creds = await restaurantCreds(restaurant.id);
+  await handleStripe(req, res, { kind: 'restaurant', restaurantId: restaurant.id }, creds.stripeWebhookSecret);
+}));
+
+router.post('/clip/r/:ref', ah(async (req, res) => {
+  const restaurant = await findRestaurantRef(req.params.ref);
+  const { webhookSecret } = await restaurantCreds(restaurant.id);
+  await handle(req, res, { kind: 'restaurant', restaurantId: restaurant.id }, webhookSecret);
 }));
 
 // Terminal Clip (PinPad) de un restaurante: solo trae el id del cobro; el

@@ -76,7 +76,7 @@ export default function PaymentResultPage() {
 
   let icon = <Clock className="h-12 w-12 text-violet-500" />;
   let title = 'Estamos confirmando tu pago';
-  let text = 'Clip aún no nos confirma el pago. Esto puede tardar unos segundos.';
+  let text = 'Aún no se confirma el pago. Esto puede tardar unos segundos.';
   if (paid) {
     icon = <CheckCircle2 className="h-12 w-12 text-emerald-500" />;
     title = '¡Pago recibido!';
@@ -88,11 +88,11 @@ export default function PaymentResultPage() {
   } else if (!stillChecking && hint === 'cancelado') {
     icon = <XCircle className="h-12 w-12 text-amber-500" />;
     title = 'No se completó el pago';
-    text = 'Cancelaste el pago en Clip. Puedes intentarlo de nuevo mientras el pedido siga vigente.';
+    text = 'Cancelaste el pago. Puedes intentarlo de nuevo mientras el pedido siga vigente.';
   } else if (!stillChecking && hint === 'error') {
     icon = <XCircle className="h-12 w-12 text-red-500" />;
     title = 'El pago no pasó';
-    text = 'Clip no pudo cobrar. Puedes intentarlo de nuevo con otra tarjeta.';
+    text = 'No se pudo cobrar. Puedes intentarlo de nuevo con otra tarjeta.';
   }
 
   return (
@@ -103,7 +103,7 @@ export default function PaymentResultPage() {
         <p className="mt-2 text-sm text-gray-600">{text}</p>
         <p className="mt-3 text-sm text-gray-500">Pedido #{order.folio} · {formatMXN(order.total)}</p>
         {stillChecking && (
-          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> Verificando con Clip…</p>
+          <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> Verificando el pago…</p>
         )}
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
         <div className="mt-6 flex flex-col gap-2">

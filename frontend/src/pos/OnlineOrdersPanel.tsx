@@ -62,7 +62,7 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
     if (action === 'reject') {
       const paidOnline = o.online_payment_status === 'pagado';
       const reason = window.prompt(paidOnline
-        ? 'Este pedido ya se pagó en línea: al rechazarlo tendrás que reembolsarlo desde tu panel de Clip.\n\nMotivo del rechazo (el cliente lo verá):'
+        ? 'Este pedido ya se pagó en línea: al rechazarlo tendrás que reembolsarlo desde tu panel de Stripe o Clip.\n\nMotivo del rechazo (el cliente lo verá):'
         : 'Motivo del rechazo (el cliente lo verá):');
       if (!reason?.trim()) return;
       body = { reason: reason.trim() };
@@ -228,7 +228,7 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
           </span>
         ) : o.online_payment_status === 'pagado' ? (
           <span className="flex items-center gap-1.5 font-medium text-emerald-300">
-            <BadgeCheck className="h-4 w-4" /> {o.payment_provider === 'monedero' ? 'Pagado con monedero' : 'Pagado en línea con Clip'}
+            <BadgeCheck className="h-4 w-4" /> {o.payment_provider === 'monedero' ? 'Pagado con monedero' : 'Pagado en línea'}
             {num(o.delivery_fee) > 0 && <span className="font-normal text-gray-400">· envío {formatMXN(o.delivery_fee)}</span>}
           </span>
         ) : (

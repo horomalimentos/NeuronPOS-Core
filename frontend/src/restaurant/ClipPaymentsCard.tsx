@@ -4,14 +4,17 @@ import { Alert, Button, Field, Spinner, Toggle } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import type { OnlinePayments } from '../lib/types';
 
+const EMPTY = { clip_api_key: '', clip_secret_key: '', clip_webhook_secret: '', stripe_secret_key: '', stripe_webhook_secret: '' };
+
 /**
- * Pago en linea con la cuenta de Clip DEL RESTAURANTE (el dinero llega
- * directo a su cuenta). Las credenciales se guardan cifradas y el servidor
- * nunca las regresa: aqui solo se ve "configurado". Cambiarlas: solo admin.
+ * Pago en linea con la cuenta de Stripe o de Clip DEL RESTAURANTE (el dinero
+ * llega directo a su cuenta; si tiene Stripe se usa Stripe). Las credenciales
+ * se guardan cifradas y el servidor nunca las regresa: aqui solo se ve
+ * "configurado". Cambiarlas: solo admin.
  */
 export default function ClipPaymentsCard({ isAdmin }: { isAdmin: boolean }) {
   const [data, setData] = useState<OnlinePayments | null>(null);
-  const [keys, setKeys] = useState({ clip_api_key: '', clip_secret_key: '', clip_webhook_secret: '' });
+  const [keys, setKeys] = useState(EMPTY);
   const [timeout, setTimeoutMin] = useState('30');
   const [error, setError] = useState('');
   const [ok, setOk] = useState('');
@@ -29,7 +32,7 @@ export default function ClipPaymentsCard({ isAdmin }: { isAdmin: boolean }) {
     try {
       const r = await api<{ payments: OnlinePayments }>('/online/payments', { method: 'PUT', body });
       apply(r.payments);
-      setKeys({ clip_api_key: '', clip_secret_key: '', clip_webhook_secret: '' });
+      setKeys(EMPTY);
       setOk(msg);
     } catch (err) {
       setError(errorMessage(err));
@@ -42,40 +45,70 @@ export default function ClipPaymentsCard({ isAdmin }: { isAdmin: boolean }) {
     e.preventDefault();
     const body: Record<string, unknown> = { payment_timeout_minutes: Number(timeout) };
     for (const [k, v] of Object.entries(keys)) if (v.trim()) body[k] = v.trim();
-    void send(body, 'Datos de Clip guardados.');
+    void send(body, 'Datos de pago guardados.');
   }
 
   if (!data) return <section className="card p-5">{error ? <Alert>{error}</Alert> : <Spinner />}</section>;
   const c = data.clip;
+  const st = data.stripe;
+  const anyConfigured = c.configured || st.configured;
+  const providerName = data.provider === 'stripe' ? 'Stripe' : data.provider === 'clip' ? 'Clip' : null;
   return (
     <section className="card mt-8 space-y-5 p-5">
       <div>
-        <h2 className="flex items-center gap-2 font-semibold text-white"><CreditCard className="h-5 w-5 text-brand" /> Pago en línea con Clip</h2>
+        <h2 className="flex items-center gap-2 font-semibold text-white"><CreditCard className="h-5 w-5 text-brand" /> Pago en línea con tarjeta</h2>
         <p className="mt-1 text-sm text-gray-400">
-          El cliente paga con tarjeta al hacer su pedido y el dinero llega directo a tu cuenta de Clip. El pedido llega al punto de venta hasta que Clip confirma el pago;
-          si no se paga a tiempo, se cancela solo.
+          El cliente paga con tarjeta al hacer su pedido y el dinero llega directo a tu cuenta de Stripe o de Clip (si configuras las dos, se usa Stripe).
+          El pedido llega al punto de venta hasta que se confirma el pago; si no se paga a tiempo, se cancela solo.
         </p>
+        {providerName && <p className="mt-1 text-sm text-gray-300">Los cobros nuevos se hacen con <b className="text-white">{providerName}</b>.</p>}
       </div>
       {error && <Alert>{error}</Alert>}
       {ok && <Alert kind="success">{ok}</Alert>}
       {!data.secrets_key_configured && <Alert kind="warning">El servidor todavía no puede guardar credenciales (falta la llave de cifrado). Avisa a NeuronPOS.</Alert>}
 
       <div className="grid gap-2 text-sm sm:grid-cols-2">
-        <StatusLine ok={c.configured} label="API key y clave secreta" />
-        <StatusLine ok={c.webhook_secret_configured} label="Secreto de webhooks" />
+        <StatusLine ok={st.configured} label="Stripe: clave secreta" />
+        <StatusLine ok={st.webhook_secret_configured} label="Stripe: secreto del webhook" />
+        <StatusLine ok={c.configured} label="Clip: API key y clave secreta" />
+        <StatusLine ok={c.webhook_secret_configured} label="Clip: secreto de webhooks" />
       </div>
 
       <label className="flex items-center gap-3 text-sm text-gray-300">
-        <Toggle label="Ofrecer pago en línea" checked={data.online_payment_enabled} disabled={!isAdmin || !c.configured || saving}
+        <Toggle label="Ofrecer pago en línea" checked={data.online_payment_enabled} disabled={!isAdmin || !anyConfigured || saving}
           onChange={(v) => send({ online_payment_enabled: v }, v ? 'Pago en línea activado.' : 'Pago en línea desactivado.')} />
-        <span>Ofrecer “Pagar en línea con Clip” en el checkout
-          {!c.configured && <span className="block text-xs text-gray-500">Primero captura tus credenciales de Clip.</span>}
+        <span>Ofrecer “Pagar en línea con tarjeta” en el checkout
+          {!anyConfigured && <span className="block text-xs text-gray-500">Primero captura las llaves de tu cuenta de Stripe o de Clip.</span>}
         </span>
       </label>
 
       {isAdmin ? (
         <form onSubmit={saveKeys} className="space-y-4 rounded-xl border border-gray-800 p-4">
-          <p className="flex items-center gap-2 text-sm font-medium text-white"><KeyRound className="h-4 w-4" /> Credenciales de tu cuenta de Clip</p>
+          <p className="flex items-center gap-2 text-sm font-medium text-white"><KeyRound className="h-4 w-4" /> Llaves de tu cuenta de Stripe</p>
+          <p className="text-xs text-gray-500">En dashboard.stripe.com → Desarrolladores → Claves de API (la clave secreta empieza con sk_live_). Por seguridad nunca se muestran; deja un campo vacío para conservar el valor guardado.</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Clave secreta">
+              <input className="input" type="password" autoComplete="off" value={keys.stripe_secret_key} placeholder={st.configured ? '•••••• guardada' : 'sk_live_…'}
+                onChange={(e) => setKeys({ ...keys, stripe_secret_key: e.target.value })} />
+            </Field>
+            <Field label="Secreto del webhook (opcional)">
+              <input className="input" type="password" autoComplete="off" value={keys.stripe_webhook_secret} placeholder={st.webhook_secret_configured ? '•••••• guardado' : 'whsec_…'}
+                onChange={(e) => setKeys({ ...keys, stripe_webhook_secret: e.target.value })} />
+            </Field>
+          </div>
+          {st.webhook_url && (
+            <div className="rounded-lg bg-gray-950/60 p-3 text-xs text-gray-400">
+              Webhook para Stripe (eventos checkout.session.completed y checkout.session.expired): <code className="break-all text-sky-300">{st.webhook_url}</code>
+            </div>
+          )}
+          {st.configured && (
+            <Button type="button" variant="ghost" disabled={saving}
+              onClick={() => { if (window.confirm('¿Quitar las llaves de Stripe?')) void send({ remove_stripe: true }, 'Llaves de Stripe eliminadas.'); }}>
+              <Trash2 className="h-4 w-4" /> Quitar Stripe
+            </Button>
+          )}
+
+          <p className="flex items-center gap-2 border-t border-gray-800 pt-4 text-sm font-medium text-white"><KeyRound className="h-4 w-4" /> Credenciales de tu cuenta de Clip</p>
           <p className="text-xs text-gray-500">Las encuentras en dashboard.payclip.com → Desarrolladores. Por seguridad nunca se muestran; deja un campo vacío para conservar el valor guardado.</p>
           <div className="grid gap-3 sm:grid-cols-3">
             <Field label="API key">
@@ -102,14 +135,14 @@ export default function ClipPaymentsCard({ isAdmin }: { isAdmin: boolean }) {
           <div className="flex flex-wrap justify-between gap-2">
             {c.configured ? (
               <Button type="button" variant="ghost" disabled={saving}
-                onClick={() => { if (window.confirm('¿Quitar las credenciales de Clip? El pago en línea se desactiva.')) void send({ remove_clip: true }, 'Credenciales eliminadas.'); }}>
-                <Trash2 className="h-4 w-4" /> Quitar credenciales
+                onClick={() => { if (window.confirm('¿Quitar las credenciales de Clip?')) void send({ remove_clip: true }, 'Credenciales de Clip eliminadas.'); }}>
+                <Trash2 className="h-4 w-4" /> Quitar Clip
               </Button>
             ) : <span />}
             <Button type="submit" loading={saving}>Guardar</Button>
           </div>
         </form>
-      ) : <p className="text-xs text-gray-500">Solo un administrador puede cambiar las credenciales de Clip.</p>}
+      ) : <p className="text-xs text-gray-500">Solo un administrador puede cambiar las llaves de pago.</p>}
     </section>
   );
 }
