@@ -73,7 +73,8 @@ function GoogleZoneMap({ g, center, tiers, pin, onPick, className }: ZoneMapProp
       shapes.current.push(new g.maps.Marker({ map: m, position: c, icon: dotIcon(g, '#111827', 14), clickable: false }));
     }
     if (pin) {
-      const mk = new g.maps.Marker({ map: m, position: { lat: pin.latitude, lng: pin.longitude }, icon: dotIcon(g, '#ea580c', 20), draggable: Boolean(pick.current) });
+      // Marcador clasico de Google: se distingue de los iconos de negocios del mapa.
+      const mk = new g.maps.Marker({ map: m, position: { lat: pin.latitude, lng: pin.longitude }, draggable: Boolean(pick.current), zIndex: 1000 });
       mk.addListener('dragend', () => { const p = mk.getPosition(); if (p) pick.current?.({ latitude: p.lat(), longitude: p.lng() }); });
       shapes.current.push(mk);
     }
@@ -174,8 +175,10 @@ async function geocode(q: string, near?: Point | null): Promise<Point | null> {
 }
 
 /** "Usar mi ubicacion" y busqueda de direccion (solo al presionar Buscar). */
-export function MapTools({ onPoint, light = false, near, initialQuery = '' }: {
+export function MapTools({ onPoint, light = false, near, initialQuery = '', gpsOnly = false }: {
   onPoint: (p: Point) => void; light?: boolean; near?: Point | null; initialQuery?: string;
+  /** Solo "Usar mi ubicacion" (cuando la direccion ya tiene su propio campo con sugerencias). */
+  gpsOnly?: boolean;
 }) {
   const [q, setQ] = useState(initialQuery);
   const [busy, setBusy] = useState<'' | 'gps' | 'search'>('');
@@ -209,15 +212,17 @@ export function MapTools({ onPoint, light = false, near, initialQuery = '' }: {
   return (
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2">
-        <div className="flex min-w-[12rem] flex-1 gap-2">
-          <div className="min-w-0 flex-1">
-            <AddressAutocomplete className={input} light={light} value={q} onChange={setQ} near={near} placeholder="Buscar calle y colonia"
-              onPlace={({ point }) => { setMsg(''); onPoint(point); }} onEnter={() => void search()} />
+        {!gpsOnly && (
+          <div className="flex min-w-[12rem] flex-1 gap-2">
+            <div className="min-w-0 flex-1">
+              <AddressAutocomplete className={input} light={light} value={q} onChange={setQ} near={near} placeholder="Buscar calle y colonia"
+                onPlace={({ point }) => { setMsg(''); onPoint(point); }} onEnter={() => void search()} />
+            </div>
+            <button type="button" className={btn} onClick={() => void search()} disabled={busy !== ''} aria-label="Buscar">
+              {busy === 'search' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            </button>
           </div>
-          <button type="button" className={btn} onClick={() => void search()} disabled={busy !== ''} aria-label="Buscar">
-            {busy === 'search' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-          </button>
-        </div>
+        )}
         <button type="button" className={btn} onClick={gps} disabled={busy !== ''}>
           {busy === 'gps' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Crosshair className="h-4 w-4" />} Usar mi ubicación
         </button>

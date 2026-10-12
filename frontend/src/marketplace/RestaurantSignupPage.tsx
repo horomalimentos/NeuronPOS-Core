@@ -1,10 +1,11 @@
 import { CheckCircle2, ExternalLink, Store } from 'lucide-react';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import AddressAutocomplete from '../components/AddressAutocomplete';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { Alert, Button, Field } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { resetBranding } from '../lib/branding';
+import { reverseGeocode } from '../lib/googleMaps';
 import CuisineSelect from './CuisineSelect';
 import SignupShell from './SignupShell';
 
@@ -23,6 +24,20 @@ export default function RestaurantSignupPage() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<Created | null>(null);
   useEffect(() => { resetBranding(); document.title = 'Registra tu restaurante · Nayo'; }, []);
+  // Al poner el pin (mapa, arrastre o GPS) la direccion se llena sola, salvo
+  // que el usuario ya haya escrito otra a mano.
+  const autoAddress = useRef('');
+  const pickPoint = (p: Point) => {
+    setLocation(p);
+    void reverseGeocode(p).then((addr) => {
+      if (!addr) return;
+      setForm((f) => {
+        if (f.address !== '' && f.address !== autoAddress.current) return f;
+        autoAddress.current = addr;
+        return { ...f, address: addr.slice(0, 300) };
+      });
+    });
+  };
   const set = (k: keyof typeof form) => (e: { target: { value: string } }) => setForm({ ...form, [k]: e.target.value });
 
   async function submit(e: FormEvent) {
@@ -77,15 +92,15 @@ export default function RestaurantSignupPage() {
             <input className="input" type="tel" required value={form.phone} onChange={set('phone')} />
           </Field>
           <Field label="Dirección">
-            <AddressAutocomplete required maxLength={300} value={form.address} near={location}
-              onChange={(address) => setForm((f) => ({ ...f, address }))} onPlace={({ point }) => setLocation(point)} />
+            <AddressAutocomplete required maxLength={300} value={form.address} near={location} placeholder="Calle, número y colonia"
+              onChange={(address) => setForm((f) => ({ ...f, address }))} onPlace={({ address, point }) => { autoAddress.current = address; setLocation(point); }} />
           </Field>
         </div>
         <div className="space-y-2">
           <p className="text-sm font-medium text-gray-300">Ubicación</p>
-          <MapTools onPoint={setLocation} near={location} initialQuery={form.address} />
-          <ZoneMap className="h-64" center={null} tiers={[]} pin={location} onPick={setLocation} />
-          <p className="text-xs text-gray-500">{location ? 'Puedes arrastrar el pin para ajustarlo.' : 'Busca tu dirección o toca el mapa donde está tu restaurante.'}</p>
+          <MapTools onPoint={pickPoint} near={location} gpsOnly />
+          <ZoneMap className="h-64" center={null} tiers={[]} pin={location} onPick={pickPoint} />
+          <p className="text-xs text-gray-500">{location ? 'Puedes arrastrar el pin para ajustarlo.' : 'Escribe tu dirección arriba, usa tu ubicación o toca el mapa donde está tu restaurante.'}</p>
         </div>
         <div className="grid gap-4 border-t border-gray-800 pt-5 sm:grid-cols-2">
           <Field label="Tu nombre">
