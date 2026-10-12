@@ -67,7 +67,7 @@ export default function NayoPartnersPage() {
             <li>Elige tu epicentro y cuántos kilómetros a la redonda quieres cubrir.</li>
             <li>Conéctate cuando quieras y acepta los pedidos de tu zona.</li>
             <li className="flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-emerald-400" /> Te quedas con el {info?.driver_share_pct ?? 80} % de cada envío.
+              <Wallet className="h-4 w-4 text-emerald-400" /> {info ? `Te quedas con el ${info.driver_share_pct} % de cada envío.` : 'Te quedas con la mayor parte de cada envío.'}
             </li>
           </ul>
           <div className="mt-5 flex flex-wrap gap-2">

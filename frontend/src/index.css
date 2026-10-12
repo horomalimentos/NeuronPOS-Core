@@ -66,6 +66,12 @@ body {
   white-space: nowrap;
 }
 
+/* App del repartidor: barra de "Buscando pedidos…" */
+@keyframes nayoscan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
 /* Carruseles horizontales (Nayo): se deslizan sin mostrar la barra. */
 @layer utilities {
   .no-scrollbar { scrollbar-width: none; }

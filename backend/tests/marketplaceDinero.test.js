@@ -105,6 +105,8 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(Number(offer.collect), 135);
     assert.equal(Number(offer.driver_share), 28);
     assert.equal(offer.customer_phone, undefined); // sin datos del cliente hasta tomarlo
+    assert.equal(typeof offer.pickup.latitude, 'number'); // punto del restaurante para el mapa
+    assert.equal(offer.dropoff, undefined);
 
     // Fuera de zona no lo ve.
     const lejos = await newDriver('Lalo', 'lalo@moto.test', OTRA_CIUDAD);
@@ -115,6 +117,8 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(take.status, 200, JSON.stringify(take.body));
     assert.equal(take.body.job.customer_phone, '656 123 4567');
     assert.equal(take.body.job.change, 65);
+    assert.equal(typeof take.body.job.dropoff.latitude, 'number');
+    assert.match(take.body.job.dropoff_waze_url, /^https:\/\/waze\.com\/ul\?ll=/);
     // La pantalla de pedidos del restaurante ve quien va por el pedido.
     const seen = (await restaurantOrders()).find((x) => x.id === cashId);
     assert.deepEqual(seen.driver, { name: 'Juan', vehicle: seen.driver.vehicle });
@@ -147,9 +151,13 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(after1.balance, -7);
     assert.equal(after1.today.deliveries, 1);
     assert.equal(Number(after1.today.earned), 28);
+    assert.equal(after1.week.deliveries, 1);
+    assert.equal(after1.recent.length, 1);
+    assert.equal(Number(after1.recent[0].driver_share), 28);
     const ledger = (await fleet(juan, 'GET', '/marketplace/ledger')).body;
     assert.equal(ledger.entries.length, 1);
     assert.equal(ledger.entries[0].kind, 'comision_efectivo');
+    assert.match(ledger.entries[0].note, /parte de Nayo/);
   });
 
   test('con el adeudo en el tope ya no ve ni toma pedidos en efectivo', async () => {
