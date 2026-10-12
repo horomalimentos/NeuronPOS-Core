@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { Link } from 'react-router-dom';
 import { AuthCard } from '../components/AuthCard';
 import { NayoLogo } from '../components/NayoLogo';
-import { PushBell } from '../components/PushBell';
+import { PushBell, PushFab } from '../components/PushBell';
 import { Alert, Button, Field, Modal } from '../components/ui';
 import { useLocationSharing, type GeoFix } from '../delivery/lib';
 import type { DeliveryStatus, DriverJob, FleetOffer } from '../delivery/types';
@@ -391,6 +391,8 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
       <div className="absolute inset-0 z-0">
         <DriverMap pins={pins} zone={zone} route={route} fit={fit} padBottom={trip ? 540 : 260} />
       </div>
+
+      {fleet && <PushFab target={{ realm: 'nayo', app: 'repartidor' }} text="Activa avisos de viajes" className="left-1/2 top-[calc(max(0.75rem,env(safe-area-inset-top))+4rem)] -translate-x-1/2 whitespace-nowrap" />}
 
       {/* Barra de arriba: menu, ganancias y centrar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-[600] mx-auto flex max-w-lg items-start justify-between gap-3 p-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
