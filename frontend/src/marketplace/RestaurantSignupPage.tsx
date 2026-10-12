@@ -50,7 +50,7 @@ export default function RestaurantSignupPage() {
           <ol className="list-decimal space-y-1 pl-5">
             <li>Subir tu menú (Menú).</li>
             <li>Poner tu horario (Sucursales › Horario).</li>
-            <li>Publicar tu restaurante (Delivery).</li>
+            <li>Publicar tu restaurante (Nayo).</li>
           </ol>
           <p className="rounded-xl bg-gray-950/60 p-3">Tu panel: <a className="break-all text-brand" href={done.admin_url}>{done.admin_url}</a></p>
           <a href={done.admin_url} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-contrast">

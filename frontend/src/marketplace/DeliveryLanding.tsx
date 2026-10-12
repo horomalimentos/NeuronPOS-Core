@@ -1,5 +1,5 @@
-import { ArrowRight, Bike, MapPin, Receipt, Store, Wallet } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ArrowRight, Bike, ChevronDown, MapPin, Receipt, Store, UserPlus, Wallet } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { NayoLogo } from '../components/NayoLogo';
 import { useNayoFavicon } from '../components/useNayoFavicon';
@@ -30,8 +30,11 @@ export default function DeliveryLanding() {
       <div className="relative overflow-hidden">
         <div className="pointer-events-none absolute -right-40 -top-40 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
         <div className="relative mx-auto max-w-5xl px-4 pb-8 pt-10 sm:pt-14">
-          <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
-            <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
+              <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
+            </div>
+            <SignupMenu />
           </div>
           <h1><NayoLogo size="lg" /></h1>
           <p className="mt-4 max-w-2xl text-lg text-gray-400">
@@ -103,6 +106,47 @@ export default function DeliveryLanding() {
               ))}
             </div>
           </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** "Quiero registrarme": elige si te registras como restaurante o repartidor. */
+function SignupMenu() {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
+  }, [open]);
+  const options = [
+    { to: '/nayo/restaurantes', icon: <Store className="h-5 w-5" />, title: 'Restaurante', hint: 'Vende a domicilio sin mensualidad' },
+    { to: '/nayo/repartidores', icon: <Bike className="h-5 w-5" />, title: 'Repartidor', hint: 'Reparte en tu zona y en tu horario' },
+  ];
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu"
+        className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
+        <UserPlus className="h-4 w-4" /> Quiero registrarme <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div role="menu" className="absolute right-0 z-[1000] mt-2 w-72 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 p-1.5 shadow-2xl">
+          {options.map((o) => (
+            <Link key={o.to} to={o.to} role="menuitem" className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-gray-800">
+              <span className="rounded-xl bg-brand/15 p-2 text-brand">{o.icon}</span>
+              <span className="flex-1">
+                <span className="block text-sm font-semibold text-white">{o.title}</span>
+                <span className="block text-xs text-gray-400">{o.hint}</span>
+              </span>
+              <ArrowRight className="h-4 w-4 text-gray-500" />
+            </Link>
+          ))}
         </div>
       )}
     </div>
