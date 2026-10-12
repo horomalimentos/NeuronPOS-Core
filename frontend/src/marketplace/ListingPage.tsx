@@ -14,7 +14,8 @@ import type { Listing } from './lib';
  * Ficha del restaurante en Nayo (modulo marketplace): por
  * sucursal, ubicacion, descripcion, tiempo de preparacion y pedido minimo;
  * publicar u ocultar y pausar pedidos un rato. Para publicar hacen falta
- * ubicacion, horario y al menos un producto en el menu.
+ * ubicacion, horario y al menos un producto en el menu, y los clientes solo
+ * la ven cuando NeuronPOS aprobo el registro (Panel › Nayo).
  */
 export default function ListingPage() {
   const [listings, setListings] = useState<Listing[] | null>(null);
@@ -39,7 +40,9 @@ export default function ListingPage() {
 }
 
 function stateOf(l: Listing): { label: string; style: string } {
+  if (l.approval_status === 'rechazado') return { label: 'Registro rechazado', style: 'bg-red-500/15 text-red-300 ring-red-500/40' };
   if (l.blocked) return { label: 'Bloqueado por NeuronPOS', style: 'bg-red-500/15 text-red-300 ring-red-500/40' };
+  if (l.approval_status === 'pendiente') return { label: 'En revisión', style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
   if (!l.published) return { label: 'Sin publicar', style: 'bg-gray-500/15 text-gray-300 ring-gray-500/40' };
   if (l.paused_until) return { label: `En pausa hasta las ${formatTime(l.paused_until)}`, style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
   if (!l.visible) return { label: 'Publicado, pero incompleto', style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
@@ -87,7 +90,16 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${state.style}`}>{state.label}</span>
       </div>
 
-      {l.blocked && (
+      {l.approval_status === 'pendiente' && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>NeuronPOS está revisando tu registro. Mientras tanto completa tu ficha y publícala; los clientes la verán en cuanto te aprobemos.</span>
+        </div>
+      )}
+      {l.approval_status === 'rechazado' && (
+        <Alert><span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> {l.approval_note || 'NeuronPOS no aprobó tu registro.'} Comunícate con NeuronPOS.</span></Alert>
+      )}
+      {l.approval_status === 'aprobado' && l.blocked && (
         <Alert><span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> {l.blocked_reason || 'NeuronPOS ocultó tu restaurante.'} Comunícate con NeuronPOS.</span></Alert>
       )}
 

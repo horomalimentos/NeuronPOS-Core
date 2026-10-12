@@ -28,6 +28,9 @@ export interface Listing {
   paused_until: string | null;
   blocked: boolean;
   blocked_reason: string | null;
+  /** NeuronPOS revisa cada restaurante nuevo antes de que lo vean los clientes. */
+  approval_status: 'pendiente' | 'aprobado' | 'rechazado';
+  approval_note: string | null;
   hours_days: number;
   products: number;
   missing: ('ubicacion' | 'horario' | 'menu')[];

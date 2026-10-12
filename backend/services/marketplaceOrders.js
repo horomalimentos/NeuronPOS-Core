@@ -47,7 +47,7 @@ async function loadCandidates(db, { branchId = null } = {}) {
        JOIN restaurants r ON r.id = l.restaurant_id
        JOIN branches b ON b.id = l.branch_id AND b.active
        LEFT JOIN restaurant_modules rm ON rm.restaurant_id = l.restaurant_id AND rm.module_code = 'marketplace'
-      WHERE l.published AND NOT l.blocked AND (l.paused_until IS NULL OR l.paused_until <= now())
+      WHERE l.published AND NOT l.blocked AND l.approval_status = 'aprobado' AND (l.paused_until IS NULL OR l.paused_until <= now())
         AND ($1::uuid IS NULL OR l.branch_id = $1)`,
     [branchId],
   );

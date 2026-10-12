@@ -40,7 +40,8 @@ async function summary(db) {
     `SELECT (SELECT count(*) FROM fleet_drivers WHERE status = 'pendiente')::int AS pending_drivers,
             (SELECT count(*) FROM fleet_drivers WHERE status = 'aprobado' AND active AND on_duty AND radius_km IS NOT NULL)::int AS online_drivers,
             (SELECT count(*) FROM fleet_drivers WHERE status = 'aprobado' AND radius_km IS NOT NULL)::int AS approved_drivers,
-            (SELECT count(*) FROM marketplace_listings WHERE published AND NOT blocked)::int AS published_listings,
+            (SELECT count(*) FROM marketplace_listings WHERE published AND NOT blocked AND approval_status = 'aprobado')::int AS published_listings,
+            (SELECT count(*) FROM marketplace_listings WHERE approval_status = 'pendiente')::int AS pending_listings,
             (SELECT count(*) FROM marketplace_listings)::int AS listings`,
   )).rows[0];
 }
@@ -127,14 +128,18 @@ router.post('/marketplace/drivers/:id/review', ah(async (req, res) => {
 }));
 
 router.get('/marketplace/listings', ah(async (req, res) => {
+  const status = oneOf(req.query.status || undefined, ['pendiente', 'aprobado', 'rechazado'], 'status');
   const rows = await withPlatform(async (db) => (await db.query(
     `SELECT l.restaurant_id, r.name AS restaurant_name, r.slug, r.status AS restaurant_status, r.contact_phone,
             l.branch_id, b.name AS branch_name, b.address, l.latitude, l.longitude, l.cuisine, l.published,
-            l.paused_until, l.blocked, l.blocked_reason, l.created_at, l.published_at
+            l.paused_until, l.blocked, l.blocked_reason, l.approval_status, l.approval_note, l.reviewed_at,
+            r.contact_name, r.contact_email, l.created_at, l.published_at
        FROM marketplace_listings l
        JOIN restaurants r ON r.id = l.restaurant_id
        JOIN branches b ON b.id = l.branch_id
-      ORDER BY l.created_at DESC LIMIT 1000`,
+      WHERE ($1::text IS NULL OR l.approval_status = $1)
+      ORDER BY (l.approval_status = 'pendiente') DESC, l.created_at DESC LIMIT 1000`,
+    [status ?? null],
   )).rows);
   res.json({
     listings: rows.map((r) => ({
@@ -144,6 +149,23 @@ router.get('/marketplace/listings', ah(async (req, res) => {
       longitude: undefined,
     })),
   });
+}));
+
+// Aprobar o rechazar un restaurante que pidio entrar a Nayo.
+router.post('/marketplace/listings/:branchId/approval', ah(async (req, res) => {
+  requireUuid(req.params.branchId);
+  const body = req.body || {};
+  const status = oneOf(body.status, ['aprobado', 'rechazado'], 'status');
+  if (!status) throw badRequest('Indica aprobado o rechazado', 'MISSING_FIELD');
+  const note = str(body.note, { field: 'note', max: 300 }) || null;
+  if (status === 'rechazado' && !note) throw badRequest('Escribe el motivo para el restaurante', 'MISSING_FIELD');
+  const row = await withPlatform(async (db) => (await db.query(
+    `UPDATE marketplace_listings SET approval_status = $2, approval_note = $3, reviewed_at = now(), updated_at = now()
+      WHERE branch_id = $1 RETURNING branch_id, approval_status, approval_note, reviewed_at`,
+    [req.params.branchId, status, note],
+  )).rows[0]);
+  if (!row) throw notFound('Ficha no encontrada', 'LISTING_NOT_FOUND');
+  res.json({ listing: row });
 }));
 
 router.post('/marketplace/listings/:branchId/block', ah(async (req, res) => {

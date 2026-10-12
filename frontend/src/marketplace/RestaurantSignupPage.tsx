@@ -69,6 +69,9 @@ export default function RestaurantSignupPage() {
             <li>Poner tu horario (Sucursales › Horario).</li>
             <li>Publicar tu restaurante (Nayo).</li>
           </ol>
+          <p className="rounded-xl border border-amber-800/60 bg-amber-950/30 p-3 text-amber-200">
+            NeuronPOS revisará tu registro. Los clientes te verán en Nayo cuando lo aprobemos.
+          </p>
           <p className="rounded-xl bg-gray-950/60 p-3">Tu panel: <a className="break-all text-brand" href={done.admin_url}>{done.admin_url}</a></p>
           <a href={done.admin_url} className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 font-semibold text-brand-contrast">
             Ir a mi panel <ExternalLink className="h-4 w-4" />

@@ -13,6 +13,7 @@ const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 describe('Nayo: fase 4 (chat del pedido)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let R2; let branchId; let taco; let juan; let pedro; let order; let mid;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
+  const panel = (method, path, body) => api(owner, method, `/api/platform${path}`, body);
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
   const signup = async (name, email) => {
     const r = await pub('POST', '/restaurants', {
@@ -38,6 +39,7 @@ describe('Nayo: fase 4 (chat del pedido)', { skip: SKIP_DB }, () => {
     taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco', price: 25 })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true });
+    await panel('POST', `/marketplace/listings/${branchId}/approval`, { status: 'aprobado' });
     juan = await driver('Juan Perez', 'juan@moto.test');
     pedro = await driver('Pedro', 'pedro@moto.test');
     order = (await pub('POST', '/orders', {
