@@ -97,6 +97,10 @@ export default function DeliveryOrders() {
               {o.status === 'aceptado' && (
                 <Button className="flex-1" loading={busy === `${o.id}:ready`} onClick={() => void act(o, 'ready')}><PackageCheck className="h-4 w-4" /> Marcar listo</Button>
               )}
+              {/* Pagado con tarjeta: entra aceptado solo; si no se puede surtir, se rechaza y se reembolsa. */}
+              {o.status === 'aceptado' && o.payment_method === 'tarjeta' && (
+                <Button variant="ghost" disabled={busy !== ''} onClick={() => void act(o, 'reject')}><X className="h-4 w-4" /> No puedo surtirlo</Button>
+              )}
               {o.status === 'listo' && <span className="flex items-center gap-1 text-sm text-emerald-300"><ChefHat className="h-4 w-4" /> Esperando al repartidor</span>}
             </div>
           </article>
