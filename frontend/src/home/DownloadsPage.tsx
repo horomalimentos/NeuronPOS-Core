@@ -1,4 +1,5 @@
-import { ArrowLeft, BrainCircuit, ChefHat, Download, Monitor, Printer, Smartphone } from 'lucide-react';
+import { ArrowLeft, ChefHat, Download, Monitor, Printer, Smartphone } from 'lucide-react';
+import { NeuronLogo } from '../components/NeuronLogo';
 import { useEffect, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import { resetBranding } from '../lib/branding';
@@ -52,7 +53,7 @@ export default function DownloadsPage() {
       <header className="border-b border-gray-800">
         <div className="mx-auto flex h-16 max-w-5xl items-center gap-3 px-4">
           <Link to="/" className="flex items-center gap-2 font-semibold text-white">
-            <BrainCircuit className="h-7 w-7 text-brand" /> NeuronPOS
+            <NeuronLogo className="h-7 w-auto" />
           </Link>
           <Link to="/" className="ml-auto inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-white">
             <ArrowLeft className="h-4 w-4" /> Inicio
