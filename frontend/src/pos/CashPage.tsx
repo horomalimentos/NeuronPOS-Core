@@ -9,7 +9,7 @@ import DenominationModal from './DenominationModal';
 import { MOVEMENT_CATEGORY_LABEL, formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
 import DeviceBanner from './DeviceBanner';
-import type { CashCut, CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
+import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
 
 /**
