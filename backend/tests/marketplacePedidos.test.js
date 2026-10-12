@@ -49,7 +49,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
     })).body.group;
     salsaVerde = group.modifiers.find((m) => m.name === 'Verde');
     const cat = (await api(R.token, 'POST', '/api/pos/categories', { name: 'Tacos' })).body.category;
-    taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25, modifier_group_ids: [group.id] })).body.item;
+    taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25, image_url: 'https://cdn.test/taco.jpg', modifier_group_ids: [group.id] })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     const pubd = await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true, min_order: 50, cuisine: 'Tacos' });
     assert.equal(pubd.status, 200, JSON.stringify(pubd.body));
@@ -65,6 +65,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
     assert.equal(t.can_order, false);
     assert.equal(t.reason, 'sin_repartidor');
     assert.equal(t.delivery_fee, 35);
+    assert.deepEqual(t.photos, ['https://cdn.test/taco.jpg']); // fotos del menu para la tarjeta
     const order = await buy(orderBody());
     assert.equal(order.status, 409);
     assert.equal(order.body.code, 'NO_DRIVERS');
