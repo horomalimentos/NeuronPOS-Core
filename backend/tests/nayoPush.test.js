@@ -59,6 +59,19 @@ describe('Nayo: notificaciones push', { skip: SKIP_DB }, () => {
     assert.equal((await api(R.token, 'POST', '/api/marketplace/push/subscribe', { subscription: sub('pepa') })).status, 200);
   });
 
+  test('aviso de prueba solo a los dispositivos del cliente', async () => {
+    sent.length = 0;
+    const r = await pub('POST', '/push/cliente/test', {}, shopper);
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+    assert.deepEqual(r.body, { devices: 1, sent: 1 });
+    assert.deepEqual(sent.map((m) => m.endpoint.split('/').pop()), ['maria']);
+    assert.equal(sent[0].payload.link, '/nayo');
+    assert.equal((await pub('POST', '/push/cliente/test', {})).status, 401);
+    const otro = await nayoShopper(ctx, { name: 'Sin Avisos', email: 'sin@cliente.test', phone: '6569998888', password: 'clave-cliente-2' });
+    assert.equal((await pub('POST', '/push/cliente/test', {}, otro)).body.code, 'PUSH_NOT_ENABLED');
+    sent.length = 0;
+  });
+
   test('pedido: restaurante, cliente y repartidores de la zona', async () => {
     const res = await ctx.request('POST', '/api/marketplace/orders', { token: shopper, body: {
       branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 4 }], location: CERCA,

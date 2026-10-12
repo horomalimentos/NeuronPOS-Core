@@ -39,7 +39,7 @@ import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
 import { verifyGoogleIdToken } from '../services/googleSignIn.js';
-import { deleteNayoSubscription, saveNayoSubscription } from '../services/nayoPush.js';
+import { deleteNayoSubscription, saveNayoSubscription, sendNayoTestPush } from '../services/nayoPush.js';
 import { getVapidKeys } from '../services/push.js';
 import {
   sendNayoOrderReceived, sendNayoReset, sendNayoVerifyCode, sendNayoWelcome,
@@ -455,6 +455,13 @@ marketplacePublicRouter.post('/push/cliente', pushLimiter, authenticateNayo, ah(
 marketplacePublicRouter.post('/push/cliente/off', pushLimiter, authenticateNayo, ah(async (req, res) => {
   await deleteNayoSubscription((req.body || {}).endpoint, { customer_id: req.nayoCustomer.id });
   res.json({ ok: true });
+}));
+
+// Aviso de prueba a los dispositivos del propio cliente.
+marketplacePublicRouter.post('/push/cliente/test', pushLimiter, authenticateNayo, ah(async (req, res) => {
+  const r = await sendNayoTestPush(req.nayoCustomer.id);
+  if (!r.devices) throw new HttpError(409, 'Activa primero los avisos con la campanita en este dispositivo', 'PUSH_NOT_ENABLED');
+  res.json(r);
 }));
 
 marketplacePublicRouter.post('/push/repartidor', pushLimiter, authenticateFleet, ah(async (req, res) => {

@@ -190,6 +190,36 @@ export async function dispatchNayoPush({ limit = 100 } = {}) {
   return sent;
 }
 
+/**
+ * Aviso de prueba para el propio cliente (boton "Probar aviso" de su cuenta):
+ * le llega a todos sus dispositivos suscritos. Regresa cuantos se enviaron.
+ */
+export async function sendNayoTestPush(customerId) {
+  const subs = await withPlatform(async (db) => (await db.query(
+    'SELECT id, endpoint, p256dh, auth, link_base FROM nayo_push_subscriptions WHERE customer_id = $1',
+    [customerId],
+  )).rows);
+  let sent = 0;
+  const gone = [];
+  for (const s of subs) {
+    const res = await sendPush(s, {
+      title: 'Avisos de Nayo activados',
+      body: 'Así te avisaremos cuando tu pedido sea aceptado, vaya en camino o llegue.',
+      link: s.link_base || '/',
+      tag: 'nayo-prueba',
+      icon: ICON.cliente,
+      badge: '/icons/nayo-cliente-badge.png',
+    });
+    if (res?.ok) sent += 1;
+    else if (res?.gone) gone.push(s.id);
+    else if (res?.error) console.error('[nayo push] No se pudo enviar la prueba:', res.error);
+  }
+  if (gone.length) {
+    await withPlatform((db) => db.query('DELETE FROM nayo_push_subscriptions WHERE id = ANY($1::uuid[])', [gone]));
+  }
+  return { devices: subs.length, sent };
+}
+
 export async function cleanupNayoPush() {
   await withPlatform((db) => db.query("DELETE FROM nayo_push_outbox WHERE sent_at < now() - interval '3 days'"));
 }
