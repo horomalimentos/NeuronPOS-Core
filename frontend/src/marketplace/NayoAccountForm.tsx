@@ -1,8 +1,9 @@
-import { LogIn, Mail, UserPlus } from 'lucide-react';
+import { LogIn, Mail, MailCheck, UserPlus } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
 import { Alert, Button, Field } from '../components/ui';
 import { errorMessage, nayoApi } from '../lib/api';
-import { signIn, type NayoAccount } from './customer';
+import { accountStore, signIn, signOut, type NayoAccount } from './customer';
+import GoogleSignIn from './GoogleSignIn';
 
 /**
  * Crear cuenta o entrar a Nayo. Para hacer un pedido hay que tener cuenta;
@@ -46,6 +47,7 @@ export default function NayoAccountForm({ onDone }: { onDone?: () => void }) {
   return (
     <form onSubmit={submit} className="space-y-3">
       <p className="text-sm text-gray-300">Para hacer tu pedido crea tu cuenta de Nayo o entra con la que ya tienes.</p>
+      {mode !== 'forgot' && <GoogleSignIn onDone={onDone} />}
       <div className="flex gap-1 rounded-xl bg-gray-950/60 p-1">{tab('register', 'Crear cuenta')}{tab('login', 'Ya tengo cuenta')}</div>
       {mode === 'forgot' && <p className="text-sm text-gray-300">Escribe el correo de tu cuenta y te mandamos una liga para cambiar tu contraseña.</p>}
       {mode === 'register' && (
@@ -76,6 +78,66 @@ export default function NayoAccountForm({ onDone }: { onDone?: () => void }) {
           ¿Olvidaste tu contraseña?
         </button>
       )}
+    </form>
+  );
+}
+
+/**
+ * Confirmar el correo: al crear la cuenta le mandamos un codigo de 6 digitos;
+ * sin escribirlo no puede pedir.
+ */
+export function VerifyEmailForm({ account, onDone }: { account: NayoAccount; onDone?: () => void }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState('');
+
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setBusy('verify');
+    setError('');
+    try {
+      const r = await nayoApi<{ customer: NayoAccount }>('/marketplace/account/verify', { method: 'POST', body: { code } });
+      accountStore.set(r.customer);
+      onDone?.();
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+    setBusy('');
+  }
+
+  async function resend() {
+    setBusy('resend');
+    setError('');
+    setNote('');
+    try {
+      const r = await nayoApi<{ sent: boolean }>('/marketplace/account/verify/resend', { method: 'POST', body: {} });
+      setNote(r.sent ? 'Te mandamos un código nuevo.' : 'Espera un minuto para pedir otro código.');
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+    setBusy('');
+  }
+
+  return (
+    <form onSubmit={submit} className="space-y-3">
+      <p className="flex items-start gap-2 text-sm text-gray-300">
+        <MailCheck className="mt-0.5 h-4 w-4 shrink-0 text-brand" />
+        <span>Te mandamos un código de 6 dígitos a <b className="text-white">{account.email}</b>. Escríbelo para confirmar tu correo. Si no lo ves, revisa spam.</span>
+      </p>
+      <Field label="Código">
+        <input className="input text-center text-2xl tracking-[0.5em]" inputMode="numeric" autoComplete="one-time-code" required
+          pattern="[0-9]{6}" maxLength={6} value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))} />
+      </Field>
+      {error && <Alert>{error}</Alert>}
+      {note && <Alert kind="success">{note}</Alert>}
+      <Button type="submit" loading={busy === 'verify'} disabled={code.length !== 6} className="w-full">
+        <MailCheck className="h-4 w-4" /> Confirmar y seguir
+      </Button>
+      <div className="flex justify-between text-xs text-gray-400">
+        <button type="button" disabled={busy !== ''} onClick={() => void resend()} className="underline hover:text-white">Mandar otro código</button>
+        <button type="button" onClick={signOut} className="underline hover:text-white">Usar otro correo</button>
+      </div>
     </form>
   );
 }

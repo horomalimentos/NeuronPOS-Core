@@ -11,7 +11,7 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClipMock } from './clipMock.js';
-import { SKIP_DB, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, ownerToken, setupDb, nayoShopper } from './helpers.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
@@ -62,9 +62,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
-    shopper = (await ctx.request('POST', '/api/marketplace/account/register', {
-      body: { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' },
-    })).body.token;
+    shopper = await nayoShopper(ctx, { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' });
     const client = await import('../services/clip/client.js');
     ({ signClipBody: sign } = await import('../services/clip/status.js'));
     money = await import('../services/marketplaceMoney.js');
