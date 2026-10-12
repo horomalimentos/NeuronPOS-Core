@@ -67,3 +67,10 @@ export const REASON_LABEL: Record<string, string> = {
   lejos: 'No entrega hasta tu domicilio',
   sin_ubicacion: 'Elige dónde te entregamos',
 };
+
+/** Tipos de comida para la ficha de Nayo (el cliente los ve en la lista). */
+export const CUISINES = [
+  'Tacos', 'Hamburguesas', 'Pizza', 'Sushi', 'Mariscos', 'Pollo', 'Alitas', 'Hot dogs', 'Tortas',
+  'Antojitos mexicanos', 'Comida corrida', 'Comida china', 'Comida italiana', 'Carnes y cortes',
+  'Saludable', 'Cafetería', 'Postres', 'Panadería', 'Snacks', 'Bebidas',
+];
