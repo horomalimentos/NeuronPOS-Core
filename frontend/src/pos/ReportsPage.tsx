@@ -33,6 +33,7 @@ export interface Report {
   by_order_type: { order_type: OrderType; source: 'pos' | 'web' | 'kiosko'; orders: number; total: number }[];
   by_branch: { branch_id: string; branch_name: string; orders: number; total: number; tips: number }[];
   by_channel: { channel_id: string | null; name: string; orders: number; total: number; commission: number; net: number }[];
+  by_terminal?: { terminal: string; orders: number; payments: number; amount: number; tips: number }[];
   cash_movements?: { category: string; kind: 'entrada' | 'salida'; movements: number; total: number }[];
   items: { menu_item_id: string; name: string; category: string | null; quantity: number; total: number; orders: number }[];
   categories: { category: string; quantity: number; total: number }[];
@@ -308,6 +309,14 @@ export default function ReportsPage() {
               <Table head={['Método', 'Órdenes', 'Cobrado', 'Propinas']}
                 rows={report.by_payment_method.map((m) => [m.name, m.orders, formatMXN(m.amount), formatMXN(m.tips)])} />
             </Section>
+            {(report.by_terminal?.length ?? 0) > 1 && (
+              <Section title="Por caja (terminal)"
+                onCsv={() => downloadCsv(file('cajas'), ['Caja', 'Órdenes', 'Pagos', 'Cobrado', 'Propinas'],
+                  report.by_terminal!.map((t) => [t.terminal, t.orders, t.payments, t.amount, t.tips]))}>
+                <Table head={['Caja', 'Órdenes', 'Cobrado', 'Propinas']}
+                  rows={report.by_terminal!.map((t) => [t.terminal, t.orders, formatMXN(t.amount), formatMXN(t.tips)])} />
+              </Section>
+            )}
             <Section title="Tipo de orden"
               onCsv={() => downloadCsv(file('tipos_de_orden'), ['Tipo', 'Órdenes', 'Ventas'], report.by_order_type.map((t) => [typeLabel(t), t.orders, t.total]))}>
               <Table head={['Tipo', 'Órdenes', 'Ventas', '%']}

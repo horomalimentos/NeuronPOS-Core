@@ -582,6 +582,7 @@ describe('punto de venta', { skip: SKIP_DB }, () => {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
       await api(owner, 'PUT', `/api/platform/restaurants/${A.id}/modules/reportes`, { enabled: true });
       const rep = await api(A, 'GET', `/api/pos/reports/sales?from=${yesterday}&to=${day}`);
+      assert.ok(rep.body.by_terminal.some((x) => x.terminal === 'Plataformas'), 'por caja');
       const row = rep.body.by_channel.find((c) => c.name === 'Rappi');
       assert.equal(Number(row.total), 100);
       assert.equal(Number(row.commission), 28);

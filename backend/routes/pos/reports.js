@@ -133,6 +133,17 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
        GROUP BY pm.id, pm.name, pm.kind, pm.sort_order
        ORDER BY sum(p.amount) DESC, pm.sort_order`);
 
+    // Por terminal (caja): lo cobrado en cada una; lo pagado en linea va aparte.
+    const byTerminal = await q(`
+      WITH ${PAID}
+      SELECT coalesce(cs.terminal, 'En línea') AS terminal, count(DISTINCT p.order_id)::int AS orders,
+             count(*)::int AS payments, sum(p.amount) AS amount, sum(p.tip) AS tips
+        FROM order_payments p
+        JOIN paid ON paid.id = p.order_id
+        LEFT JOIN cash_sessions cs ON cs.id = p.cash_session_id AND cs.restaurant_id = p.restaurant_id
+       WHERE p.restaurant_id = $1
+       GROUP BY 1 ORDER BY sum(p.amount) DESC`);
+
     const byType = await q(`
       WITH ${PAID}
       SELECT order_type, source, count(*)::int AS orders, sum(total) AS total
@@ -222,6 +233,7 @@ router.get('/reports/sales', requireModule('reportes'), manager, ah(async (req, 
       by_hour: money(byHour, 'total'),
       by_weekday: money(byWeekday, 'total'),
       by_payment_method: money(byPayment, 'amount', 'tips'),
+      by_terminal: money(byTerminal, 'amount', 'tips'),
       by_order_type: money(byType, 'total'),
       by_branch: money(byBranch, 'total', 'tips'),
       by_channel: money(byChannel, 'total', 'commission', 'net'),
