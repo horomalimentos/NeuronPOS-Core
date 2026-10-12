@@ -20,6 +20,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
   // Para pedir hay que tener cuenta de Nayo.
   let shopper;
+  const mails = [];
   const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const near = (p) => pub('GET', `/restaurants?lat=${p.latitude}&lng=${p.longitude}`);
   const orderBody = (extra = {}) => ({
@@ -33,6 +34,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
+    (await import('../services/mailer.js')).setMailTransport((m) => { mails.push(m); });
     shopper = (await ctx.request('POST', '/api/marketplace/account/register', {
       body: { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' },
     })).body.token;
@@ -55,7 +57,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
     assert.equal(pubd.status, 200, JSON.stringify(pubd.body));
     await ctx.request('POST', `/api/platform/marketplace/listings/${branchId}/approval`, { token: owner, body: { status: 'aprobado' } });
   });
-  after(() => ctx?.close());
+  after(async () => { (await import('../services/mailer.js')).setMailTransport(null); await ctx?.close(); });
 
   test('sin repartidores conectados el restaurante aparece pero no se puede pedir', async () => {
     const res = await near(CERCA);
@@ -120,6 +122,11 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
     const m = (await ctx.withPlatform((db) => db.query('SELECT * FROM marketplace_orders WHERE public_token = $1', [o.token]))).rows[0];
     assert.equal(Number(m.driver_share), 28);
     assert.equal(Number(m.platform_share), 7);
+    // Le llega la confirmacion de Nayo con la liga de seguimiento.
+    await new Promise((r) => setTimeout(r, 50));
+    const mail = mails.find((x) => x.subject === 'Tu pedido de Tacos Pepa en Nayo');
+    assert.ok(mail, JSON.stringify(mails.map((x) => x.subject)));
+    assert.ok(mail.text.includes(`https://elnayo.com/pedido/${o.token}`));
     // El pedido queda en la cuenta del cliente.
     const mine = await ctx.request('GET', '/api/marketplace/account', { token: shopper });
     assert.equal(mine.status, 200);

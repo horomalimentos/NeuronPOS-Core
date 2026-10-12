@@ -14,6 +14,7 @@
 //   - GET/POST /orders/:token/messages chat del pedido (fase 4).
 // marketplaceRouter (con tenant, /api/marketplace): la ficha de cada sucursal
 // y los pedidos que llegan por Delivery (aceptar, rechazar, listo).
+import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
@@ -37,6 +38,8 @@ import {
 import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
+import { sendNayoOrderReceived, sendNayoReset, sendNayoWelcome } from '../services/nayoEmails.js';
+import { RESET_TTL_MINUTES, hashToken, readResetToken } from '../services/passwordReset.js';
 import { loadMenu } from './pos/menu.js';
 import { restaurantSiteUrl } from '../services/urls.js';
 import {
@@ -258,10 +261,53 @@ marketplacePublicRouter.post('/account/register', signupLimiter, ah(async (req, 
       [account.name, phone, account.email, hash],
     )).rows[0];
   });
+  void sendNayoWelcome(customer);
   res.status(201).json({ token: signNayoToken(customer), customer });
 }));
 
-marketplacePublicRouter.post('/account/login', loginLimiter, ah(async (req, res) => {
+// Olvide mi contrasena: siempre responde igual (no revela si el correo existe).
+// Pedir otra liga antes de 1 minuto no manda otro correo.
+marketplacePublicRouter.post('/account/forgot', loginLimiter, ah(async (req, res) => {
+  const email = String((req.body || {}).email || '').trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) throw badRequest('Correo invalido', 'INVALID_EMAIL');
+  const found = await withPlatform(async (db) => {
+    const c = (await db.query(
+      'SELECT id, name, email, reset_expires_at FROM nayo_customers WHERE email = $1 AND active FOR UPDATE', [email],
+    )).rows[0];
+    if (!c) return null;
+    const issuedAt = c.reset_expires_at ? new Date(c.reset_expires_at).getTime() - RESET_TTL_MINUTES * 60000 : 0;
+    if (Date.now() - issuedAt < 60000) return null;
+    const token = crypto.randomBytes(32).toString('base64url');
+    await db.query(
+      'UPDATE nayo_customers SET reset_token_hash = $2, reset_expires_at = now() + make_interval(mins => $3::int) WHERE id = $1',
+      [c.id, hashToken(token), RESET_TTL_MINUTES],
+    );
+    return { customer: c, token };
+  });
+  if (found) void sendNayoReset(found.customer, found.token);
+  res.json({ ok: true });
+}));
+
+marketplacePublicRouter.post('/account/reset', loginLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const token = readResetToken(body.token);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (password.length < 8) throw badRequest('La contrasena debe tener al menos 8 caracteres', 'WEAK_PASSWORD');
+  const hash = await bcrypt.hash(password, 12);
+  const customer = await withPlatform(async (db) => (await db.query(
+    `UPDATE nayo_customers SET password_hash = $2, password_changed_at = now(), reset_token_hash = NULL, reset_expires_at = NULL,
+            last_login_at = now(), updated_at = now()
+      WHERE reset_token_hash = $1 AND reset_expires_at > now() AND active
+      RETURNING ${ACCOUNT_COLUMNS}`,
+    [hashToken(token), hash],
+  )).rows[0]);
+  if (!customer) throw badRequest('La liga para cambiar tu contraseña no es válida o ya venció. Pide otra.', 'INVALID_RESET_TOKEN');
+  // Entra de una vez: el token nuevo es posterior al cambio de contrasena.
+  res.json({ token: signNayoToken(customer), customer });
+}));
+
+marketplacePublicRouter.post('/account/login',
+ loginLimiter, ah(async (req, res) => {
   const body = req.body || {};
   const email = String(body.email || '').trim().toLowerCase();
   const password = typeof body.password === 'string' ? body.password : '';
@@ -294,7 +340,10 @@ marketplacePublicRouter.post('/orders', orderLimiter, authenticateNayo, ah(async
   // Nombre y telefono salen de la cuenta si el cliente no los cambia.
   const c = body.customer || {};
   const input = readMarketplaceOrder({ ...body, customer: { name: c.name || me.name, phone: c.phone || me.phone } });
-  res.status(201).json({ order: await createMarketplaceOrder({ ...input, customer_id: me.id }) });
+  const order = await createMarketplaceOrder({ ...input, customer_id: me.id });
+  // Con tarjeta el pedido llega al restaurante hasta que se paga; el correo es para los pedidos ya confirmados.
+  if (order.status !== 'pago_pendiente') void sendNayoOrderReceived(me, order);
+  res.status(201).json({ order });
 }));
 
 marketplacePublicRouter.get('/orders/:token', ah(async (req, res) => {
