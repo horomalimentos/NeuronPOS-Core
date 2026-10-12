@@ -14,6 +14,9 @@ describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let branchId; let taco; let juan;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
+  // Para pedir hay que tener cuenta de Nayo.
+  let shopper;
+  const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const panel = (method, path, body) => api(owner, method, `/api/platform${path}`, body);
   const fleet = (method, path, body) => api(juan.token, method, `/api/fleet${path}`, body);
   const posOrders = async () => {
@@ -22,7 +25,7 @@ describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
     return r.body.orders;
   };
   const newOrder = async () => {
-    const r = await pub('POST', '/orders', {
+    const r = await buy({
       branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 2 }], location: CERCA,
       customer: { name: 'Maria Lopez', phone: '656 123 4567' }, address: { address: 'Calle Uno 123' }, pay_with: 200,
     });
@@ -32,6 +35,9 @@ describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
+    shopper = (await ctx.request('POST', '/api/marketplace/account/register', {
+      body: { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' },
+    })).body.token;
     owner = await ownerToken(ctx);
     const r = await pub('POST', '/restaurants', {
       name: 'Tacos Pepa', phone: '6561112222', address: 'Av. Juarez 100', location: CENTRO,

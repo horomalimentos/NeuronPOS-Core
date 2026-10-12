@@ -4,11 +4,13 @@
 //   typ = 'customer' -> cliente del portal de un restaurante. Ademas lleva
 //                       audience 'customer': se verifica con esa audiencia y
 //                       los otros tokens (sin audiencia) no pasan, ni al reves.
+//   typ = 'nayo'     -> cliente de Nayo (cuenta de la plataforma), audience
+//                       'nayo': solo sirve en las rutas de cliente de Nayo.
 //   typ = 'fleet'    -> repartidor de la flota de la plataforma (fase 5), con
 //                       audience 'fleet': solo sirve en /api/fleet.
 // Adaptado del middleware de NeuronPOS, sin sesiones en BD por ahora.
 import jwt from 'jsonwebtoken';
-import pool, { withFleetDriver, withTenant } from '../config/database.js';
+import pool, { withFleetDriver, withPlatform, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, forbidden } from '../utils/http.js';
 import { issuedBeforePasswordChange } from '../services/passwordReset.js';
@@ -36,6 +38,12 @@ export function signCustomerToken(customer) {
     env.jwtSecret,
     { expiresIn: env.customerJwtExpiresIn, audience: CUSTOMER_AUDIENCE },
   );
+}
+
+export const NAYO_AUDIENCE = 'nayo';
+
+export function signNayoToken(customer) {
+  return jwt.sign({ sub: customer.id, typ: 'nayo' }, env.jwtSecret, { expiresIn: env.customerJwtExpiresIn, audience: NAYO_AUDIENCE });
 }
 
 export const FLEET_AUDIENCE = 'fleet';
@@ -161,6 +169,28 @@ export async function authenticateCustomer(req, res, next) {
 export async function optionalCustomer(req, res, next) {
   try {
     req.customer = req.headers.authorization ? await loadCustomer(req) : null;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+/** Cliente de Nayo (token typ nayo, audiencia 'nayo'). Deja req.nayoCustomer. */
+export async function authenticateNayo(req, res, next) {
+  try {
+    const payload = readToken(req, { audience: NAYO_AUDIENCE });
+    if (payload.typ !== 'nayo' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
+    const customer = await withPlatform(async (db) => (await db.query(
+      'SELECT id, name, phone, email, active, password_changed_at FROM nayo_customers WHERE id = $1',
+      [payload.sub],
+    )).rows[0]);
+    if (!customer) throw unauthorized('Cuenta no encontrada', 'INVALID_TOKEN');
+    if (issuedBeforePasswordChange(payload, customer.password_changed_at)) {
+      throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+    }
+    delete customer.password_changed_at;
+    if (!customer.active) throw forbidden('Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
+    req.nayoCustomer = customer;
     next();
   } catch (err) {
     next(err);

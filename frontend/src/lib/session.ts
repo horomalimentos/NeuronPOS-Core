@@ -7,6 +7,8 @@ const KEYS = {
   customer: 'npc_customer_token',
   // Repartidor de la flota de la plataforma (fase 5).
   fleet: 'npc_fleet_token',
+  // Cliente de Nayo (cuenta de la plataforma, sirve en todos los restaurantes).
+  nayo: 'npc_nayo_token',
   slug: 'npc_dev_slug',
 } as const;
 
@@ -27,7 +29,7 @@ function write(key: string, value: string | null) {
   }
 }
 
-export type Realm = 'platform' | 'restaurant' | 'customer' | 'fleet';
+export type Realm = 'platform' | 'restaurant' | 'customer' | 'fleet' | 'nayo';
 
 export const session = {
   getToken: (realm: Realm) => read(KEYS[realm]),
