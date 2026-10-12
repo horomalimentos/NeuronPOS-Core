@@ -862,6 +862,24 @@ Recursos humanos. En *RH › Rol de turnos*:
 | POST | `/api/rh/shifts/copy-week` `{from, to, branch_id?, overwrite?}` | admin, gerente |
 | GET | `/api/rh/shifts/mine?start=` | el empleado |
 
+## Chat del equipo (módulo `chat`)
+
+Como el chat del tablero de Horom. En *Chat* todo el personal publica
+mensajes y responde; un mensaje es para todas las sucursales o para una, y
+quien no es gerente solo ve (y publica en) las suyas. Admin y gerente fijan
+mensajes arriba y borran los de cualquiera; cada quien edita los suyos. El
+menú muestra cuántos mensajes nuevos hay desde la última vez que se abrió.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/chat/posts?before=&branch_id=` | personal |
+| POST | `/api/chat/posts` `{body, branch_id?}` | personal (`branch_id` obligatorio si no es gerente) |
+| PUT / DELETE | `/api/chat/posts/:id` | autor (borrar: también gerente) |
+| PATCH | `/api/chat/posts/:id/pin` `{pinned}` | admin, gerente |
+| GET / POST | `/api/chat/posts/:id/replies` | personal |
+| DELETE | `/api/chat/replies/:id` | autor o gerente |
+| GET | `/api/chat/unread` · POST `/api/chat/seen` | personal |
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

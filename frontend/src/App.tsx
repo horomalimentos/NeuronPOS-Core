@@ -44,6 +44,7 @@ import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
 import AnnouncementsPage from './rh/AnnouncementsPage';
+import ChatPage from './chat/ChatPage';
 import AttendancePage from './rh/AttendancePage';
 import ChecklistsPage from './rh/ChecklistsPage';
 import EmployeesPage from './rh/EmployeesPage';
@@ -207,6 +208,10 @@ export default function App() {
             <Route path="reparto" element={<DispatchPage />} />
             <Route path="reparto/cortes" element={<DriverCutsPage />} />
             <Route path="domicilios" element={<DeliverySettingsPage />} />
+          </Route>
+          {/* Chat del equipo (modulo chat) */}
+          <Route element={<ModuleGate code="chat" name="Chat del equipo" />}>
+            <Route path="chat" element={<ChatPage />} />
           </Route>
           {/* Bot de WhatsApp (modulo whatsapp) */}
           <Route element={<ModuleGate code="whatsapp" name="Bot de WhatsApp" />}>
