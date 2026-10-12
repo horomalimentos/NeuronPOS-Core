@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessagesSquare, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -26,6 +26,7 @@ export default function AdminLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const hasToken = Boolean(session.getToken('restaurant'));
   const waPending = useWhatsAppPending(me);
+  const chatUnread = useChatUnread(me, location.pathname);
 
   const reload = useCallback(() => {
     api<Me>('/me')
@@ -83,6 +84,7 @@ export default function AdminLayout() {
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
     { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
+    { to: '/admin/chat', label: 'Chat', icon: MessagesSquare, end: false, show: has('chat'), badge: chatUnread },
     { to: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, end: false, show: has('whatsapp') && posCan.cashier(role), badge: waPending },
     { to: '/admin/quejas', label: 'Quejas', icon: MessageSquareWarning, end: false, show: has('quejas') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
@@ -170,6 +172,21 @@ function useWhatsAppPending(me: Me | null) {
     return () => clearInterval(t);
   }, [enabled]);
   return enabled ? count : 0;
+}
+
+/** Mensajes nuevos del chat del equipo (se revisa cada minuto; en el chat no se cuenta). */
+function useChatUnread(me: Me | null, path: string) {
+  const [count, setCount] = useState(0);
+  const enabled = Boolean(me && !me.restaurant.access_error && me.modules.find((m) => m.code === 'chat')?.enabled);
+  const inChat = path.startsWith('/admin/chat');
+  useEffect(() => {
+    if (!enabled || inChat) return undefined;
+    const load = () => { api<{ unread: number }>('/chat/unread').then((r) => setCount(r.unread)).catch(() => {}); };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [enabled, inChat]);
+  return enabled && !inChat ? count : 0;
 }
 
 /** Aviso de pago pendiente o vencido (admin y gerente). */
