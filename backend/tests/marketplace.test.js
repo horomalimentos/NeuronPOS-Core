@@ -116,6 +116,8 @@ describe('Nayo: fase 1', { skip: SKIP_DB }, () => {
 
     const detail = await panel('GET', `/restaurants/${R.id}`);
     assert.equal(detail.body.restaurant.status, 'active');
+    // La cuenta esta activa, pero la ficha de Nayo espera aprobacion.
+    assert.deepEqual(detail.body.nayo.map((l) => l.approval_status), ['pendiente']);
     assert.equal(detail.body.monthly_total_mxn ?? detail.body.charge?.total_mxn ?? 0, 0);
 
     const list = await api(R.token, 'GET', '/api/marketplace/listings');
