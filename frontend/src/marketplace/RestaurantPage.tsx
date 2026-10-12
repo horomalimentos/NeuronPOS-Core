@@ -1,6 +1,7 @@
 import { ArrowLeft, Banknote, Bike, Clock, CreditCard, MapPin, Minus, Plus, ShoppingBag, Store } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNayoFavicon } from '../components/useNayoFavicon';
 import ZoneMap, { type Point } from '../components/ZoneMap';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -23,6 +24,7 @@ interface Quote { totals: { subtotal: string | number; delivery_fee: string | nu
  */
 export default function RestaurantPage() {
   const { branchId = '' } = useParams();
+  useNayoFavicon();
   const navigate = useNavigate();
   const location = useStore(locationStore);
   const cart = useStore(cartStore);
