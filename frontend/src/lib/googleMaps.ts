@@ -65,3 +65,25 @@ export const GOOGLE_MAP_OPTIONS: google.maps.MapOptions = {
   fullscreenControl: false,
   clickableIcons: false,
 };
+
+/** Direccion de un punto (Google si hay llave; si no, Nominatim de OSM). */
+export async function reverseGeocode(p: { latitude: number; longitude: number }): Promise<string | null> {
+  const g = await loadGoogleMaps();
+  if (g) {
+    try {
+      const { results } = await new g.maps.Geocoder().geocode({ location: { lat: p.latitude, lng: p.longitude }, language: 'es' });
+      const best = results.find((r) => r.types.includes('street_address') || r.types.includes('premise')) ?? results[0];
+      return best?.formatted_address ?? null;
+    } catch {
+      return null;
+    }
+  }
+  try {
+    const params = new URLSearchParams({ format: 'json', lat: String(p.latitude), lon: String(p.longitude), zoom: '18' });
+    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?${params}`, { headers: { 'Accept-Language': 'es' } });
+    const d = (await r.json()) as { display_name?: string };
+    return d.display_name ?? null;
+  } catch {
+    return null;
+  }
+}
