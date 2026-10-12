@@ -19,6 +19,7 @@ import ZoneFields from '../marketplace/ZoneFields';
 import MarketplaceSection from './MarketplaceSection';
 import { useSite } from '../restaurant/useSite';
 import type { Point } from '../components/ZoneMap';
+import { nayoPath } from '../marketplace/nayoUrl';
 
 const POLL_MS = 15000;
 
@@ -123,7 +124,7 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
           <Button type="submit" loading={loading} className="w-full">Entrar</Button>
           {tab === 'flota' && (
             <p className="text-center text-sm text-gray-400">
-              ¿Quieres repartir con Nayo? <Link to="/nayo/repartidores" className="font-semibold text-brand">Regístrate</Link>
+              ¿Quieres repartir con Nayo? <Link to={nayoPath('/repartidores')} className="font-semibold text-brand">Regístrate</Link>
             </p>
           )}
         </form>

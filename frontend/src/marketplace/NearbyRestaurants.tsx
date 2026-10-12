@@ -8,6 +8,7 @@ import { formatMXN } from '../lib/format';
 import { useNayoLive } from '../lib/live';
 import { locationStore, useStore } from './customer';
 import { REASON_LABEL, type NearbyRestaurant } from './lib';
+import { nayoPath } from './nayoUrl';
 
 const POLL_MS = 60000;
 
@@ -99,5 +100,5 @@ function RestaurantCard({ r }: { r: NearbyRestaurant }) {
       </div>
     </article>
   );
-  return r.can_order ? <Link to={`/nayo/r/${r.branch_id}`}>{body}</Link> : body;
+  return r.can_order ? <Link to={nayoPath(`/r/${r.branch_id}`)}>{body}</Link> : body;
 }
