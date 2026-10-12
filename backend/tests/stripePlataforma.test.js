@@ -121,10 +121,13 @@ describe('Stripe de la plataforma', { skip: SKIP_DB }, () => {
     await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });
 
     assert.equal((await pub('GET', '/info')).body.card_payments, true);
-    const res = await pub('POST', '/orders', {
+    const shopper = (await pub('POST', '/account/register', {
+      name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1',
+    })).body.token;
+    const res = await ctx.request('POST', '/api/marketplace/orders', { token: shopper, body: {
       branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 4 }], location: CERCA, payment_method: 'tarjeta',
       customer: { name: 'Maria Lopez', phone: '656 123 4567' }, address: { address: 'Calle Uno 123, Centro' },
-    });
+    } });
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const o = res.body.order;
     assert.equal(o.status, 'pago_pendiente');
