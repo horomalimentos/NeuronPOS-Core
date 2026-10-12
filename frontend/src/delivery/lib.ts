@@ -56,6 +56,7 @@ export interface GeoFix { latitude: number; longitude: number; accuracy: number 
 export function useLocationSharing(active: boolean, send: (fix: GeoFix) => Promise<unknown>, everyMs = 20000) {
   const [error, setError] = useState('');
   const [lastSent, setLastSent] = useState<Date | null>(null);
+  const [position, setPosition] = useState<GeoFix | null>(null);
   const latest = useRef<GeoFix | null>(null);
   const sendRef = useRef(send);
   useEffect(() => { sendRef.current = send; }, [send]);
@@ -80,6 +81,7 @@ export function useLocationSharing(active: boolean, send: (fix: GeoFix) => Promi
     const watch = navigator.geolocation.watchPosition(
       (pos) => {
         latest.current = { latitude: pos.coords.latitude, longitude: pos.coords.longitude, accuracy: pos.coords.accuracy ?? null };
+        setPosition(latest.current);
         if (first) { first = false; void push(); }
       },
       (err) => setError(err.code === err.PERMISSION_DENIED
@@ -94,5 +96,5 @@ export function useLocationSharing(active: boolean, send: (fix: GeoFix) => Promi
     };
   }, [active, everyMs]);
 
-  return { error, lastSent };
+  return { error, lastSent, position };
 }

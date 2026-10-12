@@ -65,3 +65,9 @@ body {
   padding: 2px 6px;
   white-space: nowrap;
 }
+
+/* App del repartidor: barra de "Buscando pedidos…" */
+@keyframes nayoscan {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}

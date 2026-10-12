@@ -111,7 +111,7 @@ router.post('/duty', ah(async (req, res) => {
   if (onDuty === undefined) throw badRequest('Indica si estas en turno', 'MISSING_FIELD');
   if (onDuty && req.fleetDriver.status !== 'aprobado') {
     throw new HttpError(403, req.fleetDriver.status === 'pendiente'
-      ? 'Tu registro esta en revision; te avisamos cuando NeuronPOS lo apruebe'
+      ? 'Tu registro esta en revision; te avisamos cuando Nayo lo apruebe'
       : 'Tu cuenta de repartidor no esta aprobada', 'DRIVER_NOT_APPROVED');
   }
   await withFleetDriver(req.fleetDriver.id, (db) => db.query(

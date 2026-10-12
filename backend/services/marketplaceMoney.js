@@ -58,6 +58,7 @@ const ORDER_SELECT = `
     JOIN orders o ON o.id = m.order_id
     LEFT JOIN marketplace_listings l ON l.branch_id = m.branch_id`;
 
+const point = (lat, lng) => (lat === null || lat === undefined ? null : { latitude: Number(lat), longitude: Number(lng) });
 const mapsUrl = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
 /** Resumen sin datos del cliente (pedidos disponibles). */
@@ -75,6 +76,8 @@ function offerView(m) {
     collect: m.payment_method === 'efectivo' ? m.total : '0.00',
     estimated_ready_at: m.estimated_ready_at,
     created_at: m.created_at,
+    // Punto del restaurante para el mapa de la app del repartidor.
+    pickup: point(m.r_lat, m.r_lng),
   };
 }
 
@@ -90,6 +93,9 @@ function jobView(m) {
     address: m.address,
     reference: m.reference,
     dropoff_maps_url: mapsUrl(m.latitude, m.longitude),
+    dropoff_waze_url: `https://waze.com/ul?ll=${m.latitude},${m.longitude}&navigate=yes`,
+    pickup_waze_url: m.r_lat === null ? null : `https://waze.com/ul?ll=${m.r_lat},${m.r_lng}&navigate=yes`,
+    dropoff: point(m.latitude, m.longitude),
     pay_with: m.pay_with,
     change: m.payment_method === 'efectivo' && m.pay_with ? round2(Number(m.pay_with) - Number(m.total)) : null,
     total: m.total,
@@ -109,11 +115,21 @@ export async function driverBoard(driverId) {
     const balance = await driverBalance(db, driverId);
     const blocked = cashBlocked(balance, settings.driver_debt_limit);
     const mine = (await db.query(`${ORDER_SELECT} WHERE m.driver_id = $1 AND m.status = ANY($2::text[]) ORDER BY m.assigned_at`, [driverId, ACTIVE])).rows;
-    const today = (await db.query(
+    const earned = (since) => db.query(
       `SELECT count(*)::int AS deliveries, coalesce(sum(driver_share), 0)::numeric(10,2) AS earned
-         FROM marketplace_orders WHERE driver_id = $1 AND status = 'entregado' AND delivered_at > now() - interval '18 hours'`,
+         FROM marketplace_orders WHERE driver_id = $1 AND status = 'entregado' AND delivered_at > now() - $2::interval`,
+      [driverId, since],
+    ).then((r) => r.rows[0]);
+    const today = await earned('18 hours');
+    const week = await earned('7 days');
+    // Entregas recientes para el historial de la app.
+    const recent = (await db.query(
+      `SELECT m.id, o.folio, r.name AS restaurant_name, m.payment_method, m.driver_share, m.delivered_at
+         FROM marketplace_orders m JOIN restaurants r ON r.id = m.restaurant_id JOIN orders o ON o.id = m.order_id
+        WHERE m.driver_id = $1 AND m.status = 'entregado' AND m.delivered_at > now() - interval '18 hours'
+        ORDER BY m.delivered_at DESC LIMIT 30`,
       [driverId],
-    )).rows[0];
+    )).rows;
     let available = [];
     const maxOrders = Number(settings.driver_max_orders);
     if (d.status === 'aprobado' && d.active && d.on_duty && mine.length < maxOrders && d.base_latitude !== null) {
@@ -129,6 +145,8 @@ export async function driverBoard(driverId) {
       cash_blocked: blocked,
       card_payments: cardPaymentsAvailable(),
       today,
+      week,
+      recent,
       max_orders: maxOrders,
       active: mine.map(jobView),
       available: available.map(offerView),
@@ -216,7 +234,7 @@ export async function deliverOrder(driverId, orderId) {
         await db.query(
           `INSERT INTO marketplace_driver_ledger (driver_id, marketplace_order_id, kind, amount, note)
            VALUES ($1, $2, 'comision_efectivo', $3, $4) ON CONFLICT DO NOTHING`,
-          [driverId, m.id, -Number(m.platform_share), `Pedido #${m.folio} ${m.restaurant_name}: parte de NeuronPOS del envío`],
+          [driverId, m.id, -Number(m.platform_share), `Pedido #${m.folio} ${m.restaurant_name}: parte de Nayo del envío`],
         );
       }
     } else {
