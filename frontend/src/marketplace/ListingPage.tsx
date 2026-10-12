@@ -1,4 +1,4 @@
-import { Check, AlertCircle, Clock, Eye, EyeOff, PauseCircle, PlayCircle, ShieldAlert, Store } from 'lucide-react';
+import { Bell, Check, AlertCircle, ChevronRight, Clock, Eye, EyeOff, PauseCircle, PlayCircle, ShieldAlert, Store } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
@@ -7,7 +7,6 @@ import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import CuisineSelect from './CuisineSelect';
-import DeliveryOrders from './DeliveryOrders';
 import type { Listing } from './lib';
 
 /**
@@ -29,13 +28,36 @@ export default function ListingPage() {
     <>
       <PageHeader title="Nayo" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
       {error && <Alert>{error}</Alert>}
-      {listings?.some((l) => l.published) && <DeliveryOrders />}
+      {listings?.some((l) => l.published) && <OrdersScreenLink />}
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
           {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
         </div>
       )}
     </>
+  );
+}
+
+/** Acceso a la pantalla de pedidos (tipo Uber Eats), con los que esperan respuesta. */
+function OrdersScreenLink() {
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    api<{ orders: { status: string }[] }>('/marketplace/orders')
+      .then((r) => setWaiting(r.orders.filter((o) => o.status === 'nuevo').length)).catch(() => {});
+  }, []);
+  return (
+    <Link to="/admin/delivery/pedidos"
+      className={`card mb-6 flex items-center gap-4 p-5 transition hover:bg-gray-800/60 ${waiting ? 'border-amber-600/70' : ''}`}>
+      <Bell className={`h-8 w-8 shrink-0 ${waiting ? 'text-amber-300' : 'text-brand'}`} />
+      <div className="mr-auto">
+        <p className="text-lg font-semibold text-white">Pantalla de pedidos</p>
+        <p className="text-sm text-gray-400">
+          {waiting ? <span className="font-semibold text-amber-300">{waiting} pedido{waiting > 1 ? 's' : ''} esperando respuesta. </span> : null}
+          Ábrela en la tablet del mostrador: suena cuando entra un pedido y ahí lo aceptas, lo marcas listo y ves al repartidor.
+        </p>
+      </div>
+      <ChevronRight className="h-6 w-6 text-gray-500" />
+    </Link>
   );
 }
 

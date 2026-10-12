@@ -634,6 +634,7 @@ marketplaceRouter.get('/orders', requireRole(...STAFF), ah(async (req, res) => {
             m.address, m.reference, m.distance_km, m.delivery_fee, m.food_total, m.total, m.payment_method, m.pay_with,
             m.cancel_reason, o.notes, o.estimated_ready_at, m.created_at, m.accepted_at, m.ready_at, m.delivered_at,
             m.picked_up_at, m.paid_at, (m.driver_id IS NOT NULL) AS driver_assigned,
+            m.driver_id,
             (SELECT count(*) FROM marketplace_messages x WHERE x.marketplace_order_id = m.id)::int AS messages,
             (SELECT coalesce(json_agg(json_build_object(
                       'name', i.name, 'quantity', i.quantity, 'notes', i.notes,
@@ -648,7 +649,18 @@ marketplaceRouter.get('/orders', requireRole(...STAFF), ah(async (req, res) => {
       ORDER BY (m.status = 'nuevo') DESC, m.created_at DESC LIMIT 200`,
     [rid, branchId],
   )).rows);
-  res.json({ orders: rows });
+  // Nombre del repartidor (solo el primero) y vehiculo: fleet_drivers es de
+  // la plataforma (RLS), por eso se lee aparte.
+  const ids = [...new Set(rows.map((r) => r.driver_id).filter(Boolean))];
+  const drivers = ids.length ? new Map((await withPlatform(async (db) => (await db.query(
+    'SELECT id, name, vehicle FROM fleet_drivers WHERE id = ANY($1::uuid[])', [ids],
+  )).rows)).map((d) => [d.id, d])) : new Map();
+  res.json({
+    orders: rows.map(({ driver_id: driverId, ...r }) => {
+      const d = drivers.get(driverId);
+      return { ...r, driver: d ? { name: String(d.name).trim().split(/\s+/)[0], vehicle: d.vehicle || null } : null };
+    }),
+  });
 }));
 
 async function onOrder(req, fn) {

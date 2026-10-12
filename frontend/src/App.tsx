@@ -74,6 +74,7 @@ import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
 import DriverSignupPage from './marketplace/DriverSignupPage';
 import ListingPage from './marketplace/ListingPage';
+import NayoOrdersBoard from './marketplace/NayoOrdersBoard';
 import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
@@ -200,6 +201,7 @@ export default function App() {
           {/* Nayo (modulo marketplace, sin costo) */}
           <Route element={<ModuleGate code="marketplace" name="Nayo" />}>
             <Route path="delivery" element={<ListingPage />} />
+            <Route path="delivery/pedidos" element={<NayoOrdersBoard />} />
           </Route>
           {/* Clientes: modulos lealtad y monedero */}
           <Route element={<ModuleGate code={['lealtad', 'monedero']} name="Clientes y lealtad" />}>
