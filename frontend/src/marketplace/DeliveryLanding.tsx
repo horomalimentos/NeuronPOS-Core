@@ -1,20 +1,20 @@
-import { ArrowRight, Bike, ChevronDown, MapPin, Receipt, Store, UserPlus, Wallet } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, MapPin, Receipt, UserRound } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { NayoLogo } from '../components/NayoLogo';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { api } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
-import { ordersStore, useStore } from './customer';
+import { accountStore, ordersStore, signOut, useStore } from './customer';
 import type { MarketplaceInfo } from './lib';
 import NearbyRestaurants from './NearbyRestaurants';
 import { nayoPath } from './nayoUrl';
 
 /**
  * Pagina de Nayo (/nayo): el cliente elige donde le
- * entregan y ve los restaurantes cercanos (fase 2); abajo, la invitacion a
- * restaurantes y repartidores y las tarifas de envio.
+ * entregan y ve los restaurantes cercanos y las tarifas de envio. Lo de
+ * restaurantes y repartidores vive aparte, en Nayo Socios (/socios).
  */
 export default function DeliveryLanding() {
   const [info, setInfo] = useState<MarketplaceInfo | null>(null);
@@ -35,12 +35,11 @@ export default function DeliveryLanding() {
             <div className="inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
               <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
             </div>
-            <SignupMenu />
+            <AccountChip />
           </div>
           <h1><NayoLogo size="lg" /></h1>
           <p className="mt-4 max-w-2xl text-lg text-gray-400">
-            Pide a los restaurantes cerca de ti y recibe con repartidores de tu zona. Sin mensualidad para restaurantes ni
-            para repartidores.
+            Pide a los restaurantes cerca de ti y recibe en tu puerta con repartidores de tu zona.
           </p>
         </div>
       </div>
@@ -58,43 +57,8 @@ export default function DeliveryLanding() {
         <NearbyRestaurants />
       </div>
 
-      <div className="mx-auto grid max-w-5xl gap-4 px-4 pb-10 md:grid-cols-2">
-        <section className="card flex flex-col p-6">
-          <Store className="mb-3 h-8 w-8 text-brand" />
-          <h2 className="text-xl font-semibold text-white">¿Tienes un restaurante?</h2>
-          <ul className="mt-3 flex-1 space-y-2 text-sm text-gray-300">
-            <li>Regístrate gratis, sube tu menú y tu horario.</li>
-            <li>Recibe los pedidos en tu panel y habla con el cliente y el repartidor.</li>
-            <li>{info && info.food_commission_pct > 0 ? `Comisión de ${info.food_commission_pct} % sobre la comida.` : 'Sin comisión sobre tu comida.'}</li>
-          </ul>
-          <Link to={nayoPath('/restaurantes')} className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
-            Registrar mi restaurante <ArrowRight className="h-4 w-4" />
-          </Link>
-        </section>
-
-        <section className="card flex flex-col p-6">
-          <Bike className="mb-3 h-8 w-8 text-brand" />
-          <h2 className="text-xl font-semibold text-white">¿Quieres repartir?</h2>
-          <ul className="mt-3 flex-1 space-y-2 text-sm text-gray-300">
-            <li>Elige tu epicentro y cuántos kilómetros a la redonda quieres cubrir.</li>
-            <li>Conéctate cuando quieras y acepta los pedidos de tu zona.</li>
-            <li className="flex items-center gap-2">
-              <Wallet className="h-4 w-4 text-emerald-400" /> Te quedas con el {info?.driver_share_pct ?? 80} % de cada envío.
-            </li>
-          </ul>
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Link to={nayoPath('/repartidores')} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
-              Quiero repartir <ArrowRight className="h-4 w-4" />
-            </Link>
-            <Link to="/repartidor" className="inline-flex items-center justify-center rounded-xl border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-200 hover:bg-gray-800">
-              Ya tengo cuenta
-            </Link>
-          </div>
-        </section>
-      </div>
-
       {info && info.fee_tiers.length > 0 && (
-        <div className="mx-auto max-w-5xl px-4 pb-16">
+        <div className="mx-auto max-w-5xl px-4 pb-10">
           <section className="card p-6">
             <h2 className="font-semibold text-white">Costo de envío</h2>
             <p className="mt-1 text-sm text-gray-400">Según la distancia en línea recta del restaurante a tu domicilio.</p>
@@ -109,47 +73,26 @@ export default function DeliveryLanding() {
           </section>
         </div>
       )}
+      <footer className="border-t border-gray-800">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-gray-500">
+          <span>Nayo · pedidos locales</span>
+          <Link to={nayoPath('/socios')} className="inline-flex items-center gap-1 text-gray-400 hover:text-white">
+            ¿Tienes un restaurante o quieres repartir? <span className="font-semibold text-gray-200">Nayo Socios</span> <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </footer>
     </div>
   );
 }
 
-/** "Quiero registrarme": elige si te registras como restaurante o repartidor. */
-function SignupMenu() {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = (e: MouseEvent | KeyboardEvent) => {
-      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !box.current?.contains(e.target as Node)) setOpen(false);
-    };
-    document.addEventListener('mousedown', close);
-    document.addEventListener('keydown', close);
-    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
-  }, [open]);
-  const options = [
-    { to: nayoPath('/restaurantes'), icon: <Store className="h-5 w-5" />, title: 'Restaurante', hint: 'Vende a domicilio sin mensualidad' },
-    { to: nayoPath('/repartidores'), icon: <Bike className="h-5 w-5" />, title: 'Repartidor', hint: 'Reparte en tu zona y en tu horario' },
-  ];
+/** Tu cuenta de Nayo (si ya entraste) con la opción de salir. */
+function AccountChip() {
+  const account = useStore(accountStore);
+  if (!account) return null;
   return (
-    <div ref={box} className="relative">
-      <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu"
-        className="inline-flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
-        <UserPlus className="h-4 w-4" /> Quiero registrarme <ChevronDown className={`h-4 w-4 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && (
-        <div role="menu" className="absolute right-0 z-[1000] mt-2 w-72 overflow-hidden rounded-2xl border border-gray-800 bg-gray-900 p-1.5 shadow-2xl">
-          {options.map((o) => (
-            <Link key={o.to} to={o.to} role="menuitem" className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-gray-800">
-              <span className="rounded-xl bg-brand/15 p-2 text-brand">{o.icon}</span>
-              <span className="flex-1">
-                <span className="block text-sm font-semibold text-white">{o.title}</span>
-                <span className="block text-xs text-gray-400">{o.hint}</span>
-              </span>
-              <ArrowRight className="h-4 w-4 text-gray-500" />
-            </Link>
-          ))}
-        </div>
-      )}
+    <div className="flex items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 text-xs text-gray-300">
+      <UserRound className="h-3.5 w-3.5 text-brand" /> {account.name}
+      <button type="button" onClick={signOut} className="text-gray-500 underline hover:text-white">Salir</button>
     </div>
   );
 }

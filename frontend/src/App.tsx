@@ -79,6 +79,7 @@ import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
 import { onNayoHost } from './marketplace/nayoUrl';
 import NayoResetPage from './marketplace/NayoResetPage';
+import NayoPartnersPage from './marketplace/NayoPartnersPage';
 import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
@@ -92,6 +93,7 @@ function NayoSite() {
   return (
     <Routes>
       <Route path="/" element={<DeliveryLanding />} />
+      <Route path="/socios" element={<NayoPartnersPage />} />
       <Route path="/restaurantes" element={<RestaurantSignupPage />} />
       <Route path="/repartidores" element={<DriverSignupPage />} />
       <Route path="/r/:branchId" element={<DeliveryRestaurantPage />} />
@@ -138,6 +140,7 @@ export default function App() {
             ruta canonica; /delivery sigue sirviendo para los enlaces viejos. */}
         {['/nayo', '/delivery'].flatMap((base) => [
           <Route key={base} path={base} element={<DeliveryLanding />} />,
+          <Route key={`${base}/socios`} path={`${base}/socios`} element={<NayoPartnersPage />} />,
           <Route key={`${base}/restaurantes`} path={`${base}/restaurantes`} element={<RestaurantSignupPage />} />,
           <Route key={`${base}/repartidores`} path={`${base}/repartidores`} element={<DriverSignupPage />} />,
           <Route key={`${base}/r`} path={`${base}/r/:branchId`} element={<DeliveryRestaurantPage />} />,
