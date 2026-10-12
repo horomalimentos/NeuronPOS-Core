@@ -34,6 +34,7 @@ import {
 } from '../services/marketplaceChat.js';
 import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
+import { subscribeLive } from '../services/live.js';
 import { loadMenu } from './pos/menu.js';
 import { restaurantSiteUrl } from '../services/urls.js';
 import {
@@ -88,6 +89,25 @@ marketplacePublicRouter.get('/info', ah(async (req, res) => {
     };
   });
   res.json(data);
+}));
+
+// Canal en vivo para clientes (Server-Sent Events, sin cuenta): avisa cuando
+// un repartidor se conecta o desconecta, o un restaurante publica, pausa o es
+// aprobado (triggers de la migracion 052), para volver a pedir la lista. Solo
+// manda el tipo de cambio, nada de datos. Tope de conexiones abiertas.
+const MAX_LIVE = 2000;
+let liveOpen = 0;
+marketplacePublicRouter.get('/live', ah(async (req, res) => {
+  if (liveOpen >= MAX_LIVE) throw new HttpError(503, 'Intenta de nuevo en un momento', 'LIVE_BUSY');
+  liveOpen += 1;
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write('retry: 3000\n\n');
+  let stop = () => {};
+  const beat = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => { liveOpen -= 1; clearInterval(beat); stop(); });
+  stop = await subscribeLive('nayo', (d) => res.write(`event: ${d.t}\ndata: {}\n\n`));
+  if (res.writableEnded || req.destroyed) stop();
 }));
 
 marketplacePublicRouter.post('/restaurants', signupLimiter, ah(async (req, res) => {

@@ -5,6 +5,7 @@ import { useNayoFavicon } from '../components/useNayoFavicon';
 import ZoneMap, { type Point } from '../components/ZoneMap';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { useNayoLive } from '../lib/live';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import ItemModal from '../site/ItemModal';
@@ -41,6 +42,8 @@ export default function RestaurantPage() {
       .catch((e) => setError(errorMessage(e)));
   }, [branchId, location]);
   useEffect(() => { resetBranding(); load(); }, [load]);
+  // Si se conecta o desconecta un repartidor, se sabe al instante si ya se puede pedir.
+  useNayoLive(load);
 
   const mine = cart.branch_id === branchId ? cart.lines : [];
   const groups = useMemo(() => new Map((data?.modifier_groups || []).map((g) => [g.id, g])), [data]);

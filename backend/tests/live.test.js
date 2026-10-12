@@ -10,9 +10,10 @@ describe('avisos en vivo', { skip: SKIP_DB }, () => {
   const api = (who, method, path, body) => ctx.request(method, path, { token: who.token ?? who, body });
 
   // Abre el canal y junta los eventos que lleguen.
-  function listen(who, branchId) {
+  function listen(who, branchId, path = `/api/live?branch_id=${branchId}`) {
     const events = [];
-    const req = http.get({ host: '127.0.0.1', port: ctx.port, path: `/api/live?branch_id=${branchId}`, headers: { authorization: `Bearer ${who.token ?? who}` } });
+    const headers = who ? { authorization: `Bearer ${who.token ?? who}` } : {};
+    const req = http.get({ host: '127.0.0.1', port: ctx.port, path, headers });
     const ready = new Promise((resolve, reject) => {
       req.on('response', (res) => {
         res.setEncoding('utf8');
@@ -58,5 +59,26 @@ describe('avisos en vivo', { skip: SKIP_DB }, () => {
     assert.equal(mine.events.length, before);
     [mine, other, otherRestaurant].forEach((l) => l.close());
     assert.equal((await api(A, 'GET', '/api/live')).status, 400, 'pide sucursal');
+  });
+
+  test('Nayo: el cliente se entera al instante cuando un repartidor se conecta o desconecta', async () => {
+    const d = await ctx.request('POST', '/api/marketplace/drivers', {
+      body: { name: 'Juan', email: 'juan@moto.test', password: 'clave-segura-7', phone: '6560000000', vehicle: 'Moto', base: { latitude: 31.74, longitude: -106.49 }, radius_km: 4 },
+    });
+    assert.equal(d.status, 201, JSON.stringify(d.body));
+    const customer = listen(null, null, '/api/marketplace/live');
+    await customer.ready;
+    await api(owner, 'POST', `/api/platform/marketplace/drivers/${d.body.driver.id}/review`, { status: 'aprobado' });
+    await wait(200);
+    assert.deepEqual(customer.events.map((e) => e.type), ['drivers']);
+    await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });
+    await wait(200);
+    assert.equal(customer.events.length, 2);
+    // Repetir el mismo estado no avisa.
+    await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });
+    await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: false });
+    await wait(200);
+    assert.deepEqual(customer.events.map((e) => e.type), ['drivers', 'drivers', 'drivers']);
+    customer.close();
   });
 });
