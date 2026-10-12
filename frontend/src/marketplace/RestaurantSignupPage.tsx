@@ -1,5 +1,6 @@
 import { CheckCircle2, ExternalLink, Store } from 'lucide-react';
 import { useEffect, useState, type FormEvent } from 'react';
+import AddressAutocomplete from '../components/AddressAutocomplete';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { Alert, Button, Field } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -76,7 +77,8 @@ export default function RestaurantSignupPage() {
             <input className="input" type="tel" required value={form.phone} onChange={set('phone')} />
           </Field>
           <Field label="Dirección">
-            <input className="input" required maxLength={300} value={form.address} onChange={set('address')} />
+            <AddressAutocomplete required maxLength={300} value={form.address} near={location}
+              onChange={(address) => setForm((f) => ({ ...f, address }))} onPlace={({ point }) => setLocation(point)} />
           </Field>
         </div>
         <div className="space-y-2">

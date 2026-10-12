@@ -2,6 +2,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { Crosshair, Loader2, Search } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import AddressAutocomplete from './AddressAutocomplete';
 import { dotIcon, GOOGLE_MAP_OPTIONS, loadGoogleMaps, useGoogleMaps } from '../lib/googleMaps';
 
 export interface Point { latitude: number; longitude: number }
@@ -209,8 +210,10 @@ export function MapTools({ onPoint, light = false, near, initialQuery = '' }: {
     <div className="space-y-1.5">
       <div className="flex flex-wrap gap-2">
         <div className="flex min-w-[12rem] flex-1 gap-2">
-          <input className={`${input} flex-1`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar calle y colonia"
-            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void search(); } }} />
+          <div className="min-w-0 flex-1">
+            <AddressAutocomplete className={input} light={light} value={q} onChange={setQ} near={near} placeholder="Buscar calle y colonia"
+              onPlace={({ point }) => { setMsg(''); onPoint(point); }} onEnter={() => void search()} />
+          </div>
           <button type="button" className={btn} onClick={() => void search()} disabled={busy !== ''} aria-label="Buscar">
             {busy === 'search' ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
           </button>
