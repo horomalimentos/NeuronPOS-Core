@@ -12,20 +12,19 @@ export function NayoMark({ className }: { className?: string }) {
   );
 }
 
-/** Logo completo: mandadero mostaza, "nayo" y "by NeuronPOS" debajo. */
+/**
+ * Logo completo. Todo se mide en em del tamano de "nayo": el mandadero se
+ * para sobre la linea base de la palabra (los pies no bajan al descendente
+ * de la y) y "by NeuronPOS" va debajo, alineado con la palabra.
+ */
 export function NayoLogo({ className, size = 'md' }: { className?: string; size?: 'sm' | 'md' | 'lg' }) {
-  const s = {
-    sm: { mark: 'h-9', word: 'text-xl', by: 'text-[9px]' },
-    md: { mark: 'h-12', word: 'text-3xl', by: 'text-[10px]' },
-    lg: { mark: 'h-20 sm:h-24', word: 'text-5xl sm:text-6xl', by: 'text-xs' },
-  }[size];
+  const fontSize = { sm: 'text-xl', md: 'text-3xl', lg: 'text-6xl sm:text-7xl' }[size];
   return (
-    <span className={`inline-flex items-end gap-2 ${className ?? ''}`} role="img" aria-label="Nayo by NeuronPOS">
-      <NayoMark className={`${s.mark} w-auto text-[#FFC21A]`} />
-      <span className="flex flex-col leading-none">
-        <span className={`${s.word} font-black tracking-tight text-white`}>nayo</span>
-        <span className={`${s.by} mt-1 font-semibold uppercase tracking-[0.14em] text-gray-500`}>by NeuronPOS</span>
-      </span>
+    <span className={`inline-grid grid-cols-[auto_auto] items-end gap-x-[0.22em] leading-none ${fontSize} ${className ?? ''}`} role="img" aria-label="Nayo by NeuronPOS">
+      <NayoMark className="mb-[0.2em] h-[1.3em] w-auto text-[#FFC21A]" />
+      <span className="font-black tracking-tight text-white">nayo</span>
+      <span />
+      <span className="mt-[0.05em] pl-[0.06em] text-[max(0.17em,9px)] font-semibold uppercase tracking-[0.2em] text-gray-500">by NeuronPOS</span>
     </span>
   );
 }
