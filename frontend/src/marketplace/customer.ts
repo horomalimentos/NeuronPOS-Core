@@ -1,4 +1,4 @@
-// Estado del cliente de NeuronPOS Delivery en el navegador: su ubicacion,
+// Estado del cliente de Nayo en el navegador: su ubicacion,
 // su carrito (de un solo restaurante a la vez) y sus datos de contacto. Los
 // precios del carrito son un estimado: el servidor valua todo al cotizar.
 import { useSyncExternalStore } from 'react';

@@ -38,7 +38,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 /**
- * NeuronPOS Delivery en la app del repartidor: su cuenta con NeuronPOS
+ * Nayo en la app del repartidor: su cuenta con NeuronPOS
  * (adeudo del 20 % de los envios en efectivo, abonos de los pedidos con
  * tarjeta), el pedido que lleva y los pedidos disponibles de su zona.
  */
@@ -75,7 +75,7 @@ export default function MarketplaceSection({ onDuty }: { onDuty: boolean }) {
   const debt = board.balance < 0 ? -board.balance : 0;
   return (
     <section className="space-y-3">
-      <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">NeuronPOS Delivery</h2>
+      <h2 className="text-sm font-medium uppercase tracking-wider text-gray-500">Nayo</h2>
       {error && <Alert>{error}</Alert>}
       {back === 'ok' && <Alert kind="success">Recibimos tu pago. Tu saldo se actualiza en cuanto Clip lo confirma.</Alert>}
 

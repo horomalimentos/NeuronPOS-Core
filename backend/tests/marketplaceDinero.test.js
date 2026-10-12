@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 3) contra Postgres con Clip simulado: el
+// Nayo (fase 3) contra Postgres con Clip simulado: el
 // repartidor y el dinero. Cubre: el repartidor ve los pedidos aceptados de
 // su zona (sin datos del cliente), los toma (uno a la vez, gana el primero),
 // recoge y entrega; efectivo -> adeudo de la parte de NeuronPOS del envio;
@@ -18,7 +18,7 @@ const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const OTRA_CIUDAD = { latitude: 32.5, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let clip; let sign; let money; let R; let branchId; let taco;
   let juan; let pedro;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
@@ -168,7 +168,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     const chk = clip.lastCreated();
     assert.equal(chk.auth.startsWith('Basic '), true);
     assert.equal(chk.body.amount, 135);
-    assert.match(JSON.stringify(chk.body), /delivery\/pedido\//);
+    assert.match(JSON.stringify(chk.body), /nayo\/pedido\//);
 
     // El restaurante todavia no lo ve.
     assert.equal((await restaurantOrders()).some((x) => x.status === 'nuevo' || x.status === 'pago_pendiente'), false);

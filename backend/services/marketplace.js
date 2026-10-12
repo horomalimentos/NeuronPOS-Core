@@ -1,4 +1,4 @@
-// NeuronPOS Delivery: reglas de la plataforma de pedidos (ajustes, tarifas
+// Nayo: reglas de la plataforma de pedidos (ajustes, tarifas
 // por km, cobertura de repartidores) y alta de restaurantes. Las funciones
 // puras (feeForDistance, splitDeliveryFee, driverCovers) se prueban solas;
 // las demas reciben un `db` de withPlatform.

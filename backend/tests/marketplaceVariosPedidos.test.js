@@ -1,4 +1,4 @@
-// NeuronPOS Delivery: un repartidor lleva hasta N pedidos a la vez (2 de
+// Nayo: un repartidor lleva hasta N pedidos a la vez (2 de
 // inicio, se cambia en el Panel) y los pedidos salen en "Pedidos en linea"
 // del POS con su estado de repartidor; desde ahi se aceptan y se marcan
 // listos, pero no "salio a reparto" (eso lo marca el repartidor).
@@ -10,7 +10,7 @@ const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: varios pedidos y POS', { skip: SKIP_DB }, () => {
+describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let branchId; let taco; let juan;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });

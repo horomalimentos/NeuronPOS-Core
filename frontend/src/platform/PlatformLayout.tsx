@@ -10,7 +10,7 @@ const NAV = [
   { to: '/panel/modulos', label: 'Módulos y precios', icon: Package, end: false },
   { to: '/panel/cobros', label: 'Cobros', icon: Receipt, end: false },
   { to: '/panel/flota', label: 'Flota', icon: Truck, end: false },
-  { to: '/panel/delivery', label: 'Delivery', icon: Store, end: false },
+  { to: '/panel/delivery', label: 'Nayo', icon: Store, end: false },
   { to: '/panel/ajustes', label: 'Ajustes', icon: Settings, end: false },
 ];
 

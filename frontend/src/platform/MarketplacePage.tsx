@@ -25,7 +25,7 @@ interface PanelListing {
 const mapsLink = (p: Point) => `https://www.google.com/maps?q=${p.latitude},${p.longitude}`;
 
 /**
- * Panel › Delivery: reglas de NeuronPOS Delivery (reparto del envio entre
+ * Panel › Delivery: reglas de Nayo (reparto del envio entre
  * repartidor y NeuronPOS, comision, distancias, tope de adeudo), la tabla de
  * envio por km, la aprobacion de repartidores, sus cuentas, los pedidos y
  * las fichas de restaurantes.
@@ -43,7 +43,7 @@ export default function MarketplacePage() {
   const s = data.summary;
   return (
     <>
-      <PageHeader title="NeuronPOS Delivery" subtitle="Plataforma local de pedidos: sin mensualidad para restaurantes ni repartidores." />
+      <PageHeader title="Nayo" subtitle="Plataforma local de pedidos: sin mensualidad para restaurantes ni repartidores." />
       <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Tile label="Repartidores por aprobar" value={s.pending_drivers} warn={s.pending_drivers > 0} />
         <Tile label="Repartidores en turno" value={s.online_drivers} />

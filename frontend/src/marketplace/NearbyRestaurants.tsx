@@ -57,7 +57,7 @@ export default function NearbyRestaurants() {
       </div>
       {error && <Alert>{error}</Alert>}
       {!list ? (!error && <Spinner />) : list.length === 0 ? (
-        <p className="card p-6 text-center text-sm text-gray-400">Todavía no hay restaurantes de NeuronPOS Delivery cerca de ti.</p>
+        <p className="card p-6 text-center text-sm text-gray-400">Todavía no hay restaurantes de Nayo cerca de ti.</p>
       ) : (
         <>
           {orderable.length === 0 && list.some((r) => r.reason === 'sin_repartidor') && (
@@ -96,5 +96,5 @@ function RestaurantCard({ r }: { r: NearbyRestaurant }) {
       </div>
     </article>
   );
-  return r.can_order ? <Link to={`/delivery/r/${r.branch_id}`}>{body}</Link> : body;
+  return r.can_order ? <Link to={`/nayo/r/${r.branch_id}`}>{body}</Link> : body;
 }

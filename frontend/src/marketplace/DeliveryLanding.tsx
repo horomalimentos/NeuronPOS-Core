@@ -9,7 +9,7 @@ import type { MarketplaceInfo } from './lib';
 import NearbyRestaurants from './NearbyRestaurants';
 
 /**
- * Pagina de NeuronPOS Delivery (/delivery): el cliente elige donde le
+ * Pagina de Nayo (/nayo): el cliente elige donde le
  * entregan y ve los restaurantes cercanos (fase 2); abajo, la invitacion a
  * restaurantes y repartidores y las tarifas de envio.
  */
@@ -18,7 +18,7 @@ export default function DeliveryLanding() {
   const recent = useStore(ordersStore);
   useEffect(() => {
     resetBranding();
-    document.title = 'NeuronPOS Delivery';
+    document.title = 'Nayo';
     api<MarketplaceInfo>('/marketplace/info', { noRedirect: true }).then(setInfo).catch(() => {});
   }, []);
 
@@ -30,7 +30,8 @@ export default function DeliveryLanding() {
           <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
             <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
           </div>
-          <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl">NeuronPOS Delivery</h1>
+          <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl">Nayo</h1>
+          <p className="mt-1 text-sm text-gray-500">by NeuronPOS</p>
           <p className="mt-4 max-w-2xl text-lg text-gray-400">
             Pide a los restaurantes cerca de ti y recibe con repartidores de tu zona. Sin mensualidad para restaurantes ni
             para repartidores.
@@ -44,7 +45,7 @@ export default function DeliveryLanding() {
             <Receipt className="h-4 w-4 text-gray-400" />
             <span className="text-gray-400">Tus pedidos:</span>
             {recent.slice(0, 3).map((o) => (
-              <Link key={o.token} to={`/delivery/pedido/${o.token}`} className="rounded-full bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700">{o.restaurant}</Link>
+              <Link key={o.token} to={`/nayo/pedido/${o.token}`} className="rounded-full bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700">{o.restaurant}</Link>
             ))}
           </div>
         )}
@@ -60,7 +61,7 @@ export default function DeliveryLanding() {
             <li>Recibe los pedidos en tu panel y habla con el cliente y el repartidor.</li>
             <li>{info && info.food_commission_pct > 0 ? `Comisión de ${info.food_commission_pct} % sobre la comida.` : 'Sin comisión sobre tu comida.'}</li>
           </ul>
-          <Link to="/delivery/restaurantes" className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
+          <Link to="/nayo/restaurantes" className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
             Registrar mi restaurante <ArrowRight className="h-4 w-4" />
           </Link>
         </section>
@@ -76,7 +77,7 @@ export default function DeliveryLanding() {
             </li>
           </ul>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Link to="/delivery/repartidores" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
+            <Link to="/nayo/repartidores" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
               Quiero repartir <ArrowRight className="h-4 w-4" />
             </Link>
             <Link to="/repartidor" className="inline-flex items-center justify-center rounded-xl border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-200 hover:bg-gray-800">

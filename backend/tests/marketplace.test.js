@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 1) contra Postgres: registro gratis de
+// Nayo (fase 1) contra Postgres: registro gratis de
 // restaurantes y repartidores, ficha de la sucursal, ajustes y tabla de
 // envio del Panel, aprobacion de repartidores y cobertura por epicentro.
 //
@@ -22,7 +22,7 @@ const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const LEJOS = { latitude: 31.8199, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: reglas puras', () => {
+describe('Nayo: reglas puras', () => {
   test('envio por tramos y reparto 80/20', () => {
     const tiers = [{ up_to_km: 3, fee: 35 }, { up_to_km: 5, fee: 45 }, { up_to_km: 8, fee: 60 }];
     assert.equal(feeForDistance(tiers, 0), 35);
@@ -42,7 +42,7 @@ describe('NeuronPOS Delivery: reglas puras', () => {
   });
 });
 
-describe('NeuronPOS Delivery: fase 1', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 1', { skip: SKIP_DB }, () => {
   let ctx; let owner;
   let R; let branchR; let driverToken; let driverId; let pos;
 

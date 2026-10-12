@@ -10,7 +10,7 @@ import DeliveryOrders from './DeliveryOrders';
 import type { Listing } from './lib';
 
 /**
- * Ficha del restaurante en NeuronPOS Delivery (modulo marketplace): por
+ * Ficha del restaurante en Nayo (modulo marketplace): por
  * sucursal, ubicacion, descripcion, tiempo de preparacion y pedido minimo;
  * publicar u ocultar y pausar pedidos un rato. Para publicar hacen falta
  * ubicacion, horario y al menos un producto en el menu.
@@ -25,7 +25,7 @@ export default function ListingPage() {
 
   return (
     <>
-      <PageHeader title="NeuronPOS Delivery" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
+      <PageHeader title="Nayo" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
       {error && <Alert>{error}</Alert>}
       {listings?.some((l) => l.published) && <DeliveryOrders />}
       {!listings ? (!error && <Spinner />) : (

@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 4): chat de tres partes por pedido.
+// Nayo (fase 4): chat de tres partes por pedido.
 //
 // - Cliente: con el token del seguimiento.
 // - Restaurante: con su sesion (RLS de su restaurante).

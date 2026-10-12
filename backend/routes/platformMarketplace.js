@@ -1,4 +1,4 @@
-// Panel NeuronPOS: administracion de NeuronPOS Delivery. Ajustes
+// Panel NeuronPOS: administracion de Nayo. Ajustes
 // (reparto 80/20, comision, distancias, tope de adeudo), tabla de envio por
 // km, aprobacion de repartidores, bloqueo de fichas de restaurantes (fase 1),
 // cuentas de los repartidores (adeudos, pagos, liquidaciones) y pedidos (fase 3).
@@ -236,7 +236,7 @@ router.post('/marketplace/drivers/:id/ledger', ah(async (req, res) => {
 }));
 
 // ---------------------------------------------------------------------------
-// Pedidos de NeuronPOS Delivery (todos los restaurantes)
+// Pedidos de Nayo (todos los restaurantes)
 // ---------------------------------------------------------------------------
 
 router.get('/marketplace/orders', ah(async (req, res) => {

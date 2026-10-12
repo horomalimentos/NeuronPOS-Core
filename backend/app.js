@@ -94,7 +94,7 @@ export function createApp() {
   }));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
-  // NeuronPOS Delivery: registro de restaurantes y repartidores (sin tenant).
+  // Nayo: registro de restaurantes y repartidores (sin tenant).
   app.use('/api/marketplace', marketplacePublicRouter);
 
   // Todo lo demas es de un restaurante.
@@ -135,7 +135,7 @@ export function createApp() {
   app.use('/api/push', pushRouter);
   app.use('/api/feedback', feedbackRouter);
   app.use('/api/whatsapp', whatsappRouter);
-  // NeuronPOS Delivery: la ficha de cada sucursal (modulo marketplace).
+  // Nayo: la ficha de cada sucursal (modulo marketplace).
   app.use('/api/marketplace', marketplaceRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));

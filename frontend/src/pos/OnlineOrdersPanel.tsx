@@ -18,7 +18,7 @@ const POLL_MS = 10000;
  * lo ve en su seguimiento). Los aceptados se abren para cobrarlos con el
  * flujo normal de caja; los de domicilio se marcan "salió a reparto". Los
  * pagados en línea con Clip no pasan por caja: se marcan entregados.
- * Los de NeuronPOS Delivery los recoge un repartidor de la plataforma, que
+ * Los de Nayo los recoge un repartidor de la plataforma, que
  * paga la comida al recogerla: se cobran en caja y no se marcan "salió".
  */
 export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }: {
@@ -167,7 +167,7 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
               {delivery ? <><Bike className="h-3 w-3" /> Domicilio</> : <><Store className="h-3 w-3" /> Recoger</>}
             </span>
             {o.marketplace && (
-              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300 ring-1 ring-violet-500/30">NeuronPOS Delivery</span>
+              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300 ring-1 ring-violet-500/30">Nayo</span>
             )}
           </div>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
@@ -248,5 +248,5 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
 function marketplaceDriverLabel(m: NonNullable<Order['marketplace']>) {
   if (m.picked_up_at || m.status === 'en_camino') return 'El repartidor ya lo recogió';
   if (m.driver_assigned) return 'Repartidor asignado: viene en camino a recogerlo';
-  return 'Buscando repartidor de NeuronPOS Delivery';
+  return 'Buscando repartidor de Nayo';
 }
