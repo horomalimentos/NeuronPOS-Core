@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessagesSquare, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessagesSquare, PiggyBank, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -85,6 +85,7 @@ export default function AdminLayout() {
     { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
     { to: '/admin/chat', label: 'Chat', icon: MessagesSquare, end: false, show: has('chat'), badge: chatUnread },
+    { to: '/admin/apartados', label: 'Apartados', icon: PiggyBank, end: false, show: has('apartados') },
     { to: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, end: false, show: has('whatsapp') && posCan.cashier(role), badge: waPending },
     { to: '/admin/quejas', label: 'Quejas', icon: MessageSquareWarning, end: false, show: has('quejas') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },

@@ -17,7 +17,7 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
 
   // Modulos de main en su orden; los del POS extendido se agregan aparte.
   const BASE = ['pos', 'reportes', 'inventario', 'lealtad', 'monedero', 'landing', 'portal', 'zonas_entrega', 'pedidos_programados', 'quejas', 'push', 'whatsapp', 'marketplace', 'rh', 'turnos', 'empleado_mes', 'domicilios'];
-  const EXTRA = ['estaciones', 'plataformas', 'promociones', 'multimoneda', 'terminal_clip', 'kiosko', 'dispositivos', 'eventos', 'chat'];
+  const EXTRA = ['estaciones', 'plataformas', 'promociones', 'multimoneda', 'terminal_clip', 'kiosko', 'dispositivos', 'eventos', 'chat', 'apartados'];
   const checkCatalog = (codes, base = BASE) => {
     assert.deepEqual(codes.filter((c) => base.includes(c)), base);
     assert.deepEqual(codes.filter((c) => !base.includes(c)).sort(), [...EXTRA].sort());

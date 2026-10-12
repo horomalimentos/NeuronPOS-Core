@@ -11,6 +11,7 @@ import branchesRouter from './routes/branches.js';
 import permissionsRouter from './routes/permissions.js';
 import devicesRouter from './routes/devices.js';
 import chatRouter from './routes/chat.js';
+import savingsRouter from './routes/savings.js';
 import eventsRouter from './routes/events.js';
 import eventsPublicRouter from './routes/eventsPublic.js';
 import liveRouter from './routes/live.js';
@@ -126,6 +127,7 @@ export function createApp() {
   app.use('/api/devices', devicesRouter);
   // Ventas por evento y preventas (modulo eventos): personal y pagina publica.
   app.use('/api/chat', chatRouter);
+  app.use('/api/savings', savingsRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/event-page', eventsPublicRouter);
   // Avisos en vivo (caja, cocina y pedidos en linea).
