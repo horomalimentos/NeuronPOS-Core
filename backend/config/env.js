@@ -68,6 +68,9 @@ export const env = {
   // Remitente: "NeuronPOS <no-reply@neuronpos.app>". En correos de un
   // restaurante se usa su nombre con esta misma direccion.
   mailFrom: process.env.MAIL_FROM || 'NeuronPOS <no-reply@neuronpos.app>',
+  // Los correos de Nayo salen con su propia marca y su dominio.
+  nayoMailFrom: process.env.NAYO_MAIL_FROM || 'Nayo <no-reply@elnayo.com>',
+  nayoSiteUrl: (process.env.NAYO_SITE_URL || 'https://elnayo.com').replace(/\/+$/, ''),
   // Contacto que piden los servicios de push (Apple rechaza dominios locales).
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:soporte@neuronpos.app',
   // Bot de WhatsApp: app de Meta de la plataforma (un restaurante con app

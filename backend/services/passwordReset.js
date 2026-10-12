@@ -12,7 +12,7 @@ export const RESET_TTL_MINUTES = 60;
 const RESEND_AFTER_SECONDS = 60;
 const TABLES = new Set(['customers', 'users']);
 
-const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest();
+export const hashToken = (token) => crypto.createHash('sha256').update(String(token)).digest();
 
 function table(name) {
   if (!TABLES.has(name)) throw new Error(`tabla no permitida: ${name}`);

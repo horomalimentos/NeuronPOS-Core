@@ -78,6 +78,7 @@ import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
 import { onNayoHost } from './marketplace/nayoUrl';
+import NayoResetPage from './marketplace/NayoResetPage';
 import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
@@ -95,6 +96,7 @@ function NayoSite() {
       <Route path="/repartidores" element={<DriverSignupPage />} />
       <Route path="/r/:branchId" element={<DeliveryRestaurantPage />} />
       <Route path="/pedido/:token" element={<DeliveryTrackPage />} />
+      <Route path="/restablecer" element={<NayoResetPage />} />
       <Route path="/repartidor" element={<DriverApp />} />
       <Route path="/nayo/*" element={<StripPrefix prefix="/nayo" />} />
       <Route path="/delivery/*" element={<StripPrefix prefix="/delivery" />} />
@@ -140,6 +142,7 @@ export default function App() {
           <Route key={`${base}/repartidores`} path={`${base}/repartidores`} element={<DriverSignupPage />} />,
           <Route key={`${base}/r`} path={`${base}/r/:branchId`} element={<DeliveryRestaurantPage />} />,
           <Route key={`${base}/pedido`} path={`${base}/pedido/:token`} element={<DeliveryTrackPage />} />,
+          <Route key={`${base}/restablecer`} path={`${base}/restablecer`} element={<NayoResetPage />} />,
         ])}
         {/* Kiosko de autoservicio (pantalla completa, sesion de caja) */}
         <Route path="/autoservicio" element={<SelfOrderKiosk />} />
