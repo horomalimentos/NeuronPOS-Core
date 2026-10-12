@@ -1,15 +1,14 @@
 import { ArrowRight, MapPin, Receipt, UserRound } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
 import { PushBell } from '../components/PushBell';
-import { Modal } from '../components/ui';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { resetBranding } from '../lib/branding';
 import ActiveOrderBubble from './ActiveOrderBubble';
-import { accountStore, ordersStore, signOut, useStore } from './customer';
-import NayoAccountForm, { VerifyEmailForm } from './NayoAccountForm';
+import { accountStore, ordersStore, signOut, useNayoSignedIn, useStore } from './customer';
+import NayoLoginGate from './NayoLoginGate';
 import NearbyRestaurants from './NearbyRestaurants';
 import { nayoPath } from './nayoUrl';
 
@@ -21,11 +20,14 @@ import { nayoPath } from './nayoUrl';
  */
 export default function DeliveryLanding() {
   const recent = useStore(ordersStore);
+  const signedIn = useNayoSignedIn();
   useNayoFavicon();
   useEffect(() => {
     resetBranding();
     document.title = 'Nayo';
   }, []);
+  // Sin sesion solo se ve la bienvenida para entrar (lo pidio Alex).
+  if (!signedIn) return <NayoLoginGate />;
 
   return (
     <div className="min-h-screen bg-gray-950 pb-28">
@@ -75,36 +77,15 @@ export default function DeliveryLanding() {
   );
 }
 
-/**
- * Tu cuenta de Nayo con la campanita de avisos y la opción de salir; sin
- * sesión, un botón "Entrar" (como en las apps de reparto) para crear la
- * cuenta o entrar sin tener que armar un pedido primero.
- */
+/** Tu cuenta de Nayo con la campanita de avisos y la opción de salir. */
 function AccountChip() {
   const account = useStore(accountStore);
-  const [open, setOpen] = useState(false);
-  const pending = !account || account.email_verified === false;
+  if (!account) return null;
   return (
-    <>
-      {account ? (
-        <div className="flex items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 text-xs text-gray-300">
-          <UserRound className="h-3.5 w-3.5 text-brand" /> {account.name}
-          {account.email_verified === false
-            ? <button type="button" onClick={() => setOpen(true)} className="font-semibold text-brand">Confirmar correo</button>
-            : <PushBell target={{ realm: 'nayo', app: 'cliente' }} />}
-          <button type="button" onClick={signOut} className="text-gray-500 underline hover:text-white">Salir</button>
-        </div>
-      ) : (
-        <button type="button" onClick={() => setOpen(true)}
-          className="flex items-center gap-1.5 rounded-full bg-brand px-4 py-1.5 text-sm font-semibold text-brand-contrast hover:brightness-105">
-          <UserRound className="h-4 w-4" /> Entrar
-        </button>
-      )}
-      {open && pending && (
-        <Modal title={account ? 'Confirma tu correo' : 'Tu cuenta de Nayo'} onClose={() => setOpen(false)}>
-          {account ? <VerifyEmailForm account={account} onDone={() => setOpen(false)} /> : <NayoAccountForm />}
-        </Modal>
-      )}
-    </>
+    <div className="flex items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 text-xs text-gray-300">
+      <UserRound className="h-3.5 w-3.5 text-brand" /> {account.name}
+      <PushBell target={{ realm: 'nayo', app: 'cliente' }} />
+      <button type="button" onClick={signOut} className="text-gray-500 underline hover:text-white">Salir</button>
+    </div>
   );
 }
