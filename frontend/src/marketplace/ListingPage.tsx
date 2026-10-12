@@ -6,6 +6,7 @@ import { Alert, Button, Field, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
+import CuisineSelect from './CuisineSelect';
 import DeliveryOrders from './DeliveryOrders';
 import type { Listing } from './lib';
 
@@ -131,7 +132,7 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
           <p className="text-xs text-gray-500">Los clientes ven tu restaurante si un repartidor conectado cubre este punto.</p>
         </div>
         <div className="space-y-4">
-          <Field label="Tipo de comida"><input className="input" maxLength={60} value={form.cuisine} onChange={set('cuisine')} /></Field>
+          <Field label="Tipo de comida"><CuisineSelect value={form.cuisine} onChange={(cuisine) => setForm((f) => ({ ...f, cuisine }))} /></Field>
           <Field label="Descripción" hint="Lo que ve el cliente debajo de tu nombre">
             <textarea className="input min-h-[80px]" maxLength={500} value={form.description} onChange={set('description')} />
           </Field>

@@ -4,6 +4,7 @@ import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { Alert, Button, Field } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { resetBranding } from '../lib/branding';
+import CuisineSelect from './CuisineSelect';
 import SignupShell from './SignupShell';
 
 interface Created { restaurant: { id: string; slug: string; name: string }; admin_url: string }
@@ -68,8 +69,8 @@ export default function RestaurantSignupPage() {
           <Field label="Nombre del restaurante">
             <input className="input" required maxLength={120} value={form.name} onChange={set('name')} />
           </Field>
-          <Field label="Tipo de comida" hint="Ej. tacos, sushi, pizza">
-            <input className="input" maxLength={60} value={form.cuisine} onChange={set('cuisine')} />
+          <Field label="Tipo de comida">
+            <CuisineSelect value={form.cuisine} onChange={(cuisine) => setForm((f) => ({ ...f, cuisine }))} />
           </Field>
           <Field label="Teléfono del restaurante">
             <input className="input" type="tel" required value={form.phone} onChange={set('phone')} />
