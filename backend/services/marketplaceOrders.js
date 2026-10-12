@@ -252,11 +252,12 @@ export async function createMarketplaceOrder(input) {
     await db.query(
       `INSERT INTO marketplace_orders (id, restaurant_id, branch_id, order_id, public_token, customer_name, customer_phone,
                                        address, reference, latitude, longitude, distance_km, delivery_fee, driver_share,
-                                       platform_share, food_total, total, payment_method, pay_with, status)
-       VALUES ($20, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+                                       platform_share, food_total, total, payment_method, pay_with, status, customer_id)
+       VALUES ($20, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $21)`,
       [rid, place.branch_id, order.id, token, input.name, input.phone, input.address, input.reference,
         input.location.latitude, input.location.longitude, place.distance_km, fee, split.driver, split.platform,
-        final.total, round2(Number(final.total) + fee), input.payment_method, input.pay_with, card ? 'pago_pendiente' : 'nuevo', marketplaceOrderId],
+        final.total, round2(Number(final.total) + fee), input.payment_method, input.pay_with, card ? 'pago_pendiente' : 'nuevo', marketplaceOrderId,
+        input.customer_id ?? null],
     );
   });
   if (!card) return trackOrder(token);

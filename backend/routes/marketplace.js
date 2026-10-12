@@ -19,7 +19,9 @@ import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { withPlatform, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
-import { authenticateUser, requireRole, signFleetToken } from '../middleware/auth.js';
+import {
+  authenticateNayo, authenticateUser, requireRole, signFleetToken, signNayoToken,
+} from '../middleware/auth.js';
 import { requireModule } from '../middleware/requireModule.js';
 import { readPoint } from '../services/deliveryZones.js';
 import {
@@ -230,8 +232,69 @@ marketplacePublicRouter.post('/quote', ah(async (req, res) => {
   });
 }));
 
-marketplacePublicRouter.post('/orders', orderLimiter, ah(async (req, res) => {
-  res.status(201).json({ order: await createMarketplaceOrder(readMarketplaceOrder(req.body)) });
+// Cuenta del cliente: para pedir hay que registrarse o entrar.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => env.isTest,
+  message: { error: 'Demasiados intentos. Espera unos minutos.', code: 'RATE_LIMITED' },
+});
+
+const ACCOUNT_COLUMNS = 'id, name, phone, email';
+
+marketplacePublicRouter.post('/account/register', signupLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const account = readAccount(body, 'customer');
+  const phone = readPhone(body.phone);
+  const customer = await withPlatform(async (db) => {
+    const exists = await db.query('SELECT 1 FROM nayo_customers WHERE email = $1', [account.email]);
+    if (exists.rowCount) throw new HttpError(409, 'Ya hay una cuenta con ese correo; inicia sesion', 'EMAIL_TAKEN');
+    const hash = await bcrypt.hash(account.password, 12);
+    return (await db.query(
+      `INSERT INTO nayo_customers (name, phone, email, password_hash, last_login_at)
+       VALUES ($1, $2, $3, $4, now()) RETURNING ${ACCOUNT_COLUMNS}`,
+      [account.name, phone, account.email, hash],
+    )).rows[0];
+  });
+  res.status(201).json({ token: signNayoToken(customer), customer });
+}));
+
+marketplacePublicRouter.post('/account/login', loginLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const email = String(body.email || '').trim().toLowerCase();
+  const password = typeof body.password === 'string' ? body.password : '';
+  const row = await withPlatform(async (db) => (await db.query(
+    `SELECT ${ACCOUNT_COLUMNS}, password_hash, active FROM nayo_customers WHERE email = $1`, [email],
+  )).rows[0]);
+  if (!row || !(await bcrypt.compare(password, row.password_hash))) {
+    throw new HttpError(401, 'Correo o contrasena incorrectos', 'INVALID_CREDENTIALS');
+  }
+  if (!row.active) throw new HttpError(403, 'Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
+  await withPlatform((db) => db.query('UPDATE nayo_customers SET last_login_at = now() WHERE id = $1', [row.id]));
+  const customer = { id: row.id, name: row.name, phone: row.phone, email: row.email };
+  res.json({ token: signNayoToken(customer), customer });
+}));
+
+// Mi cuenta y mis pedidos recientes.
+marketplacePublicRouter.get('/account', authenticateNayo, ah(async (req, res) => {
+  const orders = await withPlatform(async (db) => (await db.query(
+    `SELECT m.public_token AS token, r.name AS restaurant, m.status, m.total, m.created_at
+       FROM marketplace_orders m JOIN restaurants r ON r.id = m.restaurant_id
+      WHERE m.customer_id = $1 ORDER BY m.created_at DESC LIMIT 20`,
+    [req.nayoCustomer.id],
+  )).rows);
+  res.set('Cache-Control', 'no-store').json({ customer: req.nayoCustomer, orders });
+}));
+
+marketplacePublicRouter.post('/orders', orderLimiter, authenticateNayo, ah(async (req, res) => {
+  const me = req.nayoCustomer;
+  const body = req.body || {};
+  // Nombre y telefono salen de la cuenta si el cliente no los cambia.
+  const c = body.customer || {};
+  const input = readMarketplaceOrder({ ...body, customer: { name: c.name || me.name, phone: c.phone || me.phone } });
+  res.status(201).json({ order: await createMarketplaceOrder({ ...input, customer_id: me.id }) });
 }));
 
 marketplacePublicRouter.get('/orders/:token', ah(async (req, res) => {

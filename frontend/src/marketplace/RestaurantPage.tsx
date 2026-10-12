@@ -1,17 +1,18 @@
-import { ArrowLeft, Banknote, Bike, Clock, CreditCard, MapPin, Minus, Plus, ShoppingBag, Store } from 'lucide-react';
+import { ArrowLeft, Banknote, Bike, Clock, CreditCard, MapPin, Minus, Plus, ShoppingBag, Store, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import ZoneMap, { type Point } from '../components/ZoneMap';
 import { Alert, Button, Field, Spinner } from '../components/ui';
-import { api, errorMessage } from '../lib/api';
+import { api, errorMessage, nayoApi, ApiError } from '../lib/api';
 import { useNayoLive } from '../lib/live';
+import NayoAccountForm from './NayoAccountForm';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import ItemModal from '../site/ItemModal';
 import type { PortalItem, PortalMenu } from '../site/types';
 import {
-  addToCart, cartStore, cartTotal, clearCart, contactStore, locationStore, ordersStore, setQuantity, useStore,
+  accountStore, addToCart, cartStore, cartTotal, clearCart, contactStore, locationStore, ordersStore, setQuantity, signOut, useStore,
 } from './customer';
 import { REASON_LABEL, type NearbyRestaurant } from './lib';
 import { nayoPath } from './nayoUrl';
@@ -151,6 +152,25 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
   branchId: string; restaurant: NearbyRestaurant; location: Point | null; contact: { name: string; phone: string; address: string; reference: string };
   lines: { item_id: string; quantity: number; modifier_ids: string[]; notes: string }[]; onDone: (token: string, paymentUrl?: string) => void; onRefresh: () => void;
 }) {
+  const account = useStore(accountStore);
+  // Para pedir hay que tener cuenta de Nayo.
+  if (!account) {
+    return (
+      <div className="card mt-4 space-y-3 p-4">
+        <h2 className="flex items-center gap-2 font-semibold text-white"><UserRound className="h-5 w-5 text-brand" /> Tu cuenta</h2>
+        <NayoAccountForm />
+      </div>
+    );
+  }
+  return <CheckoutForm key={account.id} {...{ branchId, restaurant, location, lines, onDone, onRefresh }}
+    contact={{ ...contact, name: contact.name || account.name, phone: contact.phone || account.phone }} account={account} />;
+}
+
+function CheckoutForm({ branchId, restaurant, location, contact, account, lines, onDone, onRefresh }: {
+  branchId: string; restaurant: NearbyRestaurant; location: Point | null; contact: { name: string; phone: string; address: string; reference: string };
+  account: { name: string; email: string };
+  lines: { item_id: string; quantity: number; modifier_ids: string[]; notes: string }[]; onDone: (token: string, paymentUrl?: string) => void; onRefresh: () => void;
+}) {
   const [f, setF] = useState({ ...contact, notes: '', payWith: '' });
   const [method, setMethod] = useState<'efectivo' | 'tarjeta'>('efectivo');
   const [cards, setCards] = useState(false);
@@ -181,8 +201,8 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
     setError('');
     try {
       contactStore.set({ name: f.name, phone: f.phone, address: f.address, reference: f.reference });
-      const r = await api<{ order: { token: string; payment_url?: string } }>('/marketplace/orders', {
-        method: 'POST', noRedirect: true,
+      const r = await nayoApi<{ order: { token: string; payment_url?: string } }>('/marketplace/orders', {
+        method: 'POST',
         body: {
           ...body, customer: { name: f.name, phone: f.phone }, address: { address: f.address, reference: f.reference || null },
           notes: f.notes || null, payment_method: method,
@@ -191,6 +211,8 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
       });
       onDone(r.order.token, r.order.payment_url);
     } catch (err) {
+      // Sesion vencida o cuenta borrada: vuelve a pedir que entre.
+      if (err instanceof ApiError && err.status === 401) { signOut(); setBusy(false); return; }
       setError(errorMessage(err));
       onRefresh();
     }
@@ -199,6 +221,10 @@ function Checkout({ branchId, restaurant, location, contact, lines, onDone, onRe
 
   return (
     <form onSubmit={submit} className="card mt-4 space-y-3 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-400">
+        <span className="flex items-center gap-1"><UserRound className="h-3.5 w-3.5" /> Pides como <span className="font-medium text-gray-200">{account.name}</span> ({account.email})</span>
+        <button type="button" onClick={signOut} className="underline hover:text-white">No soy yo</button>
+      </div>
       <h2 className="flex items-center gap-2 font-semibold text-white"><MapPin className="h-5 w-5 text-brand" /> Entrega</h2>
       <ZoneMap className="h-40" center={null} tiers={[]} pin={pin} onPick={setPin} />
       <p className="text-xs text-gray-500">Arrastra el pin a tu puerta.</p>
