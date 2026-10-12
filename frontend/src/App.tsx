@@ -45,6 +45,8 @@ import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
 import AnnouncementsPage from './rh/AnnouncementsPage';
 import ChatPage from './chat/ChatPage';
+import SavingsDetailPage from './savings/SavingsDetailPage';
+import SavingsPage from './savings/SavingsPage';
 import AttendancePage from './rh/AttendancePage';
 import ChecklistsPage from './rh/ChecklistsPage';
 import EmployeesPage from './rh/EmployeesPage';
@@ -212,6 +214,11 @@ export default function App() {
           {/* Chat del equipo (modulo chat) */}
           <Route element={<ModuleGate code="chat" name="Chat del equipo" />}>
             <Route path="chat" element={<ChatPage />} />
+          </Route>
+          {/* Apartados y metas de aguinaldo (modulo apartados) */}
+          <Route element={<ModuleGate code="apartados" name="Apartados y aguinaldo" />}>
+            <Route path="apartados" element={<SavingsPage />} />
+            <Route path="apartados/:id" element={<SavingsDetailPage />} />
           </Route>
           {/* Bot de WhatsApp (modulo whatsapp) */}
           <Route element={<ModuleGate code="whatsapp" name="Bot de WhatsApp" />}>

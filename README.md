@@ -880,6 +880,37 @@ menú muestra cuántos mensajes nuevos hay desde la última vez que se abrió.
 | DELETE | `/api/chat/replies/:id` | autor o gerente |
 | GET | `/api/chat/unread` · POST `/api/chat/seen` | personal |
 
+## Apartados y aguinaldo (módulo `apartados`)
+
+Como "Fianzas Sanas" de Horom. En *Apartados* se guarda dinero para una meta
+(renta, predial, un equipo) con fecha límite opcional y un plan de cuotas
+diarias (con los días que cuentan), semanales, quincenales o mensuales. Lo que
+falta se reparte en cuotas iguales (los centavos sobrantes van en las
+primeras); marcar una cuota crea su depósito y desmarcarla lo quita. Un
+depósito o retiro fuera de las cuotas vuelve a repartir lo que falta. No se
+retira más de lo apartado. Un apartado con movimientos se cancela en lugar de
+borrarse.
+
+- **Del negocio** (de una sucursal o de todo el restaurante): los manejan
+  admin y gerente. **Personales**: solo su dueño.
+- Se comparten con otros usuarios para consultar o también para registrar
+  movimientos y cuotas.
+- **Meta de aguinaldo** (con el módulo `rh`): la meta es el aguinaldo que falta
+  pagar a los empleados activos del año (el mismo cálculo de RH, sin los ya
+  pagados) y vence el 20 de diciembre. *Recalcular meta* la actualiza con altas,
+  bajas, aumentos y pagos.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET / POST | `/api/savings/goals` | personal (del negocio: admin, gerente) |
+| GET / PUT / DELETE | `/api/savings/goals/:id` | con acceso (editar y borrar: quien lo administra) |
+| POST | `/api/savings/goals/:id/movements` `{kind, amount, occurred_on?, notes?}` | quien puede registrar |
+| DELETE | `/api/savings/movements/:id` | quien lo registró o quien administra |
+| PATCH | `/api/savings/installments/:id` `{done}` | quien puede registrar |
+| POST | `/api/savings/goals/:id/replan` | quien administra |
+| GET | `/api/savings/people` · PUT / DELETE `/api/savings/goals/:id/shares/:userId` `{can_edit}` | quien administra (salirse: el compartido) |
+| POST | `/api/savings/aguinaldo` `{year, branch_id?, frequency?, weekdays?}` · `/api/savings/goals/:id/recalculate` | admin, gerente (requiere `rh`) |
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la
