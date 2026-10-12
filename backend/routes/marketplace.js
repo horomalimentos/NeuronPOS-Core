@@ -251,7 +251,7 @@ export const marketplaceRouter = Router();
 marketplaceRouter.use(authenticateUser, requireModule('marketplace'));
 
 const LISTING_COLUMNS = `l.latitude, l.longitude, l.description, l.cuisine, l.cover_url, l.prep_minutes, l.min_order,
-  l.published, l.paused_until, l.blocked, l.blocked_reason, l.published_at, l.updated_at`;
+  l.published, l.paused_until, l.blocked, l.blocked_reason, l.approval_status, l.approval_note, l.published_at, l.updated_at`;
 
 async function readListings(db, rid, branchId = null) {
   const { rows } = await db.query(
@@ -291,11 +291,14 @@ async function readListings(db, rid, branchId = null) {
       paused_until: paused ? r.paused_until : null,
       blocked: Boolean(r.blocked),
       blocked_reason: r.blocked ? r.blocked_reason : null,
+      // Sin ficha todavia: al crearla queda pendiente de revision.
+      approval_status: r.approval_status ?? 'pendiente',
+      approval_note: r.approval_status === 'rechazado' ? r.approval_note : null,
       hours_days: r.hours_days,
       products: r.products,
       missing,
-      // Lo que ve el cliente: publicada, sin bloqueo ni pausa y completa.
-      visible: Boolean(r.published) && !r.blocked && !paused && r.branch_active && missing.length === 0,
+      // Lo que ve el cliente: aprobada, publicada, sin bloqueo ni pausa y completa.
+      visible: r.approval_status === 'aprobado' && Boolean(r.published) && !r.blocked && !paused && r.branch_active && missing.length === 0,
     };
   });
 }

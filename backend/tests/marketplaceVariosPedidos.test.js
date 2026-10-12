@@ -46,6 +46,7 @@ describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
     taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25 })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true });
+    await panel('POST', `/marketplace/listings/${branchId}/approval`, { status: 'aprobado' });
     const d = await pub('POST', '/drivers', { name: 'Juan', email: 'juan@moto.test', password: 'clave-segura-7', phone: '6560000000', vehicle: 'Moto', base: CERCA, radius_km: 4 });
     await panel('POST', `/marketplace/drivers/${d.body.driver.id}/review`, { status: 'aprobado' });
     await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });

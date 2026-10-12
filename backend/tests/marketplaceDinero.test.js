@@ -76,6 +76,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25 })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true });
+    await panel('POST', `/marketplace/listings/${branchId}/approval`, { status: 'aprobado' });
     // Tope de adeudo bajo para probar el bloqueo: $10.
     await panel('PUT', '/marketplace/settings', { driver_debt_limit: 10 });
     juan = await newDriver('Juan', 'juan@moto.test', CERCA);

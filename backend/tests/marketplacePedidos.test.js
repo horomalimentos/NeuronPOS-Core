@@ -47,6 +47,7 @@ describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     const pubd = await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true, min_order: 50, cuisine: 'Tacos' });
     assert.equal(pubd.status, 200, JSON.stringify(pubd.body));
+    await ctx.request('POST', `/api/platform/marketplace/listings/${branchId}/approval`, { token: owner, body: { status: 'aprobado' } });
   });
   after(() => ctx?.close());
 
