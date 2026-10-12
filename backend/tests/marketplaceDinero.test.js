@@ -119,6 +119,10 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(take.body.job.change, 65);
     assert.equal(typeof take.body.job.dropoff.latitude, 'number');
     assert.match(take.body.job.dropoff_waze_url, /^https:\/\/waze\.com\/ul\?ll=/);
+    // La pantalla de pedidos del restaurante ve quien va por el pedido.
+    const seen = (await restaurantOrders()).find((x) => x.id === cashId);
+    assert.deepEqual(seen.driver, { name: 'Juan', vehicle: seen.driver.vehicle });
+    assert.equal(seen.driver_id, undefined);
     assert.equal((await step(pedro, cashId, 'take')).body.code, 'ORDER_TAKEN');
     assert.equal((await board(pedro)).available.length, 0);
     assert.equal((await step(juan, cashId, 'deliver')).body.code, 'INVALID_TRANSITION');
@@ -129,7 +133,14 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     await step(juan, cashId, 'take');
 
     const up = await step(juan, cashId, 'pickup');
+    assert.equal(up.status, 200, JSON.stringify(up.body));
     assert.equal(up.body.job.status, 'en_camino');
+    // Al recoger el repartidor pago la comida: la orden queda pagada en la caja.
+    const pos = (await ctx.withPlatform((db) => db.query(
+      `SELECT o.status, o.paid_amount::text AS paid, (SELECT count(*)::int FROM order_payments p WHERE p.order_id = o.id) AS payments
+         FROM orders o JOIN marketplace_orders m ON m.order_id = o.id WHERE m.id = $1`, [cashId],
+    ))).rows[0];
+    assert.deepEqual(pos, { status: 'pagada', paid: '100.00', payments: 1 });
     assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'en_camino');
     const del = await step(juan, cashId, 'deliver');
     assert.equal(del.status, 200, JSON.stringify(del.body));

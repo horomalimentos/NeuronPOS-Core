@@ -69,6 +69,9 @@ export function setPushSender(fn) {
   sender = fn || webPushSender;
 }
 
+/** Manda un aviso a una suscripcion (tambien lo usan los avisos de Nayo). */
+export const sendPush = (sub, payload) => sender(sub, payload);
+
 /** Guarda (o actualiza) la suscripcion del navegador. owner: { user_id | customer_id | order_id } */
 export async function saveSubscription(db, rid, subscription, owner) {
   const { endpoint, keys } = subscription || {};

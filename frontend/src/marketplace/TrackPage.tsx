@@ -1,7 +1,9 @@
 import { ArrowLeft, Bike, Check, ChefHat, Clock, CreditCard, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
+import { PushBell } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -9,6 +11,7 @@ import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import OrderChat from './OrderChat';
+import { accountStore, useStore } from './customer';
 import { nayoPath } from './nayoUrl';
 
 type Status = 'pago_pendiente' | 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
@@ -34,6 +37,7 @@ const PAY_POLL_MS = 4000;
 
 /** Seguimiento del pedido de Nayo (/nayo/pedido/:token). */
 export default function TrackPage() {
+  const account = useStore(accountStore);
   const { token = '' } = useParams();
   useNayoFavicon();
   const [params] = useSearchParams();
@@ -62,7 +66,13 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link to={nayoPath()} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <Link to={nayoPath()} className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
+          <div className="flex items-center gap-2">
+            <InstallApp />
+            {account && <PushBell target={{ realm: 'nayo', app: 'cliente' }} label />}
+          </div>
+        </div>
         {!o ? (error ? <Alert>{error}</Alert> : <Spinner />) : (
           <div className="space-y-4">
             <section className="card p-5">

@@ -10,9 +10,10 @@
 //   pedido con tarjeta y pago de adeudo. Como en services/clip/reconcile.js,
 //   el webhook solo dispara la consulta server-to-server al proveedor; el
 //   pago se aplica una sola vez (applied_at).
-import { withFleetDriver, withPlatform } from '../config/database.js';
+import { asTenant, withFleetDriver, withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
+import { lockOrderRow, settleAtDoor } from './delivery/tenant.js';
 import { driverCovers, getMarketplaceSettings } from './marketplace.js';
 import { acceptOnlineOrder } from './online.js';
 import {
@@ -218,6 +219,18 @@ export async function pickUpOrder(driverId, orderId) {
         WHERE id = $1 AND restaurant_id = $2`,
       [m.order_id, m.restaurant_id],
     );
+    // El repartidor paga la comida al recoger: la orden queda pagada y el
+    // efectivo entra al turno de caja abierto de la sucursal (si hay uno).
+    await asTenant(db, m.restaurant_id, async (tdb) => {
+      const session = (await tdb.query(
+        `SELECT id FROM cash_sessions WHERE restaurant_id = $1 AND branch_id = $2 AND status = 'abierta'
+          ORDER BY opened_at DESC LIMIT 1`,
+        [m.restaurant_id, m.branch_id],
+      )).rows[0];
+      await settleAtDoor(tdb, m.restaurant_id, await lockOrderRow(tdb, m.restaurant_id, m.order_id), {
+        marketplaceOrderId: m.id, cashSessionId: session?.id ?? null,
+      });
+    });
     return jobView(await lockOrder(db, m.id));
   });
 }

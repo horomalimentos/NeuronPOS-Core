@@ -88,6 +88,7 @@ async function cashMethodId(db, restaurantId) {
  */
 export async function settleAtDoor(db, restaurantId, order, {
   received, tip = 0, createdBy = null, driverUserId = null, deliveryRequestId = null,
+  marketplaceOrderId = null, cashSessionId = null,
 } = {}) {
   if (order.status === 'cancelada') throw badRequest('La orden esta cancelada', 'ORDER_CLOSED');
   const remaining = fromCents(toCents(order.total) - toCents(order.paid_amount));
@@ -98,10 +99,13 @@ export async function settleAtDoor(db, restaurantId, order, {
     const p = norm.lines[0];
     await db.query(
       `INSERT INTO order_payments (restaurant_id, order_id, payment_method_id, cash_session_id, amount, tip,
-                                   received, change_given, reference, created_by, driver_user_id, delivery_request_id)
-       VALUES ($1, $2, $3, NULL, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                                   received, change_given, reference, created_by, driver_user_id, delivery_request_id,
+                                   marketplace_order_id)
+       VALUES ($1, $2, $3, $12, $4, $5, $6, $7, $8, $9, $10, $11, $13)`,
       [restaurantId, order.id, await cashMethodId(db, restaurantId), p.amount, p.tip, p.received, p.change_given,
-        deliveryRequestId ? 'Cobrado por la flota' : 'Cobrado por el repartidor', createdBy, driverUserId, deliveryRequestId],
+        marketplaceOrderId ? 'Pagado por el repartidor de Nayo al recoger'
+          : deliveryRequestId ? 'Cobrado por la flota' : 'Cobrado por el repartidor',
+        createdBy, driverUserId, deliveryRequestId, cashSessionId, marketplaceOrderId],
     );
     amount = p.amount;
     tipPaid = p.tip;

@@ -3,6 +3,7 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import { usePwaManifest } from './lib/pwa';
 import CustomersPage from './loyalty/CustomersPage';
 import CountPage from './inventory/CountPage';
 import CountsPage from './inventory/CountsPage';
@@ -74,6 +75,7 @@ import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
 import DriverSignupPage from './marketplace/DriverSignupPage';
 import ListingPage from './marketplace/ListingPage';
+import NayoOrdersBoard from './marketplace/NayoOrdersBoard';
 import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
@@ -112,10 +114,17 @@ function StripPrefix({ prefix }: { prefix: string }) {
   return <Navigate to={`${pathname.slice(prefix.length) || '/'}${search}`} replace />;
 }
 
+/** Manifest de la app de Nayo que se esta viendo (lib/pwa.ts). */
+function PwaManifest() {
+  usePwaManifest(useLocation().pathname);
+  return null;
+}
+
 export default function App() {
-  if (onNayoHost()) return <BrowserRouter><NayoSite /></BrowserRouter>;
+  if (onNayoHost()) return <BrowserRouter><PwaManifest /><NayoSite /></BrowserRouter>;
   return (
     <BrowserRouter>
+      <PwaManifest />
       <Routes>
         {/* Sitio publico y portal de clientes del restaurante (por dominio) */}
         <Route element={<SiteLayout />}>
@@ -200,6 +209,7 @@ export default function App() {
           {/* Nayo (modulo marketplace, sin costo) */}
           <Route element={<ModuleGate code="marketplace" name="Nayo" />}>
             <Route path="delivery" element={<ListingPage />} />
+            <Route path="delivery/pedidos" element={<NayoOrdersBoard />} />
           </Route>
           {/* Clientes: modulos lealtad y monedero */}
           <Route element={<ModuleGate code={['lealtad', 'monedero']} name="Clientes y lealtad" />}>

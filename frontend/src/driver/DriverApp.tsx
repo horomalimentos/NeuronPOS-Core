@@ -1,3 +1,4 @@
+import InstallApp from '../components/InstallApp';
 import {
   Bike, Check, ChevronUp, History, LocateFixed, MapPin, Menu, Power, Wallet,
 } from 'lucide-react';
@@ -413,7 +414,11 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1A1714] text-white shadow-xl ring-1 ring-white/10">
             <LocateFixed className="h-5 w-5" />
           </button>
-          {push && <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1A1714] shadow-xl ring-1 ring-white/10"><PushBell target={{ realm: 'restaurant' }} className="[&_svg]:h-5 [&_svg]:w-5" /></div>}
+          {(fleet || push) && (
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1A1714] shadow-xl ring-1 ring-white/10">
+              <PushBell target={fleet ? { realm: 'nayo', app: 'repartidor' } : { realm: 'restaurant' }} className="[&_svg]:h-5 [&_svg]:w-5" />
+            </div>
+          )}
         </div>
       </div>
 
@@ -524,6 +529,7 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
                     </button>
                   </div>
                 )}
+                {!trip && <div className="flex justify-center"><InstallApp label="Instalar la app" /></div>}
                 {!trip && !fleet && cash > 0 && (
                   <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-200 ring-1 ring-amber-500/30">Traes {formatMXN(cash)} en efectivo por entregar en caja.</p>
                 )}
