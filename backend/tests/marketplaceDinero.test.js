@@ -115,6 +115,10 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(take.status, 200, JSON.stringify(take.body));
     assert.equal(take.body.job.customer_phone, '656 123 4567');
     assert.equal(take.body.job.change, 65);
+    // La pantalla de pedidos del restaurante ve quien va por el pedido.
+    const seen = (await restaurantOrders()).find((x) => x.id === cashId);
+    assert.deepEqual(seen.driver, { name: 'Juan', vehicle: seen.driver.vehicle });
+    assert.equal(seen.driver_id, undefined);
     assert.equal((await step(pedro, cashId, 'take')).body.code, 'ORDER_TAKEN');
     assert.equal((await board(pedro)).available.length, 0);
     assert.equal((await step(juan, cashId, 'deliver')).body.code, 'INVALID_TRANSITION');
