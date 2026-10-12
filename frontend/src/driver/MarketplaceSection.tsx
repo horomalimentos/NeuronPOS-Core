@@ -24,7 +24,7 @@ interface Job extends Offer {
 }
 interface Board {
   balance: number; debt_limit: number; cash_blocked: boolean; card_payments: boolean;
-  today: { deliveries: number; earned: string }; active: Job[]; available: Offer[];
+  today: { deliveries: number; earned: string }; max_orders: number; active: Job[]; available: Offer[];
 }
 interface Entry { id: string; kind: string; amount: string; note: string | null; created_at: string }
 
@@ -154,9 +154,12 @@ export default function MarketplaceSection({ onDuty }: { onDuty: boolean }) {
         </article>
       ))}
 
-      {board.active.length === 0 && (onDuty ? (
+      {board.active.length > 0 && board.active.length < board.max_orders && onDuty && board.available.length > 0 && (
+        <p className="text-sm text-gray-400">Puedes llevar hasta {board.max_orders} pedidos a la vez: estos también te quedan.</p>
+      )}
+      {board.active.length < board.max_orders && (onDuty ? (
         board.available.length === 0 ? (
-          <p className="card p-5 text-center text-sm text-gray-500">No hay pedidos disponibles en tu zona por ahora.</p>
+          board.active.length === 0 && <p className="card p-5 text-center text-sm text-gray-500">No hay pedidos disponibles en tu zona por ahora.</p>
         ) : board.available.map((o) => (
           <article key={o.id} className="card border-violet-700/60 p-4 text-sm">
             <div className="flex items-center justify-between">

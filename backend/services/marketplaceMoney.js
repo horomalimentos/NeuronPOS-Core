@@ -113,7 +113,8 @@ export async function driverBoard(driverId) {
       [driverId],
     )).rows[0];
     let available = [];
-    if (d.status === 'aprobado' && d.active && d.on_duty && !mine.length && d.base_latitude !== null) {
+    const maxOrders = Number(settings.driver_max_orders);
+    if (d.status === 'aprobado' && d.active && d.on_duty && mine.length < maxOrders && d.base_latitude !== null) {
       available = (await db.query(
         `${ORDER_SELECT} WHERE m.driver_id IS NULL AND m.status IN ('aceptado', 'listo') AND m.created_at > now() - interval '12 hours'
           ORDER BY m.created_at`,
@@ -126,6 +127,7 @@ export async function driverBoard(driverId) {
       cash_blocked: blocked,
       card_payments: cardPaymentsAvailable(),
       today,
+      max_orders: maxOrders,
       active: mine.map(jobView),
       available: available.map(offerView),
     };
@@ -144,8 +146,16 @@ export async function takeOrder(driverId, orderId) {
     const settings = await getMarketplaceSettings(db);
     const d = await loadDriver(db, driverId);
     if (d.status !== 'aprobado' || !d.active || !d.on_duty) throw conflict('Ponte en turno para tomar pedidos', 'NOT_ON_DUTY');
-    const busy = await db.query('SELECT 1 FROM marketplace_orders WHERE driver_id = $1 AND status = ANY($2::text[])', [driverId, ACTIVE]);
-    if (busy.rowCount) throw conflict('Termina tu entrega en curso antes de tomar otra', 'DRIVER_BUSY');
+    // Se bloquea al repartidor para que dos "Tomar" a la vez no pasen del tope.
+    await db.query('SELECT 1 FROM fleet_drivers WHERE id = $1 FOR UPDATE', [driverId]);
+    const busy = (await db.query(
+      'SELECT count(*)::int AS n FROM marketplace_orders WHERE driver_id = $1 AND status = ANY($2::text[])',
+      [driverId, ACTIVE],
+    )).rows[0].n;
+    const max = Number(settings.driver_max_orders);
+    if (busy >= max) {
+      throw conflict(max === 1 ? 'Termina tu entrega en curso antes de tomar otra' : `Ya llevas ${busy} pedidos: entrega uno antes de tomar otro`, 'DRIVER_BUSY');
+    }
     const m = await lockOrder(db, orderId);
     if (m.driver_id || !['aceptado', 'listo'].includes(m.status)) throw conflict('Otro repartidor ya tomo este pedido', 'ORDER_TAKEN');
     if (m.r_lat === null || !driverCovers(d, { latitude: Number(m.r_lat), longitude: Number(m.r_lng) })) {
