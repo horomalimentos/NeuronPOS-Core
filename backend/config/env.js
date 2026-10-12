@@ -69,6 +69,9 @@ export const env = {
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:soporte@neuronpos.app',
   // Bot de WhatsApp: app de Meta de la plataforma (un restaurante con app
   // propia guarda su app secret en su configuracion).
+  // Llave de navegador de Google Maps (Maps JavaScript + Geocoding), restringida
+  // por dominio a neuronpos.app. Sin llave los mapas usan OpenStreetMap.
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
   whatsappGraphUrl: (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0').replace(/\/+$/, ''),

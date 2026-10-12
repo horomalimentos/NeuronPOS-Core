@@ -40,6 +40,12 @@ describe('modulos, estado y cobro mensual', { skip: SKIP_DB }, () => {
     await ctx.request('PUT', '/api/platform/modules/empleado_mes', { token: owner, body: { active: true } });
   });
 
+  test('la llave de Google Maps se lee sin restaurante (null si no hay)', async () => {
+    const res = await ctx.request('GET', '/api/public/maps');
+    assert.equal(res.status, 200);
+    assert.ok('google_maps_key' in res.body);
+  });
+
   test('requireModule: 200 con modulo, 402 sin modulo', async () => {
     assert.equal((await ctx.request('GET', '/api/pos/status', { token: A.token })).status, 200);
     const res = await ctx.request('GET', '/api/pos/status', { token: B.token });

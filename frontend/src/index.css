@@ -57,3 +57,11 @@ body {
     @apply rounded-2xl border border-gray-200 bg-white shadow-sm;
   }
 }
+
+/* Etiqueta del repartidor en el mapa en vivo de Google (LiveMap). */
+.live-map-label {
+  background: rgba(17, 24, 39, 0.92);
+  border-radius: 6px;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
