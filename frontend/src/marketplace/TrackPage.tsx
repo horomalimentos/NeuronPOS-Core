@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
-import { PushBell } from '../components/PushBell';
+import { PushBell, PushFab } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -138,6 +138,7 @@ export default function TrackPage() {
           </div>
         )}
       </div>
+      {account && <PushFab target={{ realm: 'nayo', app: 'cliente' }} text="Avísame cómo va mi pedido" className="bottom-6 right-4" />}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import InstallApp from '../components/InstallApp';
 import { NayoMark } from '../components/NayoLogo';
-import { PushBell } from '../components/PushBell';
+import { PushBell, PushFab } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Button, Modal } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -171,6 +171,7 @@ export default function NayoOrdersBoard() {
 
   return (
     <div className="fixed inset-0 z-40 flex flex-col bg-gray-950 text-gray-100" onPointerDown={unlock}>
+      <PushFab target={{ realm: 'nayo', app: 'restaurante' }} text="Activa avisos de pedidos nuevos" className="bottom-6 right-4" />
       {branchIds.map((id) => <LiveBranch key={id} id={id} onChange={load} />)}
 
       <header className="flex flex-wrap items-center gap-3 border-b border-gray-800 bg-gray-900 px-4 py-2.5">
