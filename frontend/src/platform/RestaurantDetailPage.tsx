@@ -1,4 +1,4 @@
-import { ArrowLeft, ExternalLink, Pause, Play, Receipt, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Clock, ExternalLink, Pause, Play, Receipt, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, StatusBadge, Toggle } from '../components/ui';
@@ -34,6 +34,16 @@ export default function RestaurantDetailPage() {
     }
   }, [id]);
 
+  async function approveNayo(branchId: string) {
+    setError('');
+    setNotice('');
+    try {
+      await platformApi(`/platform/marketplace/listings/${branchId}/approval`, { method: 'POST', body: { status: 'aprobado' } });
+      setNotice('Aprobado en Nayo');
+      load();
+    } catch (err) { setError(errorMessage(err)); }
+  }
+
   if (!detail) return error ? <Alert>{error}</Alert> : <Spinner />;
   const r = detail.restaurant;
 
@@ -44,7 +54,7 @@ export default function RestaurantDetailPage() {
       </Link>
       <PageHeader
         title={r.name}
-        subtitle={<span className="flex flex-wrap items-center gap-3"><StatusBadge status={r.status} /> {r.custom_domain || r.slug} · {detail.counts.branches} sucursal(es) · {detail.counts.users} usuario(s)</span>}
+        subtitle={<span className="flex flex-wrap items-center gap-3"><StatusBadge status={r.status} /> <NayoBadge listings={detail.nayo} /> {r.custom_domain || r.slug} · {detail.counts.branches} sucursal(es) · {detail.counts.users} usuario(s)</span>}
         actions={r.status === 'suspended' ? (
           <Button onClick={() => mutate('/reactivate', 'POST', undefined, 'Restaurante reactivado')}><Play className="h-4 w-4" /> Reactivar</Button>
         ) : (
@@ -54,6 +64,12 @@ export default function RestaurantDetailPage() {
       <div className="mb-4 space-y-2">
         {error && <Alert>{error}</Alert>}
         {notice && <Alert kind="success">{notice}</Alert>}
+        {detail.nayo.filter((l) => l.approval_status === 'pendiente').map((l) => (
+          <div key={l.branch_id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+            <span className="flex items-center gap-2"><Clock className="h-4 w-4" /> {l.branch_name} se registró en Nayo y espera tu aprobación. Los clientes no lo ven hasta que lo apruebes.</span>
+            <Button className="px-3 py-1.5" onClick={() => void approveNayo(l.branch_id)}><Check className="h-4 w-4" /> Aprobar en Nayo</Button>
+          </div>
+        ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -360,4 +376,14 @@ function DangerCard({ slug, id }: { slug: string; id: string }) {
       )}
     </section>
   );
+}
+
+/** Estado de la ficha en Nayo, aparte del estado de la cuenta (Activo / Suspendido). */
+function NayoBadge({ listings }: { listings: RestaurantDetail['nayo'] }) {
+  if (!listings.length) return null;
+  const states = listings.map((l) => l.approval_status);
+  const [label, style] = states.includes('pendiente') ? ['Nayo: por aprobar', 'bg-amber-500/15 text-amber-300 ring-amber-500/40']
+    : states.includes('rechazado') ? ['Nayo: rechazado', 'bg-red-500/15 text-red-300 ring-red-500/40']
+    : ['Nayo: aprobado', 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40'];
+  return <Link to="/panel/delivery" className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${style}`}>{label}</Link>;
 }

@@ -75,6 +75,17 @@ export interface RestaurantDetail {
   monthly: MonthlyCharge;
   counts: { branches: number; users: number };
   invoices: Invoice[];
+  /** Fichas de Nayo de cada sucursal (vacio si no esta en Nayo). */
+  nayo: NayoListingStatus[];
+}
+
+export interface NayoListingStatus {
+  branch_id: string;
+  branch_name: string;
+  approval_status: 'pendiente' | 'aprobado' | 'rechazado';
+  approval_note: string | null;
+  published: boolean;
+  blocked: boolean;
 }
 
 // ---------------------------------------------------------------------------

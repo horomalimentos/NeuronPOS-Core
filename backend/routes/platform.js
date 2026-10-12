@@ -81,7 +81,14 @@ async function getRestaurantDetail(db, id) {
     [id],
   );
   const invoices = await listInvoices(db, { restaurantId: id, limit: 24 });
-  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices };
+  // Fichas de Nayo: la cuenta puede estar activa y la ficha seguir por aprobar.
+  const nayo = (await db.query(
+    `SELECT l.branch_id, b.name AS branch_name, l.approval_status, l.approval_note, l.published, l.blocked
+       FROM marketplace_listings l JOIN branches b ON b.id = l.branch_id
+      WHERE l.restaurant_id = $1 ORDER BY b.name`,
+    [id],
+  )).rows;
+  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices, nayo };
 }
 
 router.get('/me', (req, res) => res.json({ admin: req.platformAdmin }));
