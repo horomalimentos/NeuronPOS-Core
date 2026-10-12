@@ -125,8 +125,31 @@ export async function nearbyRestaurants(point) {
       .map((c) => evaluate(c, point, ctx))
       .filter((r) => r.delivery_fee !== null);
     list.sort((a, b) => Number(b.can_order) - Number(a.can_order) || a.distance_km - b.distance_km);
+    const photos = await menuPhotos(db, list.map((r) => r.restaurant_id));
+    for (const r of list) r.photos = photos.get(r.restaurant_id) || [];
     return { restaurants: list, drivers_online: ctx.drivers.length };
   });
+}
+
+/**
+ * Hasta 4 fotos de platillos por restaurante, para la tarjeta de la lista
+ * (como en las apps de reparto: se ve la comida antes de entrar).
+ */
+async function menuPhotos(db, restaurantIds) {
+  if (!restaurantIds.length) return new Map();
+  const { rows } = await db.query(
+    `SELECT restaurant_id, image_url FROM (
+       SELECT i.restaurant_id, i.image_url,
+              row_number() OVER (PARTITION BY i.restaurant_id ORDER BY c.sort_order, i.sort_order, i.name) AS n
+         FROM menu_items i
+         JOIN menu_categories c ON c.restaurant_id = i.restaurant_id AND c.id = i.category_id
+        WHERE i.restaurant_id = ANY($1::uuid[]) AND i.active AND c.active AND i.image_url IS NOT NULL AND i.image_url <> ''
+     ) x WHERE n <= 4 ORDER BY restaurant_id, n`,
+    [[...new Set(restaurantIds)]],
+  );
+  const map = new Map();
+  for (const r of rows) map.set(r.restaurant_id, [...(map.get(r.restaurant_id) || []), r.image_url]);
+  return map;
 }
 
 /** Un restaurante desde el punto del cliente (404 si no esta publicado). */
