@@ -8,6 +8,7 @@ import cashRouter from './cash.js';
 import clipTerminalRouter from './clipTerminal.js';
 import menuRouter from './menu.js';
 import onlineRouter from './online.js';
+import offlineRouter from './offline.js';
 import ordersRouter from './orders.js';
 import promotionsRouter from './promotions.js';
 import reportsRouter from './reports.js';
@@ -27,6 +28,7 @@ router.get('/status', (req, res) => {
 router.use(tablesRouter);
 router.use(settingsRouter);
 router.use(ordersRouter);
+router.use(offlineRouter);
 router.use(onlineRouter);
 router.use(cashRouter);
 router.use(reportsRouter);

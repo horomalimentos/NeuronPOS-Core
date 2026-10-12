@@ -9,6 +9,7 @@ import DenominationModal from './DenominationModal';
 import { MOVEMENT_CATEGORY_LABEL, formatDateTime, formatMoney, num, posCan, posPrefs, round2 } from './lib';
 import { cashCutHtml, printHtml } from './ticket';
 import DeviceBanner from './DeviceBanner';
+import { OfflineQueuePanel } from './OfflineRegister';
 import type { CashSession, CashSessionDetail, CutLine, PaymentMethod, PosSettings } from './types';
 import { usePosBranch } from './usePosBranch';
 
@@ -56,6 +57,8 @@ export default function CashPage() {
       />
       {error && <div className="mb-4"><Alert>{error}</Alert></div>}
       <DeviceBanner branchId={branchId} onActive={(d) => { setTerminal(d.terminal); posPrefs.setTerminal(d.terminal); }} />
+      {/* Antes del corte: ventas hechas sin internet que todavia no se suben a esta caja. */}
+      {meHas(me, 'sin_internet') && <OfflineQueuePanel canDiscard={posCan.manage(me.user.role)} />}
       <div className="mb-6 flex flex-wrap items-end gap-3">
         <Field label="Terminal de este dispositivo">
           <input className="input w-48" value={terminal} maxLength={40}

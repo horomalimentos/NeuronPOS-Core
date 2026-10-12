@@ -911,6 +911,35 @@ borrarse.
 | GET | `/api/savings/people` · PUT / DELETE `/api/savings/goals/:id/shares/:userId` `{can_edit}` | quien administra (salirse: el compartido) |
 | POST | `/api/savings/aguinaldo` `{year, branch_id?, frequency?, weekdays?}` · `/api/savings/goals/:id/recalculate` | admin, gerente (requiere `rh`) |
 
+## Caja sin internet (módulo `sin_internet`)
+
+Como la venta sin conexión de Horom. Mientras hay internet, la caja guarda en
+el navegador el menú de la sucursal, los métodos de pago, el impuesto, el turno
+abierto y una copia del panel (service worker `sw.js`: páginas de `/admin` red
+primero, `/assets` con hash desde la copia). Si se cae el internet, *Vender*
+pasa a la caja sin internet (o lo ofrece el aviso de error):
+
+- Venta **para llevar** con el menú guardado, con modificadores y nombre del
+  cliente. Cobro en **efectivo** (con cambio), **tarjeta**, transferencia u
+  otro en pesos; puntos, monedero, Clip y dólares necesitan internet.
+- Imprime ticket y comanda con folio provisional (`SI-1`, `SI-2`…).
+- Cada venta queda en una cola local y se sube sola al volver la conexión
+  (también cada 30 s y con *Subir ahora*). En *Vender* hay un contador y en
+  *Vender* y *Caja* la lista de lo que falta subir; antes del corte conviene
+  que esté vacía.
+
+Al subir (`POST /api/pos/offline-orders`, cajero): no se duplica (cada venta
+lleva su `offline_id`), se respeta el precio cobrado aunque el producto ya esté
+inactivo o haya cambiado de precio, entra pagada con la hora de la venta y su
+folio definitivo, descuenta inventario y no pasa por cocina. Entra al turno con
+el que se vendió; si ese turno ya se cerró, al abierto de la sucursal (de
+preferencia de la misma caja); sin turno abierto responde 409 y se reintenta.
+Una venta que el servidor rechaza se queda en la lista con el motivo y un
+gerente la puede descartar.
+
+Siguiente fase (no incluida): comanderas y pantallas de cocina en la red local
+del restaurante sin internet.
+
 ## Notificaciones push (módulo `push`)
 
 Adaptado de Horom (Web Push con llaves VAPID). Los avisos llegan aunque la

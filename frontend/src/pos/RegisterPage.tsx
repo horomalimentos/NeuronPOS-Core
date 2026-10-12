@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react
 import { Link, useSearchParams } from 'react-router-dom';
 import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
+import { isOfflineError, offlineCatalog } from '../lib/offline';
 import { formatMXN } from '../lib/format';
 import { meHas, useAdmin } from '../restaurant/context';
 import BranchSelect from './BranchSelect';
@@ -27,6 +28,7 @@ import { useLive } from '../lib/live';
 import DeviceBanner from './DeviceBanner';
 import SoldOutModal from './SoldOutModal';
 import { FloorPlanView } from './FloorPlan';
+import OfflineRegister, { OfflineQueuePanel } from './OfflineRegister';
 
 interface CartLine extends CartSelection { key: number }
 interface Draft {
@@ -74,6 +76,13 @@ export default function RegisterPage() {
   const [settings, setSettings] = useState<PosSettings | null>(null);
   const [session, setSession] = useState<CashSession | null>(null);
   const [error, setError] = useState('');
+  // Caja sin internet (modulo "sin_internet"): con conexion se guarda lo
+  // necesario para vender; si se cae, se vende con eso.
+  const offlineOn = meHas(me, 'sin_internet') && posCan.cashier(role);
+  const [offline, setOffline] = useState(false);
+  const [netDown, setNetDown] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const canGoOffline = offlineOn && Boolean(offlineCatalog.load(branchId)?.menu);
 
   // ?tab=linea: viene de un aviso push de pedido en linea.
   const [params] = useSearchParams();
@@ -110,17 +119,28 @@ export default function RegisterPage() {
   useEffect(() => {
     if (!branchId) return;
     setMenu(null);
-    api<Menu>(`/pos/menu?branch_id=${branchId}`).then(setMenu).catch((e) => setError(errorMessage(e)));
-    api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => setMethods(r.payment_methods)).catch(() => {});
+    setError('');
+    const keep = offlineOn ? (patch: Parameters<typeof offlineCatalog.save>[1]) => offlineCatalog.save(branchId, patch) : () => {};
+    api<Menu>(`/pos/menu?branch_id=${branchId}`)
+      .then((m) => { setMenu(m); setOffline(false); setNetDown(false); keep({ menu: m }); })
+      .catch((e) => {
+        if (offlineOn && isOfflineError(e) && offlineCatalog.load(branchId)?.menu) setOffline(true);
+        else setError(errorMessage(e));
+      });
+    api<{ payment_methods: PaymentMethod[] }>('/pos/payment-methods').then((r) => { setMethods(r.payment_methods); keep({ methods: r.payment_methods }); }).catch(() => {});
     api<{ channels: SalesChannel[] }>('/pos/channels').then((r) => setChannels(r.channels)).catch(() => {});
-    api<{ settings: PosSettings }>('/pos/settings').then((r) => setSettings(r.settings)).catch(() => {});
+    api<{ settings: PosSettings }>('/pos/settings').then((r) => { setSettings(r.settings); keep({ settings: r.settings }); }).catch(() => {});
     if (posCan.cashier(role)) {
       api<{ sessions: CashSession[] }>(`/pos/cash-sessions?branch_id=${branchId}&status=abierta`)
-        .then((r) => setSession(r.sessions.find((s) => s.terminal.toLowerCase() === terminal.toLowerCase()) || null))
+        .then((r) => {
+          const own = r.sessions.find((s) => s.terminal.toLowerCase() === terminal.toLowerCase()) || null;
+          setSession(own);
+          keep({ session: own });
+        })
         .catch(() => {});
     }
     loadFloor();
-  }, [branchId, role, terminal, loadFloor]);
+  }, [branchId, role, terminal, loadFloor, offlineOn, reloadKey]);
 
   // Al instante cuando otra pantalla cambia algo de la sucursal (mesas, ordenes, pedidos en linea).
   useLive(branchId, () => {
@@ -230,7 +250,7 @@ export default function RegisterPage() {
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError('');
-    try { await fn(); } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+    try { await fn(); } catch (e) { setError(errorMessage(e)); setNetDown(isOfflineError(e)); } finally { setBusy(false); }
   }
 
   const doSave = () => run(async () => { await save(); });
@@ -277,7 +297,24 @@ export default function RegisterPage() {
   // ---------------------------------------------------------------------------
 
   if (!branchId) return <Alert kind="warning">No tienes sucursales asignadas.</Alert>;
+  const goOffline = () => {
+    if (cart.length && !window.confirm('Lo que no se ha guardado de esta cuenta se pierde. ¿Cambiar a la caja sin internet?')) return;
+    setDraft(null); setOrder(null); setCart([]); setError(''); setOffline(true);
+  };
+  if (offline) {
+    const catalog = offlineCatalog.load(branchId);
+    if (catalog?.menu) {
+      return <OfflineRegister catalog={catalog} branch={branch} restaurant={me.restaurant} userName={me.user.name}
+        onRetry={() => { setOffline(false); setReloadKey((k) => k + 1); }} />;
+    }
+  }
   if (!menu) return error ? <Alert>{error}</Alert> : <Spinner />;
+  const errorBox = error && (
+    <div className="mb-4 space-y-2">
+      <Alert>{error}</Alert>
+      {netDown && canGoOffline && <Button variant="secondary" onClick={goOffline}>Seguir vendiendo sin internet</Button>}
+    </div>
+  );
 
   const header = (
     <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -296,7 +333,8 @@ export default function RegisterPage() {
     return (
       <>
         {header}
-        {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+        {errorBox}
+        {offlineOn && <OfflineQueuePanel canDiscard={posCan.manage(role)} />}
         {posCan.cashier(role) && <DeviceBanner branchId={branchId} />}
         {/* En celular las 4 pestanas van en 2 renglones (meseros con el telefono). */}
         <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-gray-900 p-1 text-sm sm:flex">
@@ -347,7 +385,7 @@ export default function RegisterPage() {
   return (
     <>
       {header}
-      {error && <div className="mb-4"><Alert>{error}</Alert></div>}
+      {errorBox}
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_340px] lg:grid-cols-[minmax(0,1fr)_380px]">
         {/* Catalogo */}
         <section className="min-w-0">

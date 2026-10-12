@@ -9,6 +9,7 @@ import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { applyBranding } from '../lib/branding';
 import { getNative } from '../lib/native';
+import { isOfflineError, meCache, useOfflineQueue } from '../lib/offline';
 import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
@@ -27,16 +28,30 @@ export default function AdminLayout() {
   const hasToken = Boolean(session.getToken('restaurant'));
   const waPending = useWhatsAppPending(me);
   const chatUnread = useChatUnread(me, location.pathname);
+  // Caja sin internet: sube sola las ventas pendientes desde cualquier pantalla.
+  const offlineEnabled = Boolean(me && !me.restaurant.access_error && me.modules.find((m) => m.code === 'sin_internet')?.enabled
+    && posCan.cashier(me.user.role));
+  const offlinePending = useOfflineQueue(offlineEnabled).sales.length;
 
   const reload = useCallback(() => {
+    const show = (m: Me) => {
+      setSessionCapabilities(m.capabilities);
+      setMe(m);
+      applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
+      document.title = `${m.restaurant.name} · NeuronPOS`;
+    };
     api<Me>('/me')
       .then((m) => {
-        setSessionCapabilities(m.capabilities);
-        setMe(m);
-        applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
-        document.title = `${m.restaurant.name} · NeuronPOS`;
+        show(m);
+        // Con caja sin internet, el panel abre aunque se caiga la conexion.
+        if (m.modules.find((x) => x.code === 'sin_internet')?.enabled) meCache.save(m);
+        else meCache.clear();
       })
-      .catch((e) => setError(errorMessage(e)));
+      .catch((e) => {
+        const cached = isOfflineError(e) ? meCache.load<Me>() : null;
+        if (cached) show(cached);
+        else setError(errorMessage(e));
+      });
   }, []);
   useEffect(() => { if (hasToken) reload(); }, [hasToken, reload]);
 
@@ -48,6 +63,7 @@ export default function AdminLayout() {
     // Este navegador deja de recibir los avisos de esta cuenta.
     await disablePush({ realm: 'restaurant' }).catch(() => {});
     session.setToken('restaurant', null);
+    meCache.clear();
     navigate('/admin/login', { replace: true });
   };
 
@@ -61,7 +77,7 @@ export default function AdminLayout() {
   const hasPos = has('pos');
   const nav = [
     { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: !blocked },
-    { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
+    { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role), badge: offlinePending },
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/autoservicio', label: 'Kiosko', icon: TabletSmartphone, end: false, show: has('kiosko') && posCan.cashier(role) },
