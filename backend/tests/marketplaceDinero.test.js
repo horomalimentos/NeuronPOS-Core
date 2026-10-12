@@ -125,7 +125,14 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     await step(juan, cashId, 'take');
 
     const up = await step(juan, cashId, 'pickup');
+    assert.equal(up.status, 200, JSON.stringify(up.body));
     assert.equal(up.body.job.status, 'en_camino');
+    // Al recoger el repartidor pago la comida: la orden queda pagada en la caja.
+    const pos = (await ctx.withPlatform((db) => db.query(
+      `SELECT o.status, o.paid_amount::text AS paid, (SELECT count(*)::int FROM order_payments p WHERE p.order_id = o.id) AS payments
+         FROM orders o JOIN marketplace_orders m ON m.order_id = o.id WHERE m.id = $1`, [cashId],
+    ))).rows[0];
+    assert.deepEqual(pos, { status: 'pagada', paid: '100.00', payments: 1 });
     assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'en_camino');
     const del = await step(juan, cashId, 'deliver');
     assert.equal(del.status, 200, JSON.stringify(del.body));
