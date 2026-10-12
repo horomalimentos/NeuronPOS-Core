@@ -1,4 +1,5 @@
-import { BrainCircuit, Building2, LogOut, Package, Receipt, Settings, Store, Truck } from 'lucide-react';
+import { Building2, LogOut, Package, Receipt, Settings, Store, Truck } from 'lucide-react';
+import { NeuronLogo } from '../components/NeuronLogo';
 import { useEffect } from 'react';
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { resetBranding } from '../lib/branding';
@@ -28,7 +29,7 @@ export default function PlatformLayout() {
       <header className="sticky top-0 z-40 border-b border-gray-800 bg-gray-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <div className="flex items-center gap-2 font-semibold text-white">
-            <BrainCircuit className="h-6 w-6 text-brand" /> Panel NeuronPOS
+            <NeuronLogo className="h-6 w-auto" /> <span className="text-sm font-medium text-gray-400">Panel</span>
           </div>
           <nav className="flex flex-1 gap-1 overflow-x-auto">
             {NAV.map(({ to, label, icon: Icon, end }) => (

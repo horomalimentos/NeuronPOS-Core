@@ -2,6 +2,7 @@ import {
   ArrowRight, Award, BarChart3, Bike, Boxes, BrainCircuit, CreditCard, DollarSign, Gift, HeartHandshake, Check, ChefHat, Globe, Mail, MessageCircle, Monitor, ShieldCheck, Smartphone, TabletSmartphone,
   Truck, Users, Wallet,
 } from 'lucide-react';
+import { NeuronLogo, NeuronMark } from '../components/NeuronLogo';
 import { useEffect, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
@@ -67,7 +68,7 @@ export default function HomePage() {
       <header className="sticky top-0 z-40 border-b border-gray-800/80 bg-gray-950/85 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4">
           <a href="#inicio" className="flex items-center gap-2 font-semibold text-white">
-            <BrainCircuit className="h-7 w-7 text-brand" /> NeuronPOS
+            <NeuronLogo className="h-7 w-auto" />
           </a>
           <nav className="ml-auto hidden items-center gap-6 text-sm text-gray-400 md:flex">
             <a href="#funciones" className="hover:text-white">Funciones</a>
@@ -177,7 +178,7 @@ export default function HomePage() {
 
       <footer className="border-t border-gray-800">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-gray-500">
-          <span className="inline-flex items-center gap-1.5"><BrainCircuit className="h-4 w-4" /> © {new Date().getFullYear()} NeuronPOS</span>
+          <span className="inline-flex items-center gap-1.5"><NeuronMark tone="mono" className="h-4 w-4" /> © {new Date().getFullYear()} NeuronPOS</span>
           <span className="flex gap-4">
             <Link to="/descargas" className="hover:text-gray-300">Descargar apps</Link>
             <Link to="/admin/login" className="hover:text-gray-300">Entrar a mi restaurante</Link>

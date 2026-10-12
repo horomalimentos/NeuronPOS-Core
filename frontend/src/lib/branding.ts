@@ -1,7 +1,7 @@
 // Aplica los colores del restaurante como variables CSS que usa Tailwind
 // (bg-brand, text-brand, etc.).
-const DEFAULT_PRIMARY = '#C8202A';
-const DEFAULT_SECONDARY = '#1E1E1E';
+const DEFAULT_PRIMARY = '#FFC21A'; // Mostaza NeuronPOS
+const DEFAULT_SECONDARY = '#1A1714'; // Carbon NeuronPOS
 
 function hexToRgb(hex: string): [number, number, number] | null {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());

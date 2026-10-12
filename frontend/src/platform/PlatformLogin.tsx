@@ -1,5 +1,5 @@
-import { BrainCircuit } from 'lucide-react';
 import { useState, type FormEvent } from 'react';
+import { NeuronLogo } from '../components/NeuronLogo';
 import { useNavigate } from 'react-router-dom';
 import { AuthCard } from '../components/AuthCard';
 import { Alert, Button, Field } from '../components/ui';
@@ -34,7 +34,7 @@ export default function PlatformLogin() {
     <AuthCard
       title="Panel NeuronPOS"
       subtitle="Administración de restaurantes y suscripciones"
-      logo={<div className="mb-5 rounded-2xl bg-brand/15 p-3 text-brand"><BrainCircuit className="h-9 w-9" /></div>}
+      logo={<NeuronLogo className="mb-6 h-10 w-auto" />}
     >
       <form onSubmit={submit} className="space-y-5">
         {error && <Alert>{error}</Alert>}

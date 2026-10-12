@@ -12,7 +12,7 @@ export interface Incident {
   description: string; action_taken: string | null; evidence: string[]; status: 'pendiente' | 'firmada' | 'cerrada';
   employee_comment: string | null; employee_signed_at: string | null; created_by_name: string | null; created_at: string;
 }
-export const INCIDENT_KIND_LABEL: Record<string, string> = { retardo: 'Retardo', falta: 'Falta', conducta: 'Conducta', accidente: 'Accidente', otro: 'Otro' };
+const INCIDENT_KIND_LABEL: Record<string, string> = { retardo: 'Retardo', falta: 'Falta', conducta: 'Conducta', accidente: 'Accidente', otro: 'Otro' };
 const STATUS_STYLE = { pendiente: 'bg-amber-500/15 text-amber-300', firmada: 'bg-sky-500/15 text-sky-300', cerrada: 'bg-gray-800 text-gray-400' };
 const STATUS_LABEL = { pendiente: 'Por firmar', firmada: 'Firmada', cerrada: 'Cerrada' };
 

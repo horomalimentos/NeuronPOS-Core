@@ -1,4 +1,5 @@
-import { BrainCircuit, ClipboardList, Loader2, ShoppingBag, Store, User } from 'lucide-react';
+import { ClipboardList, Loader2, ShoppingBag, Store, User } from 'lucide-react';
+import { NeuronMark } from '../components/NeuronLogo';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import HomePage from '../home/HomePage';
@@ -119,7 +120,7 @@ export default function SiteLayout() {
           <span>© {new Date().getFullYear()} {r.name}</span>
           <span className="flex items-center gap-4">
             <Link to="/admin/login" className="hover:text-gray-800">Acceso del personal</Link>
-            <span className="inline-flex items-center gap-1 text-gray-400"><BrainCircuit className="h-4 w-4" /> NeuronPOS</span>
+            <span className="inline-flex items-center gap-1 text-gray-400"><NeuronMark tone="mono" className="h-4 w-4" /> Hecho con NeuronPOS</span>
           </span>
         </div>
       </footer>
