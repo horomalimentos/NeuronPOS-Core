@@ -17,6 +17,7 @@
 import { env } from '../config/env.js';
 import { reconcilePendingCheckouts } from './clip/reconcile.js';
 import { cleanupPush, dispatchPushOutbox, startPushListener } from './push.js';
+import { cleanupNayoPush, dispatchNayoPush, startNayoPushListener } from './nayoPush.js';
 import { releaseScheduledOrders } from './scheduledOrders.js';
 import { reconcilePendingMarketplaceCheckouts } from './marketplaceMoney.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
@@ -53,10 +54,13 @@ export function startJobs() {
     every('pedidos-programados', 60 * 1000, () => releaseScheduledOrders()),
     every('push', 30 * 1000, () => dispatchPushOutbox()),
     every('push-limpieza', 60 * 60 * 1000, () => cleanupPush()),
+    every('nayo-push', 30 * 1000, () => dispatchNayoPush()),
+    every('nayo-push-limpieza', 60 * 60 * 1000, () => cleanupNayoPush()),
     every('whatsapp', 10 * 1000, () => dispatchWhatsAppOutbox()),
     every('whatsapp-limpieza', 60 * 60 * 1000, () => cleanupWhatsApp()),
   ];
   startPushListener();
+  startNayoPushListener();
   if (env.billingAuto) timers.push(every('cobro', 60 * 60 * 1000, () => runBillingCycle()));
   console.log(`Jobs activos: pedidos sin pagar, conciliacion con Clip (restaurantes y Delivery), pedidos programados, notificaciones push, avisos por WhatsApp, empleado del mes${env.billingAuto ? ', cobro de suscripciones' : ''}.`);
   return timers;

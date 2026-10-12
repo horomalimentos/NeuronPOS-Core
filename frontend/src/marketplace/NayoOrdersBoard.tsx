@@ -4,7 +4,9 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import InstallApp from '../components/InstallApp';
 import { NayoMark } from '../components/NayoLogo';
+import { PushBell } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Button, Modal } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
@@ -184,6 +186,8 @@ export default function NayoOrdersBoard() {
             {branches.map((l) => <option key={l.branch_id} value={l.branch_id}>{l.branch_name}</option>)}
           </select>
         )}
+        <InstallApp label="Instalar app" />
+        <PushBell target={{ realm: 'nayo', app: 'restaurante' }} label className="[&_svg]:h-4 [&_svg]:w-4" />
         {listing && <PauseControl listing={listing} onChange={(l) => setListings((all) => all.map((x) => (x.branch_id === l.branch_id ? l : x)))} />}
         <button type="button" title={sound ? 'Silenciar' : 'Activar sonido'}
           onClick={() => { const v = !sound; setSound(v); store('npd_board_sound', v ? 'on' : 'off'); }}

@@ -21,7 +21,7 @@ import rateLimit from 'express-rate-limit';
 import { withPlatform, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import {
-  authenticateNayo, authenticateUser, requireRole, signFleetToken, signNayoToken,
+  authenticateFleet, authenticateNayo, authenticateUser, requireRole, signFleetToken, signNayoToken,
 } from '../middleware/auth.js';
 import { requireModule } from '../middleware/requireModule.js';
 import { readPoint } from '../services/deliveryZones.js';
@@ -39,6 +39,8 @@ import { acceptOnlineOrder } from '../services/online.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
 import { verifyGoogleIdToken } from '../services/googleSignIn.js';
+import { deleteNayoSubscription, saveNayoSubscription } from '../services/nayoPush.js';
+import { getVapidKeys } from '../services/push.js';
 import {
   sendNayoOrderReceived, sendNayoReset, sendNayoVerifyCode, sendNayoWelcome,
 } from '../services/nayoEmails.js';
@@ -427,6 +429,44 @@ marketplacePublicRouter.post('/account/verify/resend', loginLimiter, authenticat
   return res.json({ ok: true, sent });
 }));
 
+// Notificaciones del sistema de las apps de Nayo (services/nayoPush.js).
+const pushLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  skip: () => env.isTest,
+  message: { error: 'Demasiados intentos. Espera unos minutos.', code: 'RATE_LIMITED' },
+});
+const invalidSubscription = () => badRequest('Suscripción inválida', 'INVALID_SUBSCRIPTION');
+
+marketplacePublicRouter.get('/push/key', ah(async (req, res) => {
+  const keys = await getVapidKeys();
+  if (!keys) throw new HttpError(503, 'Las notificaciones no están configuradas en el servidor', 'PUSH_NOT_CONFIGURED');
+  res.json({ public_key: keys.publicKey });
+}));
+
+marketplacePublicRouter.post('/push/cliente', pushLimiter, authenticateNayo, ah(async (req, res) => {
+  const body = req.body || {};
+  if (!(await saveNayoSubscription(body.subscription, { customer_id: req.nayoCustomer.id }, body.link_base))) throw invalidSubscription();
+  res.json({ ok: true });
+}));
+
+marketplacePublicRouter.post('/push/cliente/off', pushLimiter, authenticateNayo, ah(async (req, res) => {
+  await deleteNayoSubscription((req.body || {}).endpoint, { customer_id: req.nayoCustomer.id });
+  res.json({ ok: true });
+}));
+
+marketplacePublicRouter.post('/push/repartidor', pushLimiter, authenticateFleet, ah(async (req, res) => {
+  if (!(await saveNayoSubscription((req.body || {}).subscription, { driver_id: req.fleetDriver.id }))) throw invalidSubscription();
+  res.json({ ok: true });
+}));
+
+marketplacePublicRouter.post('/push/repartidor/off', pushLimiter, authenticateFleet, ah(async (req, res) => {
+  await deleteNayoSubscription((req.body || {}).endpoint, { driver_id: req.fleetDriver.id });
+  res.json({ ok: true });
+}));
+
 // Mi cuenta y mis pedidos recientes.
 marketplacePublicRouter.get('/account', authenticateNayo, ah(async (req, res) => {
   const orders = await withPlatform(async (db) => (await db.query(
@@ -677,6 +717,18 @@ async function onOrder(req, fn) {
     return (await db.query('SELECT id, status, accepted_at, ready_at, cancel_reason FROM marketplace_orders WHERE id = $1', [m.id])).rows[0];
   });
 }
+
+// Avisos del sistema al personal: pedidos nuevos de Nayo y mensajes del chat.
+marketplaceRouter.post('/push/subscribe', requireRole(...STAFF), ah(async (req, res) => {
+  const ok = await saveNayoSubscription((req.body || {}).subscription, { restaurant_id: req.tenant.id, user_id: req.user.id });
+  if (!ok) throw badRequest('Suscripción inválida', 'INVALID_SUBSCRIPTION');
+  res.json({ ok: true });
+}));
+
+marketplaceRouter.post('/push/unsubscribe', requireRole(...STAFF), ah(async (req, res) => {
+  await deleteNayoSubscription((req.body || {}).endpoint, { user_id: req.user.id });
+  res.json({ ok: true });
+}));
 
 marketplaceRouter.post('/orders/:id/accept', requireRole(...STAFF), ah(async (req, res) => {
   const prep = (req.body || {}).prep_minutes === undefined ? null : Number(req.body.prep_minutes);

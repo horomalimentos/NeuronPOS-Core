@@ -1,7 +1,9 @@
 import { ArrowRight, MapPin, Receipt, UserRound } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
+import { PushBell } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
 import { api } from '../lib/api';
 import { resetBranding } from '../lib/branding';
@@ -32,7 +34,10 @@ export default function DeliveryLanding() {
       <header className="sticky top-0 z-30 border-b border-gray-900 bg-gray-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-3">
           <h1><NayoLogo size="sm" /></h1>
-          <AccountChip />
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <InstallApp />
+            <AccountChip />
+          </div>
         </div>
       </header>
       <div className="relative overflow-hidden">
@@ -95,6 +100,7 @@ function AccountChip() {
   return (
     <div className="flex items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 text-xs text-gray-300">
       <UserRound className="h-3.5 w-3.5 text-brand" /> {account.name}
+      <PushBell target={{ realm: 'nayo', app: 'cliente' }} />
       <button type="button" onClick={signOut} className="text-gray-500 underline hover:text-white">Salir</button>
     </div>
   );

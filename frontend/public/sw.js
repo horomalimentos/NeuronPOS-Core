@@ -3,7 +3,8 @@
 // Las paginas se piden primero a la red (una actualizacion nunca se queda
 // atorada) y solo si no hay red se usa la copia; los archivos de /assets
 // llevan hash en el nombre, asi que se guardan una vez y no cambian.
-// El backend manda { title, body, link, tag, icon, driver } (services/push.js).
+// El backend manda { title, body, link, tag, icon, badge, driver } (services/push.js
+// y services/nayoPush.js).
 
 const SHELL = 'npc-shell-v1';
 const MAX_ASSETS = 150;
@@ -49,6 +50,31 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+// Globito con el numero en el icono de la app (Badging API): cuenta los avisos
+// que llegan con la app cerrada o en segundo plano; la app lo borra al abrirse
+// (mensaje 'clear-badge', lib/pwa.ts).
+const BADGE_CACHE = 'npc-badge';
+const BADGE_KEY = '/__badge-count';
+
+async function setBadge(next) {
+  const cache = await caches.open(BADGE_CACHE);
+  const prev = Number(await (await cache.match(BADGE_KEY))?.text()) || 0;
+  const n = Math.max(0, typeof next === 'function' ? next(prev) : next);
+  await cache.put(BADGE_KEY, new Response(String(n)));
+  const nav = self.navigator;
+  if (n > 0) await nav.setAppBadge?.(n);
+  else await nav.clearAppBadge?.();
+}
+
+async function appVisible() {
+  const list = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+  return list.some((c) => c.visibilityState === 'visible' && c.focused);
+}
+
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'clear-badge') event.waitUntil(setBadge(0).catch(() => {}));
+});
+
 self.addEventListener('push', (event) => {
   let data = {};
   try {
@@ -59,6 +85,8 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '',
     icon: data.icon || undefined,
+    // Iconito blanco de la barra de estado (Android).
+    badge: data.badge || undefined,
     data: { link: data.link || '/' },
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
@@ -68,13 +96,17 @@ self.addEventListener('push', (event) => {
     options.vibrate = [300, 150, 300, 150, 300];
     options.requireInteraction = true;
   }
-  event.waitUntil(self.registration.showNotification(data.title || 'Aviso', options));
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(data.title || 'Aviso', options),
+    appVisible().then((visible) => (visible ? null : setBadge((n) => n + 1))).catch(() => {}),
+  ]));
 });
 
 // Al tocarla: enfoca una pestana abierta (y la lleva a la pantalla del aviso)
 // o abre una nueva.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  setBadge((n) => n - 1).catch(() => {});
   const link = event.notification.data?.link || '/';
   const target = new URL(link.startsWith('/') ? link : `/${link}`, self.location.origin).href;
   event.waitUntil(
