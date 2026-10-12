@@ -1,6 +1,8 @@
 import { ArrowRight, Bike, MapPin, Receipt, Store, Wallet } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { NayoLogo } from '../components/NayoLogo';
+import { useNayoFavicon } from '../components/useNayoFavicon';
 import { api } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
@@ -16,6 +18,7 @@ import NearbyRestaurants from './NearbyRestaurants';
 export default function DeliveryLanding() {
   const [info, setInfo] = useState<MarketplaceInfo | null>(null);
   const recent = useStore(ordersStore);
+  useNayoFavicon();
   useEffect(() => {
     resetBranding();
     document.title = 'Nayo';
@@ -30,8 +33,7 @@ export default function DeliveryLanding() {
           <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-brand/15 px-3 py-1 text-xs font-semibold text-brand">
             <MapPin className="h-3.5 w-3.5" /> Local, de tu ciudad
           </div>
-          <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl">Nayo</h1>
-          <p className="mt-1 text-sm text-gray-500">by NeuronPOS</p>
+          <h1><NayoLogo size="lg" /></h1>
           <p className="mt-4 max-w-2xl text-lg text-gray-400">
             Pide a los restaurantes cerca de ti y recibe con repartidores de tu zona. Sin mensualidad para restaurantes ni
             para repartidores.

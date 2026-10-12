@@ -1,6 +1,8 @@
 import { ArrowLeft, Bike, Check, ChefHat, Clock, CreditCard, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { NayoLogo } from '../components/NayoLogo';
+import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { resetBranding } from '../lib/branding';
@@ -32,6 +34,7 @@ const PAY_POLL_MS = 4000;
 /** Seguimiento del pedido de Nayo (/nayo/pedido/:token). */
 export default function TrackPage() {
   const { token = '' } = useParams();
+  useNayoFavicon();
   const [params] = useSearchParams();
   const back = params.get('pago');
   const [o, setO] = useState<Tracked | null>(null);
@@ -58,7 +61,7 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Nayo</Link>
+        <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
         {!o ? (error ? <Alert>{error}</Alert> : <Spinner />) : (
           <div className="space-y-4">
             <section className="card p-5">
