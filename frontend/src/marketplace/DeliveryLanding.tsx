@@ -1,33 +1,33 @@
 import { ArrowRight, MapPin, Receipt, UserRound } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
 import { PushBell } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
-import { api } from '../lib/api';
 import { resetBranding } from '../lib/branding';
-import { formatMXN } from '../lib/format';
 import ActiveOrderBubble from './ActiveOrderBubble';
-import { accountStore, ordersStore, signOut, useStore } from './customer';
-import type { MarketplaceInfo } from './lib';
+import { accountStore, ordersStore, signOut, useNayoSignedIn, useStore } from './customer';
+import NayoLoginGate from './NayoLoginGate';
 import NearbyRestaurants from './NearbyRestaurants';
 import { nayoPath } from './nayoUrl';
 
 /**
  * Pagina de Nayo (/nayo): el cliente elige donde le
- * entregan y ve los restaurantes cercanos y las tarifas de envio. Lo de
+ * entregan y ve los restaurantes cercanos con el envio ya calculado a su
+ * domicilio (sin la tabla de tarifas). Lo de
  * restaurantes y repartidores vive aparte, en Nayo Socios (/socios).
  */
 export default function DeliveryLanding() {
-  const [info, setInfo] = useState<MarketplaceInfo | null>(null);
   const recent = useStore(ordersStore);
+  const signedIn = useNayoSignedIn();
   useNayoFavicon();
   useEffect(() => {
     resetBranding();
     document.title = 'Nayo';
-    api<MarketplaceInfo>('/marketplace/info', { noRedirect: true }).then(setInfo).catch(() => {});
   }, []);
+  // Sin sesion solo se ve la bienvenida para entrar (lo pidio Alex).
+  if (!signedIn) return <NayoLoginGate />;
 
   return (
     <div className="min-h-screen bg-gray-950 pb-28">
@@ -64,22 +64,6 @@ export default function DeliveryLanding() {
         <NearbyRestaurants />
       </div>
 
-      {info && info.fee_tiers.length > 0 && (
-        <div className="mx-auto max-w-5xl px-4 pb-10">
-          <section className="card p-6">
-            <h2 className="font-semibold text-white">Costo de envío</h2>
-            <p className="mt-1 text-sm text-gray-400">Según la distancia en línea recta del restaurante a tu domicilio.</p>
-            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {info.fee_tiers.map((t) => (
-                <div key={t.up_to_km} className="rounded-xl bg-gray-950/60 px-4 py-3">
-                  <div className="text-xs text-gray-500">Hasta {t.up_to_km} km</div>
-                  <div className="text-lg font-semibold text-white">{formatMXN(t.fee)}</div>
-                </div>
-              ))}
-            </div>
-          </section>
-        </div>
-      )}
       <footer className="border-t border-gray-800">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-2 px-4 py-6 text-sm text-gray-500">
           <span>Nayo · pedidos locales</span>
@@ -93,7 +77,7 @@ export default function DeliveryLanding() {
   );
 }
 
-/** Tu cuenta de Nayo (si ya entraste) con la opción de salir. */
+/** Tu cuenta de Nayo con la campanita de avisos y la opción de salir. */
 function AccountChip() {
   const account = useStore(accountStore);
   if (!account) return null;

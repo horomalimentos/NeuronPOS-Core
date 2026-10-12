@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
 import { Alert, Button, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
-import { formatMXN } from '../lib/format';
 import { useNayoLive } from '../lib/live';
 import { locationStore, useStore } from './customer';
 import { CUISINE_EMOJI, etaText, REASON_LABEL, type NearbyRestaurant } from './lib';
@@ -180,9 +179,6 @@ function RestaurantCard({ r }: { r: NearbyRestaurant }) {
           <div className="absolute inset-0 flex items-center justify-center bg-black/50">
             <span className="rounded-full bg-gray-950/90 px-3 py-1 text-sm font-semibold text-white">{REASON_LABEL[r.reason]}</span>
           </div>
-        )}
-        {r.can_order && r.delivery_fee !== null && (
-          <span className="absolute left-2 top-2 rounded-full bg-gray-950/85 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">Envío {formatMXN(r.delivery_fee)}</span>
         )}
       </div>
       <div className="mt-2 flex items-start gap-3">

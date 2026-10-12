@@ -88,3 +88,9 @@ export function setQuantity(key: string, quantity: number) {
 export const clearCart = () => cartStore.set({ branch_id: null, restaurant_name: null, lines: [] });
 
 export const cartTotal = (c: DeliveryCart) => Math.round(c.lines.reduce((s, l) => s + l.unit_price * l.quantity, 0) * 100) / 100;
+
+/** true cuando el cliente ya entro y confirmo su correo. */
+export function useNayoSignedIn() {
+  const account = useStore(accountStore);
+  return Boolean(account && account.email_verified !== false);
+}

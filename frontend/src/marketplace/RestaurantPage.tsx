@@ -7,12 +7,13 @@ import { Alert, Button, Field, Spinner } from '../components/ui';
 import { api, errorMessage, nayoApi, ApiError } from '../lib/api';
 import { useNayoLive } from '../lib/live';
 import NayoAccountForm, { VerifyEmailForm } from './NayoAccountForm';
+import NayoLoginGate from './NayoLoginGate';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import ItemModal from '../site/ItemModal';
 import type { PortalItem, PortalMenu } from '../site/types';
 import {
-  accountStore, addToCart, cartStore, cartTotal, clearCart, contactStore, locationStore, ordersStore, setQuantity, signOut, useStore,
+  accountStore, addToCart, cartStore, cartTotal, clearCart, contactStore, locationStore, ordersStore, setQuantity, signOut, useNayoSignedIn, useStore,
 } from './customer';
 import ActiveOrderBubble from './ActiveOrderBubble';
 import { CUISINE_EMOJI, etaText, REASON_LABEL, type NearbyRestaurant } from './lib';
@@ -39,6 +40,7 @@ export default function RestaurantPage() {
   const [checkout, setCheckout] = useState(false);
   const [sheet, setSheet] = useState(false);
   const wide = useWide();
+  const signedIn = useNayoSignedIn();
 
   const load = useCallback(() => {
     const q = location ? `?lat=${location.latitude}&lng=${location.longitude}` : '';
@@ -53,6 +55,7 @@ export default function RestaurantPage() {
   const mine = cart.branch_id === branchId ? cart.lines : [];
   const groups = useMemo(() => new Map((data?.modifier_groups || []).map((g) => [g.id, g])), [data]);
 
+  if (!signedIn) return <NayoLoginGate />;
   if (!data) return <Page>{error ? <Alert>{error}</Alert> : <Spinner />}</Page>;
   const r = data.restaurant;
   const count = mine.reduce((s, l) => s + l.quantity, 0);
