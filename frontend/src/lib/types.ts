@@ -155,6 +155,8 @@ export interface PlatformSettings {
 /** Pago en línea con Clip del restaurante: nunca trae las credenciales. */
 export interface OnlinePayments {
   clip: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string | null };
+  stripe: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string | null };
+  provider: 'stripe' | 'clip' | null;
   online_payment_enabled: boolean;
   payment_timeout_minutes: number;
   secrets_key_configured: boolean;
