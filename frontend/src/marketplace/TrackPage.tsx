@@ -9,6 +9,7 @@ import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import OrderChat from './OrderChat';
+import { nayoPath } from './nayoUrl';
 
 type Status = 'pago_pendiente' | 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
 interface Tracked {
@@ -61,7 +62,7 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
+        <Link to={nayoPath()} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
         {!o ? (error ? <Alert>{error}</Alert> : <Spinner />) : (
           <div className="space-y-4">
             <section className="card p-5">

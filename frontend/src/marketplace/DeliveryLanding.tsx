@@ -9,6 +9,7 @@ import { formatMXN } from '../lib/format';
 import { ordersStore, useStore } from './customer';
 import type { MarketplaceInfo } from './lib';
 import NearbyRestaurants from './NearbyRestaurants';
+import { nayoPath } from './nayoUrl';
 
 /**
  * Pagina de Nayo (/nayo): el cliente elige donde le
@@ -50,7 +51,7 @@ export default function DeliveryLanding() {
             <Receipt className="h-4 w-4 text-gray-400" />
             <span className="text-gray-400">Tus pedidos:</span>
             {recent.slice(0, 3).map((o) => (
-              <Link key={o.token} to={`/nayo/pedido/${o.token}`} className="rounded-full bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700">{o.restaurant}</Link>
+              <Link key={o.token} to={nayoPath(`/pedido/${o.token}`)} className="rounded-full bg-gray-800 px-3 py-1 text-gray-200 hover:bg-gray-700">{o.restaurant}</Link>
             ))}
           </div>
         )}
@@ -66,7 +67,7 @@ export default function DeliveryLanding() {
             <li>Recibe los pedidos en tu panel y habla con el cliente y el repartidor.</li>
             <li>{info && info.food_commission_pct > 0 ? `Comisión de ${info.food_commission_pct} % sobre la comida.` : 'Sin comisión sobre tu comida.'}</li>
           </ul>
-          <Link to="/nayo/restaurantes" className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
+          <Link to={nayoPath('/restaurantes')} className="mt-5 inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
             Registrar mi restaurante <ArrowRight className="h-4 w-4" />
           </Link>
         </section>
@@ -82,7 +83,7 @@ export default function DeliveryLanding() {
             </li>
           </ul>
           <div className="mt-5 flex flex-wrap gap-2">
-            <Link to="/nayo/repartidores" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
+            <Link to={nayoPath('/repartidores')} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-brand-contrast hover:bg-brand/90">
               Quiero repartir <ArrowRight className="h-4 w-4" />
             </Link>
             <Link to="/repartidor" className="inline-flex items-center justify-center rounded-xl border border-gray-700 px-4 py-2.5 text-sm font-semibold text-gray-200 hover:bg-gray-800">
@@ -126,8 +127,8 @@ function SignupMenu() {
     return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', close); };
   }, [open]);
   const options = [
-    { to: '/nayo/restaurantes', icon: <Store className="h-5 w-5" />, title: 'Restaurante', hint: 'Vende a domicilio sin mensualidad' },
-    { to: '/nayo/repartidores', icon: <Bike className="h-5 w-5" />, title: 'Repartidor', hint: 'Reparte en tu zona y en tu horario' },
+    { to: nayoPath('/restaurantes'), icon: <Store className="h-5 w-5" />, title: 'Restaurante', hint: 'Vende a domicilio sin mensualidad' },
+    { to: nayoPath('/repartidores'), icon: <Bike className="h-5 w-5" />, title: 'Repartidor', hint: 'Reparte en tu zona y en tu horario' },
   ];
   return (
     <div ref={box} className="relative">

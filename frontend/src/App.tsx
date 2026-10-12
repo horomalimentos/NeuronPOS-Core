@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
@@ -77,12 +77,39 @@ import ListingPage from './marketplace/ListingPage';
 import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
+import { onNayoHost } from './marketplace/nayoUrl';
 import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
 import TrackOrderPage from './site/TrackOrderPage';
 
+/**
+ * elnayo.com: solo Nayo, en la raiz. Las ligas viejas /nayo/... (y /delivery/...)
+ * se redirigen quitando el prefijo; la app del repartidor sigue en /repartidor.
+ */
+function NayoSite() {
+  return (
+    <Routes>
+      <Route path="/" element={<DeliveryLanding />} />
+      <Route path="/restaurantes" element={<RestaurantSignupPage />} />
+      <Route path="/repartidores" element={<DriverSignupPage />} />
+      <Route path="/r/:branchId" element={<DeliveryRestaurantPage />} />
+      <Route path="/pedido/:token" element={<DeliveryTrackPage />} />
+      <Route path="/repartidor" element={<DriverApp />} />
+      <Route path="/nayo/*" element={<StripPrefix prefix="/nayo" />} />
+      <Route path="/delivery/*" element={<StripPrefix prefix="/delivery" />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function StripPrefix({ prefix }: { prefix: string }) {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`${pathname.slice(prefix.length) || '/'}${search}`} replace />;
+}
+
 export default function App() {
+  if (onNayoHost()) return <BrowserRouter><NayoSite /></BrowserRouter>;
   return (
     <BrowserRouter>
       <Routes>

@@ -2,6 +2,7 @@
 //
 // Orden de prioridad:
 //   1. Host: <slug>.<PLATFORM_DOMAIN> o un dominio propio (restaurants.custom_domain).
+//      Los dominios de Nayo (NAYO_DOMAINS, elnayo.com) cuentan como la plataforma.
 //   2. Header X-Restaurant-Slug (solo si ALLOW_SLUG_HEADER; util en desarrollo
 //      o si el frontend no se sirve desde el subdominio del restaurante).
 //   3. El claim `rid` del JWT (lo resuelve authenticateUser).
@@ -24,7 +25,7 @@ export function parseHost(rawHost, platformDomain = env.platformDomain, reserved
   if (!rawHost) return null;
   const host = String(rawHost).split(',')[0].trim().toLowerCase().replace(/:\d+$/, '').replace(/\.$/, '');
   if (!host || /^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.startsWith('[')) return null;
-  if (host === platformDomain || host === 'localhost') return null;
+  if (host === platformDomain || host === 'localhost' || env.nayoDomains.includes(host)) return null;
 
   const suffix = `.${platformDomain}`;
   if (host.endsWith(suffix)) {

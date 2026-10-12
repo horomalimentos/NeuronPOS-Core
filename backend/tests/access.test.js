@@ -36,6 +36,9 @@ test('parseHost: subdominio, dominio propio y hosts de plataforma', () => {
   const reserved = ['www', 'api', 'panel'];
   const d = 'neuronpos.mx';
   assert.deepEqual(parseHost('horom.neuronpos.mx', d, reserved), { slug: 'horom' });
+  // elnayo.com es Nayo (la plataforma), no el dominio propio de un restaurante.
+  assert.equal(parseHost('elnayo.com', d, reserved), null);
+  assert.equal(parseHost('WWW.elnayo.com:443', d, reserved), null);
   assert.deepEqual(parseHost('Horom.NeuronPOS.mx:443', d, reserved), { slug: 'horom' });
   assert.deepEqual(parseHost('www.horomsushi.com', d, reserved), { customDomain: 'www.horomsushi.com' });
   assert.deepEqual(parseHost('horom.localhost:5173', d, reserved), { slug: 'horom' });

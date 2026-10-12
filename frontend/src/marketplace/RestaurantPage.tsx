@@ -14,6 +14,7 @@ import {
   addToCart, cartStore, cartTotal, clearCart, contactStore, locationStore, ordersStore, setQuantity, useStore,
 } from './customer';
 import { REASON_LABEL, type NearbyRestaurant } from './lib';
+import { nayoPath } from './nayoUrl';
 
 interface Quote { totals: { subtotal: string | number; delivery_fee: string | number; total: string | number } }
 
@@ -54,7 +55,7 @@ export default function RestaurantPage() {
 
   return (
     <Page>
-      <Link to="/nayo" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Restaurantes</Link>
+      <Link to={nayoPath()} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> Restaurantes</Link>
       <header className="card mb-6 flex flex-wrap items-center gap-4 p-5">
         {r.logo_url ? <img src={r.logo_url} alt="" className="h-16 w-16 rounded-xl object-cover" /> : <div className="rounded-xl bg-gray-800 p-4"><Store className="h-8 w-8 text-gray-500" /></div>}
         <div className="min-w-0 flex-1">
@@ -128,7 +129,7 @@ export default function RestaurantPage() {
                 ordersStore.set([{ token, restaurant: r.name, at: new Date().toISOString() }, ...ordersStore.get()].slice(0, 10));
                 clearCart();
                 if (paymentUrl) window.location.assign(paymentUrl);
-                else navigate(`/nayo/pedido/${token}`);
+                else navigate(nayoPath(`/pedido/${token}`));
               }} onRefresh={load} />
           )}
         </aside>

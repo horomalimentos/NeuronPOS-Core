@@ -18,6 +18,9 @@ export const env = {
   customerJwtExpiresIn: process.env.CUSTOMER_JWT_EXPIRES_IN || '30d',
   // Dominio base de la plataforma: los restaurantes viven en <slug>.<dominio>.
   platformDomain: (process.env.PLATFORM_DOMAIN || 'localhost').toLowerCase(),
+  // Dominios propios de Nayo: sirven la plataforma, no son de un restaurante.
+  nayoDomains: (process.env.NAYO_DOMAINS || 'elnayo.com,www.elnayo.com')
+    .split(',').map((d) => d.trim().toLowerCase()).filter(Boolean),
   // Subdominios que nunca son restaurantes (panel, api, www...).
   reservedSubdomains: (process.env.RESERVED_SUBDOMAINS || 'www,app,api,admin,panel,static,cdn,mail')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
