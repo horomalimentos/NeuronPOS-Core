@@ -108,7 +108,7 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
           </Button>
         ) : (
           <Button loading={busy === 'pub'} disabled={l.missing.length > 0} onClick={() => void run('pub', () => put({ published: true }))}>
-            <Eye className="h-4 w-4" /> Publicar en Delivery
+            <Eye className="h-4 w-4" /> Publicar en Nayo
           </Button>
         )}
         {l.published && (l.paused_until ? (

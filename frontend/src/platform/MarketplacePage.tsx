@@ -111,7 +111,7 @@ function SettingsCard({ settings, onSaved }: { settings: Settings; onSaved: () =
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-white">Reglas</h2>
         <label className="flex items-center gap-2 text-sm text-gray-300">
-          <Toggle label="Delivery activo" checked={f.enabled} onChange={(v) => { setF({ ...f, enabled: v }); setNotice(''); }} />
+          <Toggle label="Nayo activo" checked={f.enabled} onChange={(v) => { setF({ ...f, enabled: v }); setNotice(''); }} />
           {f.enabled ? 'Activo' : 'Apagado'}
         </label>
       </div>
