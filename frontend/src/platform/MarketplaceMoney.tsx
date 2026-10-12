@@ -179,7 +179,7 @@ export function MarketplaceOrdersCard() {
           ))}
         </div>
       </div>
-      {filter === 'reembolsar' && <p className="mb-3 text-sm text-gray-400">Pagados con tarjeta y luego rechazados o cancelados: reembólsalos desde el panel de Clip con la referencia.</p>}
+      {filter === 'reembolsar' && <p className="mb-3 text-sm text-gray-400">Pagados con tarjeta y luego rechazados o cancelados: reembólsalos desde el panel de Stripe o Clip con la referencia.</p>}
       {error && <div className="mb-3"><Alert>{error}</Alert></div>}
       {!rows ? <Spinner /> : rows.length === 0 ? <p className="py-6 text-center text-sm text-gray-500">Sin pedidos.</p> : (
         <div className="overflow-x-auto">

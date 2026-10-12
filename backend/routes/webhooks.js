@@ -1,5 +1,6 @@
-// Webhooks de Clip.
+// Webhooks de Clip y de Stripe.
 //
+//   POST /api/webhooks/stripe/plataforma   cobros de suscripcion y de Nayo con Stripe (firma Stripe-Signature)
 //   POST /api/webhooks/clip/plataforma     cobros de suscripcion y de Nayo (cuenta de la plataforma)
 //   POST /api/webhooks/clip/r/:restaurante pagos de pedidos (cuenta del restaurante; id o slug)
 //
@@ -18,6 +19,7 @@ import { refreshCobro } from '../services/clip/pinpad.js';
 import { reconcileCheckoutId } from '../services/clip/reconcile.js';
 import { verifyClipSignature, webhookCheckoutId, webhookEventType } from '../services/clip/status.js';
 import { reconcileMarketplaceCheckoutId } from '../services/marketplaceMoney.js';
+import { platformStripeCredentials, verifyStripeSignature } from '../services/stripe/client.js';
 import { loadRestaurantClipCredentials } from '../services/restaurantPayments.js';
 import { HttpError, SLUG_RE, UUID_RE, ah, notFound } from '../utils/http.js';
 
@@ -65,6 +67,38 @@ async function handle(req, res, scope, webhookSecret) {
 
 router.post(['/clip/plataforma', '/clip/platform'], ah(async (req, res) => {
   await handle(req, res, { kind: 'platform' }, platformClipCredentials().webhookSecret);
+}));
+
+// Stripe (cuenta de la plataforma). Como con Clip, el evento no se cree: solo
+// dice que sesion consultar. Con STRIPE_WEBHOOK_SECRET la firma es obligatoria.
+router.post('/stripe/plataforma', ah(async (req, res) => {
+  const scope = { kind: 'platform' };
+  const event = req.body && typeof req.body === 'object' ? req.body : {};
+  const obj = event.data?.object;
+  const checkoutId = obj?.object === 'checkout.session' && typeof obj.id === 'string' ? obj.id : null;
+  const eventType = typeof event.type === 'string' ? event.type.slice(0, 100) : null;
+  const { webhookSecret } = platformStripeCredentials();
+  let signatureValid = null;
+  if (webhookSecret) {
+    signatureValid = verifyStripeSignature(req.rawBody, req.headers['stripe-signature'], webhookSecret);
+    if (!signatureValid) {
+      await logEvent(scope, { checkoutId, eventType, signatureValid, matched: false, payload: event });
+      throw new HttpError(401, 'Firma del webhook invalida', 'INVALID_SIGNATURE');
+    }
+  }
+  let matched = false;
+  try {
+    if (checkoutId) {
+      let r = await reconcileCheckoutId(scope, checkoutId);
+      if (!r.matched) r = await reconcileMarketplaceCheckoutId(checkoutId);
+      matched = r.matched;
+    }
+  } catch (err) {
+    // El reconciliador periodico lo vuelve a intentar.
+    console.error('[Stripe webhook] la conciliacion fallo:', err.message);
+  }
+  await logEvent(scope, { checkoutId, eventType, signatureValid, matched, payload: event });
+  res.json({ received: true });
 }));
 
 router.post('/clip/r/:ref', ah(async (req, res) => {

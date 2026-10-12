@@ -21,7 +21,7 @@ interface Quote { totals: { subtotal: string | number; delivery_fee: string | nu
 
 /**
  * Menu de un restaurante en Nayo, carrito y datos de entrega.
- * Pago en efectivo al recibir o con tarjeta (Clip de NeuronPOS). El
+ * Pago en efectivo al recibir o con tarjeta (Stripe o Clip de NeuronPOS). El
  * servidor vuelve a valuar todo y rechaza el pedido si ya no hay
  * repartidores conectados que cubran al restaurante.
  */
@@ -254,7 +254,7 @@ function CheckoutForm({ branchId, restaurant, location, contact, account, lines,
             </Field>
           </>
         ) : (
-          <p>Pagas en línea con tarjeta (Clip). El restaurante recibe tu pedido en cuanto se confirma el pago.</p>
+          <p>Pagas en línea con tarjeta. El restaurante recibe tu pedido en cuanto se confirma el pago.</p>
         )}
       </div>
       {quote && (

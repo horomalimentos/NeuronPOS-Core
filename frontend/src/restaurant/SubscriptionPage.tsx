@@ -18,9 +18,9 @@ interface SubscriptionData {
 
 /**
  * Mi suscripcion: modulos contratados, mensualidad y facturas con el boton
- * "Pagar con Clip". Es la unica pantalla disponible si el restaurante esta
- * suspendido. Al regresar de Clip (?factura=&pago=) se verifica el pago con
- * el servidor, que lo concilia con Clip.
+ * "Pagar con tarjeta" (Stripe o Clip). Es la unica pantalla disponible si el restaurante esta
+ * suspendido. Al regresar del pago (?factura=&pago=) se verifica el pago con
+ * el servidor, que lo concilia con el proveedor.
  */
 export default function SubscriptionPage() {
   const { reload: reloadMe } = useAdmin();
@@ -44,7 +44,7 @@ export default function SubscriptionPage() {
     if (!invoiceId || checked.current) return;
     checked.current = true;
     if (result && result !== 'ok') {
-      setNotice({ kind: 'warning', text: result === 'cancelado' ? 'Cancelaste el pago. Puedes intentarlo de nuevo cuando quieras.' : 'Clip no pudo procesar el pago. Intenta de nuevo o con otra tarjeta.' });
+      setNotice({ kind: 'warning', text: result === 'cancelado' ? 'Cancelaste el pago. Puedes intentarlo de nuevo cuando quieras.' : 'No se pudo procesar el pago. Intenta de nuevo o con otra tarjeta.' });
     }
     let tries = 0;
     let timer: ReturnType<typeof setTimeout>;
@@ -65,7 +65,7 @@ export default function SubscriptionPage() {
           timer = setTimeout(verify, 3000);
           return;
         }
-        if (result === 'ok') setNotice({ kind: 'warning', text: 'Clip todavía no confirma tu pago. Se reflejará en unos minutos.' });
+        if (result === 'ok') setNotice({ kind: 'warning', text: 'El pago todavía no se confirma. Se reflejará en unos minutos.' });
       } catch (e) {
         setError(errorMessage(e));
       }
@@ -99,7 +99,7 @@ export default function SubscriptionPage() {
         </span>}
       />
       <div className="mb-4 space-y-2">
-        {verifying && <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Confirmando tu pago con Clip…</p>}
+        {verifying && <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 className="h-4 w-4 animate-spin" /> Confirmando tu pago…</p>}
         {notice && <Alert kind={notice.kind}>{notice.text}</Alert>}
         {error && <Alert>{error}</Alert>}
         {r.status === 'suspended' && (
@@ -157,7 +157,7 @@ function InvoiceRow({ inv, paying, onPay }: { inv: Invoice; paying: boolean; onP
         </div>
         <InvoiceBadge status={inv.status} />
         <span className="w-28 text-right font-semibold tabular-nums text-white">{formatMXN(inv.amount_mxn)}</span>
-        {unpaid && <Button onClick={onPay} loading={paying}><CreditCard className="h-4 w-4" /> Pagar con Clip</Button>}
+        {unpaid && <Button onClick={onPay} loading={paying}><CreditCard className="h-4 w-4" /> Pagar con tarjeta</Button>}
         <button type="button" className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white" onClick={() => setOpen(!open)} aria-label="Ver desglose">
           {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </button>

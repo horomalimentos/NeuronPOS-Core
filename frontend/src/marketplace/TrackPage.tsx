@@ -78,7 +78,7 @@ export default function TrackPage() {
               {paying && (
                 <div className="mt-3 space-y-2 text-sm">
                   <p className="text-gray-300">
-                    {back === 'ok' ? 'Estamos confirmando tu pago con Clip…'
+                    {back === 'ok' ? 'Estamos confirmando tu pago…'
                       : back === 'error' || back === 'cancelado' ? 'El pago no se completó. Puedes intentarlo otra vez.'
                         : 'Tu pedido se envía al restaurante en cuanto se confirma el pago.'}
                   </p>

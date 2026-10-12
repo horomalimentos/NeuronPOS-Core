@@ -6,16 +6,17 @@
 // - Tomar, recoger (paga la comida en el restaurante) y entregar.
 // - Al entregar: efectivo -> adeudo de la parte de NeuronPOS del envio;
 //   tarjeta -> abono de la comida que pago + su parte del envio.
-// - Ligas de Clip de la plataforma: pedido con tarjeta y pago de adeudo.
-//   Como en services/clip/reconcile.js, el webhook solo dispara la consulta
-//   server-to-server a Clip; el pago se aplica una sola vez (applied_at).
+// - Ligas de la cuenta de la plataforma (Stripe o Clip, platformGateway.js):
+//   pedido con tarjeta y pago de adeudo. Como en services/clip/reconcile.js,
+//   el webhook solo dispara la consulta server-to-server al proveedor; el
+//   pago se aplica una sola vez (applied_at).
 import { withFleetDriver, withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
-import { createClipClient, hasCheckoutCredentials, platformClipCredentials } from './clip/client.js';
-import { checkoutMismatch, normalizeClipStatus, rawStatusOf } from './clip/status.js';
 import { driverCovers, getMarketplaceSettings } from './marketplace.js';
-import { platformWebhookUrl } from './urls.js';
+import {
+  createPlatformCheckout, fetchPlatformCheckout, paymentReference, platformPaymentsAvailable,
+} from './platformGateway.js';
 
 const conflict = (msg, code) => new HttpError(409, msg, code);
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -24,7 +25,7 @@ export const ACTIVE = ['aceptado', 'listo', 'en_camino'];
 /** Sitio de la plataforma (neuronpos.app) para regresar de Clip. */
 export const platformSiteUrl = () => (process.env.PLATFORM_SITE_URL || `https://${env.platformDomain}`).replace(/\/+$/, '');
 
-export const cardPaymentsAvailable = () => hasCheckoutCredentials(platformClipCredentials());
+export const cardPaymentsAvailable = platformPaymentsAvailable;
 
 export async function driverBalance(db, driverId) {
   return Number((await db.query(
@@ -241,23 +242,25 @@ export async function driverLedger(driverId) {
 }
 
 // ---------------------------------------------------------------------------
-// Ligas de Clip de la plataforma
+// Ligas de la cuenta de la plataforma (Stripe o Clip)
 // ---------------------------------------------------------------------------
 
 async function createLink(db, { purpose, amount, description, back, orderId = null, driverId = null }) {
-  const creds = platformClipCredentials();
-  if (!hasCheckoutCredentials(creds)) throw badRequest('El pago con tarjeta no esta disponible por ahora', 'PAYMENT_UNAVAILABLE');
-  const link = await createClipClient(creds).createCheckout({
+  if (!platformPaymentsAvailable()) throw badRequest('El pago con tarjeta no esta disponible por ahora', 'PAYMENT_UNAVAILABLE');
+  const link = await createPlatformCheckout({
     amount,
     description,
-    redirect: { success: `${back}?pago=ok`, error: `${back}?pago=error`, default: `${back}?pago=cancelado` },
-    webhookUrl: platformWebhookUrl(),
+    back,
     metadata: { tipo: `delivery_${purpose}`, marketplace_order_id: orderId, driver_id: driverId },
+    // Un pedido con tarjeta no espera mas de 30 min a que paguen (ver abajo).
+    ttlMs: purpose === 'pedido' ? 30 * 60000 : undefined,
   });
   return (await db.query(
-    `INSERT INTO marketplace_checkouts (purpose, marketplace_order_id, driver_id, checkout_id, payment_url, amount, expires_at, response_data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [purpose, orderId, driverId, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw)],
+    `INSERT INTO marketplace_checkouts (purpose, marketplace_order_id, driver_id, checkout_id, payment_url, amount, expires_at,
+                                        response_data, provider)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [purpose, orderId, driverId, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw),
+      link.provider],
   )).rows[0];
 }
 
@@ -296,9 +299,9 @@ export async function createDebtCheckout(driverId, amount = null) {
   });
 }
 
-/** Lo que pasa cuando Clip confirma un pago. Regresa { late }. */
+/** Lo que pasa cuando el proveedor confirma un pago. Regresa { late }. */
 async function applyCheckout(db, c, data) {
-  const reference = String(data?.transaction_id || data?.receipt_no || c.checkout_id).slice(0, 200);
+  const reference = String(paymentReference(data) || c.checkout_id).slice(0, 200);
   if (c.purpose === 'adeudo') {
     await db.query(
       `INSERT INTO marketplace_driver_ledger (driver_id, kind, amount, note, checkout_id)
@@ -308,7 +311,7 @@ async function applyCheckout(db, c, data) {
     return { late: false };
   }
   const m = (await db.query('SELECT id, status, order_id, restaurant_id FROM marketplace_orders WHERE id = $1 FOR UPDATE', [c.marketplace_order_id])).rows[0];
-  // Pagado despues de cancelar: hay que reembolsar en el panel de Clip.
+  // Pagado despues de cancelar: hay que reembolsar en el panel del proveedor.
   if (!m || m.status !== 'pago_pendiente') return { late: true };
   await db.query("UPDATE marketplace_orders SET status = 'nuevo', paid_at = now(), updated_at = now() WHERE id = $1", [m.id]);
   await db.query(
@@ -318,26 +321,23 @@ async function applyCheckout(db, c, data) {
   return { late: false };
 }
 
-/** Concilia una liga con Clip (server-to-server) y aplica el pago una vez. */
+/** Concilia una liga con su proveedor (server-to-server) y aplica el pago una vez. */
 export async function reconcileMarketplaceCheckout(local) {
-  const creds = platformClipCredentials();
-  if (!hasCheckoutCredentials(creds)) return { status: local.status, applied: false };
-  const data = await createClipClient(creds).getCheckout(local.checkout_id);
-  if (!data) {
+  const fetched = await fetchPlatformCheckout(local);
+  if (fetched === undefined) return { status: local.status, applied: false };
+  if (!fetched) {
     await withPlatform((db) => db.query('UPDATE marketplace_checkouts SET last_checked_at = now() WHERE id = $1', [local.id]));
     return { status: local.status, applied: false };
   }
-  const mismatch = checkoutMismatch(local, data);
+  const { data, status, mismatch, reference: ref } = fetched;
   if (mismatch) {
-    console.error(`[Delivery Clip] ${local.checkout_id}: la respuesta de Clip no coincide (${mismatch})`);
+    console.error(`[Nayo] ${local.checkout_id}: la respuesta del proveedor no coincide (${mismatch})`);
     return { status: local.status, applied: false, mismatch };
   }
-  const status = normalizeClipStatus(rawStatusOf(data), data);
   return withPlatform(async (db) => {
     const row = (await db.query('SELECT * FROM marketplace_checkouts WHERE id = $1 FOR UPDATE', [local.id])).rows[0];
     if (!row) return { status, applied: false };
     const next = row.status === 'completed' ? 'completed' : status;
-    const ref = data.transaction_id || data.receipt_no || null;
     await db.query(
       `UPDATE marketplace_checkouts SET status = $2, response_data = $3, last_checked_at = now(),
               clip_reference = coalesce($4, clip_reference), updated_at = now() WHERE id = $1`,
