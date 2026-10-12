@@ -47,6 +47,11 @@ export const env = {
   clipApiUrl: (process.env.CLIP_API_URL || 'https://api.payclip.com').replace(/\/+$/, ''),
   // API de PinPad (cobro en la terminal fisica de Clip).
   clipPinpadUrl: (process.env.CLIP_PINPAD_URL || 'https://api.payclip.io/f2f/pinpad/v1/payment').replace(/\/+$/, ''),
+  // Cuenta de Stripe de la PLATAFORMA (alternativa a Clip). Llave secreta
+  // sk_live_/sk_test_ y signing secret whsec_ del webhook.
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  stripeApiUrl: (process.env.STRIPE_API_URL || 'https://api.stripe.com').replace(/\/+$/, ''),
   // Llave (32 bytes en base64 o hex) para cifrar las credenciales de Clip de cada restaurante.
   paymentSecretsKey: process.env.PAYMENT_SECRETS_KEY || '',
   // Zona horaria para fechas de cobro (dia de cobro, vencimiento, gracia).
