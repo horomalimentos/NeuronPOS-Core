@@ -62,7 +62,8 @@ describe('pedidos programados', { skip: SKIP_DB }, () => {
     assert.ok(sched.body.days.length >= 1 && sched.body.days.length <= 2);
     const first = new Date(sched.body.days[0].times[0].at);
     assert.ok(first.getTime() >= Date.now() + 89 * 60000);
-    const at = sched.body.days[0].times[2].at;
+    // De noche a hoy le pueden quedar menos de 3 horarios: se toma el tercero de todos.
+    const at = sched.body.days.flatMap((d) => d.times)[2].at;
 
     const r = await portal('POST', '/orders', {
       branch_id: branch.id, order_type: 'para_llevar', items: [{ menu_item_id: taco.id, quantity: 1 }],
