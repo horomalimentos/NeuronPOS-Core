@@ -1,3 +1,4 @@
+import InstallApp from '../components/InstallApp';
 import {
   Banknote, Bike, Check, CircleSlash, LogOut, MapPin, Navigation, Phone, Power, RefreshCw, Store, Truck,
 } from 'lucide-react';
@@ -272,7 +273,9 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
             <div className="text-xs text-gray-500">{fleet ? 'Flota NeuronPOS' : 'Repartidor del restaurante'}</div>
           </div>
           <div className="flex items-center gap-3">
-            {push && <PushBell target={{ realm: 'restaurant' }} className="[&_svg]:h-5 [&_svg]:w-5" />}
+            <InstallApp label="Instalar" />
+            {fleet ? <PushBell target={{ realm: 'nayo', app: 'repartidor' }} className="[&_svg]:h-5 [&_svg]:w-5" />
+              : push && <PushBell target={{ realm: 'restaurant' }} className="[&_svg]:h-5 [&_svg]:w-5" />}
             <button onClick={() => void load()} className="text-gray-400 hover:text-white" aria-label="Actualizar"><RefreshCw className="h-5 w-5" /></button>
             <button onClick={onLogout} className="text-gray-400 hover:text-white" aria-label="Salir"><LogOut className="h-5 w-5" /></button>
           </div>

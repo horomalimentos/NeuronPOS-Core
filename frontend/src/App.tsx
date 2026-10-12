@@ -3,6 +3,7 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import { usePwaManifest } from './lib/pwa';
 import CustomersPage from './loyalty/CustomersPage';
 import CountPage from './inventory/CountPage';
 import CountsPage from './inventory/CountsPage';
@@ -113,10 +114,17 @@ function StripPrefix({ prefix }: { prefix: string }) {
   return <Navigate to={`${pathname.slice(prefix.length) || '/'}${search}`} replace />;
 }
 
+/** Manifest de la app de Nayo que se esta viendo (lib/pwa.ts). */
+function PwaManifest() {
+  usePwaManifest(useLocation().pathname);
+  return null;
+}
+
 export default function App() {
-  if (onNayoHost()) return <BrowserRouter><NayoSite /></BrowserRouter>;
+  if (onNayoHost()) return <BrowserRouter><PwaManifest /><NayoSite /></BrowserRouter>;
   return (
     <BrowserRouter>
+      <PwaManifest />
       <Routes>
         {/* Sitio publico y portal de clientes del restaurante (por dominio) */}
         <Route element={<SiteLayout />}>
