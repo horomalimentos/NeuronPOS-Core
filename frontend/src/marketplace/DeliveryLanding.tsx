@@ -1,10 +1,11 @@
 import { ArrowRight, MapPin, Receipt, UserRound } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import InstallApp from '../components/InstallApp';
 import { NayoLogo } from '../components/NayoLogo';
 import { PushBell } from '../components/PushBell';
 import { useNayoFavicon } from '../components/useNayoFavicon';
+import { errorMessage, nayoApi } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import ActiveOrderBubble from './ActiveOrderBubble';
 import { accountStore, ordersStore, signOut, useNayoSignedIn, useStore } from './customer';
@@ -85,7 +86,24 @@ function AccountChip() {
     <div className="flex items-center gap-2 rounded-full bg-gray-800/80 px-3 py-1.5 text-xs text-gray-300">
       <UserRound className="h-3.5 w-3.5 text-brand" /> {account.name}
       <PushBell target={{ realm: 'nayo', app: 'cliente' }} />
+      <TestPushButton />
       <button type="button" onClick={signOut} className="text-gray-500 underline hover:text-white">Salir</button>
     </div>
   );
+}
+
+/** Manda un aviso de prueba a los dispositivos de esta cuenta. */
+function TestPushButton() {
+  const [busy, setBusy] = useState(false);
+  const test = async () => {
+    setBusy(true);
+    try {
+      const r = await nayoApi<{ sent: number }>('/marketplace/push/cliente/test', { method: 'POST' });
+      window.alert(r.sent ? 'Listo, te mandamos un aviso de prueba.' : 'No se pudo entregar el aviso. Apaga y vuelve a activar la campanita.');
+    } catch (e) {
+      window.alert(errorMessage(e));
+    }
+    setBusy(false);
+  };
+  return <button type="button" onClick={() => void test()} disabled={busy} className="text-gray-400 underline hover:text-white disabled:opacity-50">Probar aviso</button>;
 }
