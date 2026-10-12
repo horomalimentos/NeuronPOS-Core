@@ -680,7 +680,10 @@ marketplaceRouter.post('/orders/:id/accept', requireRole(...STAFF), ah(async (re
 marketplaceRouter.post('/orders/:id/reject', requireRole(...STAFF), ah(async (req, res) => {
   const reason = str((req.body || {}).reason, { field: 'reason', required: true, max: 300 });
   const order = await onOrder(req, async (db, m) => {
-    if (m.status !== 'nuevo') throw new HttpError(409, 'El pedido ya fue aceptado', 'INVALID_TRANSITION');
+    // Uno pagado con tarjeta entra aceptado solo: se puede rechazar mientras
+    // no este listo (queda en el Panel para reembolsar).
+    const paidAuto = m.status === 'aceptado' && m.payment_method === 'tarjeta';
+    if (m.status !== 'nuevo' && !paidAuto) throw new HttpError(409, 'El pedido ya fue aceptado', 'INVALID_TRANSITION');
     await db.query(
       `UPDATE orders SET status = 'cancelada', online_status = 'rechazada', cancelled_at = now(), cancelled_by = $3,
               cancel_reason = $4, updated_at = now()

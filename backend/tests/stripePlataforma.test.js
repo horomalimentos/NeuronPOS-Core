@@ -140,7 +140,7 @@ describe('Stripe de la plataforma', { skip: SKIP_DB }, () => {
     const id = o.payment_url.split('/').pop();
     stripe.pay(id);
     assert.equal((await webhook(event(id))).status, 200);
-    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'nuevo');
+    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'aceptado');
     const chk = (await ctx.withPlatform((db) => db.query('SELECT provider, clip_reference FROM marketplace_checkouts WHERE checkout_id = $1', [id]))).rows[0];
     assert.deepEqual(chk, { provider: 'stripe', clip_reference: `pi_${id}` });
   });

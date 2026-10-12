@@ -185,11 +185,15 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     clip.pay(checkoutId);
     const w = await webhook(checkoutId);
     assert.equal(w.status, 200);
-    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'nuevo');
+    // Pagado: entra aceptado solo, sin que el restaurante toque Aceptar.
+    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'aceptado');
     const ev = (await ctx.withPlatform((db) => db.query('SELECT matched FROM clip_webhook_events WHERE checkout_id = $1', [checkoutId]))).rows[0];
     assert.equal(ev.matched, true);
 
-    const id = await accept(o.token);
+    const auto = (await restaurantOrders()).find((x) => x.status === 'aceptado');
+    assert.ok(auto?.estimated_ready_at, 'tiene hora estimada');
+    assert.equal((await api(R.token, 'POST', `/api/marketplace/orders/${auto.id}/accept`, {})).body.code, 'INVALID_TRANSITION');
+    const { id } = auto;
     const offer = (await board(juan)).available.find((x) => x.id === id);
     assert.ok(offer, 'el bloqueado por adeudo si ve pedidos con tarjeta');
     assert.equal(Number(offer.collect), 0);
@@ -214,13 +218,15 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     ))).rows[0];
     assert.deepEqual(order, { status: 'cancelada', online_payment_status: 'cancelado' });
 
-    // Un pedido pagado que el restaurante rechaza aparece en "por reembolsar".
+    // Un pedido pagado (entra aceptado) que el restaurante rechaza aparece en "por reembolsar".
     const p = (await buy(orderBody({ payment_method: 'tarjeta' }))).body.order;
     const pid = p.payment_url.split('/').pop();
     clip.pay(pid);
     await money.reconcilePendingMarketplaceCheckouts();
-    const n = (await restaurantOrders()).find((x) => x.status === 'nuevo');
-    await api(R.token, 'POST', `/api/marketplace/orders/${n.id}/reject`, { reason: 'Sin gas' });
+    const n = (await restaurantOrders()).find((x) => x.status === 'aceptado' && x.payment_method === 'tarjeta');
+    const rj = await api(R.token, 'POST', `/api/marketplace/orders/${n.id}/reject`, { reason: 'Sin gas' });
+    assert.equal(rj.status, 200, JSON.stringify(rj.body));
+    assert.equal((await pub('GET', `/orders/${p.token}`)).body.order.status, 'rechazado');
     const refunds = (await panel('GET', '/marketplace/orders?status=reembolsar')).body.orders;
     assert.equal(refunds.length, 1);
     assert.equal(refunds[0].refund_needed, true);

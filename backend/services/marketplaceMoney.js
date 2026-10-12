@@ -14,6 +14,7 @@ import { withFleetDriver, withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
 import { driverCovers, getMarketplaceSettings } from './marketplace.js';
+import { acceptOnlineOrder } from './online.js';
 import {
   createPlatformCheckout, fetchPlatformCheckout, paymentReference, platformPaymentsAvailable,
 } from './platformGateway.js';
@@ -318,6 +319,12 @@ async function applyCheckout(db, c, data) {
     'UPDATE orders SET online_payment_status = NULL, payment_due_at = NULL, updated_at = now() WHERE id = $1 AND restaurant_id = $2',
     [m.order_id, m.restaurant_id],
   );
+  // Pagado con tarjeta: entra aceptado y a cocina, sin esperar a que el
+  // restaurante toque "Aceptar" (si no puede surtirlo, lo cancela en caja).
+  const listing = (await db.query(
+    'SELECT l.prep_minutes FROM marketplace_orders m JOIN marketplace_listings l ON l.branch_id = m.branch_id WHERE m.id = $1', [m.id],
+  )).rows[0];
+  await acceptOnlineOrder(db, m.restaurant_id, m.order_id, { prepMinutes: listing?.prep_minutes ?? 25 });
   return { late: false };
 }
 
