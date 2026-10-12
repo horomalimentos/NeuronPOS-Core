@@ -3,6 +3,7 @@
 // precios del carrito son un estimado: el servidor valua todo al cotizar.
 import { useSyncExternalStore } from 'react';
 import type { Point } from '../components/ZoneMap';
+import { session } from '../lib/session';
 import type { CartLine } from '../site/cart';
 
 export interface DeliveryCart { branch_id: string | null; restaurant_name: string | null; lines: CartLine[] }
@@ -47,6 +48,20 @@ export const cartStore = store<DeliveryCart>(KEYS.cart, { branch_id: null, resta
 export const contactStore = store<Contact>(KEYS.contact, { name: '', phone: '', address: '', reference: '' });
 /** Ultimos pedidos (token y restaurante) para volver al seguimiento. */
 export const ordersStore = store<{ token: string; restaurant: string; at: string }[]>(KEYS.orders, []);
+
+/** Cliente de Nayo con sesion (el token va aparte, en session 'nayo'). */
+export interface NayoAccount { id: string; name: string; phone: string; email: string }
+export const accountStore = store<NayoAccount | null>('npd_account', null);
+
+export function signIn(token: string, customer: NayoAccount) {
+  session.setToken('nayo', token);
+  accountStore.set(customer);
+}
+
+export function signOut() {
+  session.setToken('nayo', null);
+  accountStore.set(null);
+}
 
 export const useStore = <T,>(s: { get: () => T; subscribe: (fn: () => void) => () => void }) => useSyncExternalStore(s.subscribe, s.get);
 

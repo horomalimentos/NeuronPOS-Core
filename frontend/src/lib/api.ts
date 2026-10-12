@@ -42,7 +42,7 @@ export function deviceToken(): string {
 }
 
 const LOGIN_PATH: Record<Realm, string> = {
-  platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor',
+  platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor', nayo: '/nayo',
 };
 
 /** La app del repartidor tiene su propio login (personal del restaurante o flota). */
@@ -55,7 +55,7 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
   const token = session.getToken(realm);
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
-  if (slug && realm !== 'platform' && realm !== 'fleet') headers['X-Restaurant-Slug'] = slug;
+  if (slug && realm !== 'platform' && realm !== 'fleet' && realm !== 'nayo') headers['X-Restaurant-Slug'] = slug;
   if (realm === 'restaurant') {
     const device = deviceToken();
     if (device) headers['X-Device-Token'] = device;
@@ -84,6 +84,9 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
 
 /** App de los repartidores de la flota de la plataforma. */
 export const fleetApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'fleet' });
+
+/** Cliente de Nayo: manda solo su token de cuenta de Nayo y nunca redirige. */
+export const nayoApi = <T,>(path: string, opts: Omit<Options, 'realm' | 'noRedirect'> = {}) => api<T>(path, { ...opts, realm: 'nayo', noRedirect: true });
 
 export const platformApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'platform' });
 

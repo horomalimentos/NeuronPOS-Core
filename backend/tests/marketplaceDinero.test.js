@@ -23,6 +23,9 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   let juan; let pedro;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
+  // Para pedir hay que tener cuenta de Nayo.
+  let shopper;
+  const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const panel = (method, path, body) => api(owner, method, `/api/platform${path}`, body);
   const fleet = (d, method, path, body) => api(d.token, method, `/api/fleet${path}`, body);
   const orderBody = (extra = {}) => ({
@@ -59,6 +62,9 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
+    shopper = (await ctx.request('POST', '/api/marketplace/account/register', {
+      body: { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' },
+    })).body.token;
     const client = await import('../services/clip/client.js');
     ({ signClipBody: sign } = await import('../services/clip/status.js'));
     money = await import('../services/marketplaceMoney.js');
@@ -87,7 +93,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   let cashId;
   test('efectivo: el repartidor ve el pedido de su zona, lo toma, recoge y entrega; queda el adeudo del 20 %', async () => {
     assert.equal((await pub('GET', '/info')).body.card_payments, true);
-    const o = (await pub('POST', '/orders', orderBody({ pay_with: 200 }))).body.order;
+    const o = (await buy(orderBody({ pay_with: 200 }))).body.order;
     assert.equal(Number(o.total), 135); // 100 de comida + 35 de envio
     // Hasta que el restaurante acepta no se ofrece.
     assert.equal((await board(juan)).available.length, 0);
@@ -138,7 +144,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   });
 
   test('con el adeudo en el tope ya no ve ni toma pedidos en efectivo', async () => {
-    const o = (await pub('POST', '/orders', orderBody())).body.order;
+    const o = (await buy(orderBody())).body.order;
     const id = await accept(o.token);
     await step(juan, id, 'take');
     await step(juan, id, 'pickup');
@@ -147,7 +153,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal(b.balance, -14);
     assert.equal(b.cash_blocked, true);
 
-    await pub('POST', '/orders', orderBody());
+    await buy(orderBody());
     const id3 = await accept();
     assert.equal((await board(juan)).available.length, 0);
     assert.equal((await board(pedro)).available.length, 1);
@@ -159,7 +165,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
 
   let cardToken;
   test('tarjeta: Clip confirma y el pedido llega al restaurante; al entregar se abona comida + envio y cubre el adeudo', async () => {
-    const res = await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta', pay_with: 500 }));
+    const res = await buy(orderBody({ payment_method: 'tarjeta', pay_with: 500 }));
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const o = res.body.order;
     cardToken = o.token;
@@ -199,7 +205,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   });
 
   test('una liga que vence cancela el pedido; pagado despues de cancelar queda para reembolso', async () => {
-    const o = (await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta' }))).body.order;
+    const o = (await buy(orderBody({ payment_method: 'tarjeta' }))).body.order;
     const checkoutId = o.payment_url.split('/').pop();
     clip.expire(checkoutId);
     await money.reconcilePendingMarketplaceCheckouts();
@@ -211,7 +217,7 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.deepEqual(order, { status: 'cancelada', online_payment_status: 'cancelado' });
 
     // Un pedido pagado que el restaurante rechaza aparece en "por reembolsar".
-    const p = (await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta' }))).body.order;
+    const p = (await buy(orderBody({ payment_method: 'tarjeta' }))).body.order;
     const pid = p.payment_url.split('/').pop();
     clip.pay(pid);
     await money.reconcilePendingMarketplaceCheckouts();
