@@ -376,6 +376,32 @@ El ticket y el corte se imprimen desde el navegador (HTML de 80 mm en un
 iframe oculto) con el logo, nombre y color del restaurante; no hay servicio de
 impresión nativo. La pantalla de cocina se actualiza cada 5 segundos.
 
+## Funciones extra del POS (como en Horom)
+
+Módulos con precio aparte (empiezan en $0; el precio se fija en el Panel):
+
+| Módulo | Qué hace |
+| --- | --- |
+| `estaciones` | Barra, parrilla, sushi…: cada estación con su pantalla y sus comandas. Tiempos de cocina configurables y regresar órdenes listas. |
+| `plataformas` | Rappi, Uber Eats, Didi: número de pedido, métodos permitidos y comisión guardada en cada orden; venta neta en reportes. |
+| `promociones` | 2x1, paquetes, % o $ por horario, día y canal (caja / en línea), y vales con código en caja y en el checkout. |
+| `multimoneda` | Efectivo en dólares con tipo de cambio por turno y conteo de billetes en el corte. |
+| `terminal_clip` | Cobro con la terminal física de Clip (PinPad) desde la caja; se confirma con Clip y se usa una sola vez. |
+| `kiosko` | Autoservicio en tablet (`/autoservicio`): el cliente arma su orden y paga en caja. |
+| `dispositivos` | Solo los equipos autorizados por el gerente pueden abrir caja y cobrar. |
+| `eventos` | Ventas por evento y preventas con página pública (`/evento/:slug`). |
+
+Incluido en el POS: descuento por artículo con PIN rotativo del gerente, dividir
+la cuenta, permisos por rol editables (`role_permissions`), impuesto y ticket por
+sucursal (IVA fronterizo), agotado hasta cierta hora y pausa de pedidos en línea,
+aviso de órdenes sin cobrar al cerrar la última caja (`force: true` para cerrar
+igual), categorías en entradas y salidas de efectivo, pestaña "Cobradas hoy", caja
+en celular para meseros, plano de mesas por zona, bitácora de accesos y avisos en
+vivo (`/api/live`, SSE con LISTEN/NOTIFY). Los reportes suman plataformas,
+ventas por caja y entradas/salidas de efectivo. En RH: checada desde el celular
+del empleado dentro de la geocerca (`mobile_enabled` por sucursal). Las fotos del
+personal (checklists, incidencias) se suben a `POST /api/uploads/photo`.
+
 ## Inventario y compras (módulo `inventario`)
 
 Copiado del inventario de Horom y adaptado a varios restaurantes. Pantalla
