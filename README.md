@@ -763,6 +763,15 @@ token del seguimiento (60 mensajes cada 15 min), el repartidor solo si lleva el
 pedido, y el restaurante con RLS de su restaurante (solo puede escribir como
 `restaurante`). Las apps consultan cada 8 s y marcan los mensajes nuevos.
 
+**Varios pedidos y POS** (`046_delivery_varios_pedidos.sql`): un repartidor
+lleva hasta `driver_max_orders` pedidos a la vez (2 de inicio, de 1 a 5 en
+*Panel › Delivery › Reglas*); mientras no llegue al tope sigue viendo los
+disponibles de su zona. Si el restaurante también tiene el POS, sus pedidos de
+Delivery salen en *Caja › Pedidos en línea* con la etiqueta *NeuronPOS
+Delivery*, el estado del repartidor (buscando, asignado, ya lo recogió), el
+chat y el botón *Listo para recoger*; ahí no hay *Salió a reparto* (lo marca el
+repartidor al recoger) y se cobran en caja cuando el repartidor paga la comida.
+
 API:
 
 | Método | Ruta | Quién |

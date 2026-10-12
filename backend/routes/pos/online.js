@@ -79,7 +79,12 @@ const LIST_SQL = `
          o.subtotal, o.delivery_fee, o.tax_amount, o.total, o.paid_amount,
          o.payment_preference, o.pay_with, o.payment_provider, o.online_payment_status, o.created_at, o.accepted_at, o.estimated_ready_at,
          o.scheduled_for, o.sent_at,
-         o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason
+         o.ready_at, o.dispatched_at, o.paid_at, o.cancel_reason,
+         -- Pedido de NeuronPOS Delivery: lo lleva un repartidor de la plataforma.
+         (SELECT json_build_object('id', m.id, 'status', m.status, 'payment_method', m.payment_method,
+                   'driver_assigned', m.driver_id IS NOT NULL, 'picked_up_at', m.picked_up_at,
+                   'messages', (SELECT count(*) FROM marketplace_messages x WHERE x.marketplace_order_id = m.id))
+            FROM marketplace_orders m WHERE m.order_id = o.id) AS marketplace
     FROM orders o`;
 
 router.get('/online-orders', can('orders'), ah(async (req, res) => {
@@ -164,6 +169,9 @@ router.post('/online-orders/:id/dispatch', can('cashier'), ah(async (req, res) =
     if (o.source !== 'web') throw notWeb();
     assertActive(o);
     if (o.order_type !== 'domicilio') throw badRequest('Solo los pedidos a domicilio salen a reparto', 'NOT_DELIVERY');
+    if (o.channel === 'marketplace') {
+      throw badRequest('Este pedido es de NeuronPOS Delivery: el repartidor lo marca al recogerlo', 'MARKETPLACE_ORDER');
+    }
     if (o.online_status !== 'aceptada') throw badRequest('Acepta el pedido en linea antes de continuar', 'ONLINE_ORDER_PENDING');
     await db.query(
       'UPDATE orders SET dispatched_at = coalesce(dispatched_at, now()), updated_at = now() WHERE id = $1 AND restaurant_id = $2',

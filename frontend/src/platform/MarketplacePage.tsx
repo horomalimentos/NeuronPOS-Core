@@ -9,7 +9,7 @@ import { DRIVER_STATUS_LABEL, DRIVER_STATUS_STYLE, type DriverStatus, type FeeTi
 
 interface Settings {
   enabled: boolean; driver_share_pct: string; food_commission_pct: string; max_distance_km: string;
-  driver_debt_limit: string; driver_max_radius_km: string;
+  driver_debt_limit: string; driver_max_radius_km: string; driver_max_orders: number;
 }
 interface Summary { pending_drivers: number; online_drivers: number; approved_drivers: number; published_listings: number; listings: number }
 interface Driver {
@@ -79,6 +79,7 @@ function SettingsCard({ settings, onSaved }: { settings: Settings; onSaved: () =
     maxKm: String(Number(settings.max_distance_km)),
     debt: String(Number(settings.driver_debt_limit)),
     radius: String(Number(settings.driver_max_radius_km)),
+    maxOrders: String(settings.driver_max_orders ?? 2),
   });
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -95,6 +96,7 @@ function SettingsCard({ settings, onSaved }: { settings: Settings; onSaved: () =
         body: {
           enabled: f.enabled, driver_share_pct: Number(f.share), food_commission_pct: Number(f.food),
           max_distance_km: Number(f.maxKm), driver_debt_limit: Number(f.debt), driver_max_radius_km: Number(f.radius),
+          driver_max_orders: Number(f.maxOrders),
         },
       });
       setNotice('Guardado');
@@ -128,6 +130,9 @@ function SettingsCard({ settings, onSaved }: { settings: Settings; onSaved: () =
         </Field>
         <Field label="Tope de adeudo del repartidor" hint="Con este adeudo ya no toma pedidos en efectivo">
           <input className="input" type="number" min={0} step={10} required value={f.debt} onChange={set('debt')} />
+        </Field>
+        <Field label="Pedidos a la vez por repartidor" hint="Cuántos puede llevar juntos (1 a 5)">
+          <input className="input" type="number" min={1} max={5} step={1} required value={f.maxOrders} onChange={set('maxOrders')} />
         </Field>
       </div>
       {error && <Alert>{error}</Alert>}

@@ -9,13 +9,13 @@ import { haversineKm } from './deliveryZones.js';
 const round2 = (n) => Math.round(n * 100) / 100;
 
 export const SETTINGS_COLUMNS = `enabled, driver_share_pct, food_commission_pct, max_distance_km,
-  driver_debt_limit, driver_max_radius_km, updated_at`;
+  driver_debt_limit, driver_max_radius_km, driver_max_orders, updated_at`;
 
 export async function getMarketplaceSettings(db) {
   const row = (await db.query(`SELECT ${SETTINGS_COLUMNS} FROM marketplace_settings WHERE id`)).rows[0];
   return row || {
     enabled: false, driver_share_pct: '80.00', food_commission_pct: '0.00', max_distance_km: '10.00',
-    driver_debt_limit: '300.00', driver_max_radius_km: '15.00', updated_at: null,
+    driver_debt_limit: '300.00', driver_max_radius_km: '15.00', driver_max_orders: 2, updated_at: null,
   };
 }
 

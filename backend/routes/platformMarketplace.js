@@ -28,6 +28,13 @@ function km(v, field) {
   return Math.round(n * 100) / 100;
 }
 
+function maxOrders(v) {
+  if (v === undefined) return undefined;
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 1 || n > 5) throw badRequest('Un repartidor puede llevar de 1 a 5 pedidos a la vez', 'INVALID_FIELD');
+  return n;
+}
+
 async function summary(db) {
   return (await db.query(
     `SELECT (SELECT count(*) FROM fleet_drivers WHERE status = 'pendiente')::int AS pending_drivers,
@@ -56,6 +63,7 @@ router.put('/marketplace/settings', ah(async (req, res) => {
     max_distance_km: km(body.max_distance_km, 'max_distance_km'),
     driver_debt_limit: money(body.driver_debt_limit, { field: 'driver_debt_limit' }),
     driver_max_radius_km: km(body.driver_max_radius_km, 'driver_max_radius_km'),
+    driver_max_orders: maxOrders(body.driver_max_orders),
   });
   if (!set) throw badRequest('No hay cambios', 'NO_CHANGES');
   const settings = await withPlatform(async (db) => (await db.query(

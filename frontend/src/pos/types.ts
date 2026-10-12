@@ -213,6 +213,11 @@ export interface Order {
   // Pago en linea con Clip: pendiente (no llega aqui), pagado o cancelado.
   payment_provider?: string | null;
   online_payment_status?: 'pendiente' | 'pagado' | 'cancelado' | null;
+  // Pedido de NeuronPOS Delivery (lo lleva un repartidor de la plataforma).
+  marketplace?: {
+    id: string; status: string; payment_method: 'efectivo' | 'tarjeta';
+    driver_assigned: boolean; picked_up_at: string | null; messages: number;
+  } | null;
   // Plataforma de delivery (Rappi, Uber Eats...) y su comision al momento.
   channel_id?: string | null;
   channel_name?: string | null;
