@@ -34,6 +34,21 @@ export default function NearbyRestaurants() {
   // Al instante cuando un repartidor se conecta o desconecta (la consulta cada minuto queda de respaldo).
   useNayoLive(load);
 
+  // Al abrir "¿Dónde te entregamos?", el mapa se pone solo en tu ubicación
+  // (si el navegador da permiso; si no, queda como estaba).
+  useEffect(() => {
+    if (!(editing || !location) || picking || !navigator.geolocation) return undefined;
+    let alive = true;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { if (alive) setPicking((cur) => cur ?? { latitude: pos.coords.latitude, longitude: pos.coords.longitude }); },
+      () => {},
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+    );
+    return () => { alive = false; };
+    // Solo al abrir el selector, no cada que se mueve el pin.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing, location]);
+
   if (editing || !location) {
     return (
       <section className="card space-y-3 p-5">
