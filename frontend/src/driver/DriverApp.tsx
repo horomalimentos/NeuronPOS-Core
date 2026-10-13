@@ -1,6 +1,6 @@
 import InstallApp from '../components/InstallApp';
 import {
-  Bike, Check, ChevronUp, History, LocateFixed, MapPin, Menu, Power, Wallet,
+  Bike, Check, ChevronUp, History, Landmark, LocateFixed, MapPin, Menu, Power, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -23,6 +23,8 @@ import type { Point } from '../components/ZoneMap';
 import DriverMap, { type Pin } from './DriverMap';
 import OfferCard from './OfferCard';
 import { Drawer, Earnings, TodayHistory } from './Panels';
+import BankScreen from './BankScreen';
+import { clabeMasked, type BankInfo } from './clabe';
 import TripCard from './TripCard';
 import { ACTIVE_JOB, fromJob, fromNayo, offerKey, type AnyOffer, type NayoBoard, type Trip } from './trips';
 
@@ -210,7 +212,8 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   const [finishing, setFinishing] = useState<{ job: DriverJob; mode: 'entregado' | 'fallido' } | null>(null);
   const [busy, setBusy] = useState('');
   const [fleetMe, setFleetMe] = useState<FleetMe | null>(null);
-  const [view, setView] = useState<'home' | 'earnings' | 'history' | 'zone'>('home');
+  const [view, setView] = useState<'home' | 'earnings' | 'history' | 'zone' | 'bank'>('home');
+  const [bank, setBank] = useState<BankInfo | null>(null);
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [selected, setSelected] = useState('');
@@ -267,6 +270,10 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
         })
         .catch(() => {});
     }
+  }, [fleet]);
+
+  useEffect(() => {
+    if (fleet) fleetApi<{ bank: BankInfo }>('/fleet/bank').then((r) => setBank(r.bank)).catch(() => {});
   }, [fleet]);
 
   // Conectado se revisa mas seguido para que los pedidos nuevos lleguen pronto.
@@ -383,7 +390,11 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   const showGo = loaded && !onDuty && approved && !needsZone && !trips.length;
   const showOffer = offer && (!trips.length || offersOpen);
 
-  if (view === 'earnings') return <Earnings board={board} cashPending={cash} fleetToday={fleetToday} onClose={() => setView('home')} />;
+  if (view === 'earnings') {
+    return <Earnings board={board} cashPending={cash} fleetToday={fleetToday} hasBank={!!bank?.bank_clabe}
+      onBank={() => setView('bank')} onClose={() => setView('home')} />;
+  }
+  if (view === 'bank') return <BankScreen bank={bank} onSaved={setBank} onClose={() => setView('home')} />;
   if (view === 'history') return <TodayHistory board={board} done={done} onClose={() => setView('home')} />;
 
   return (
@@ -547,6 +558,11 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
           items={[
             ...(fleet ? [{ icon: <Wallet className="h-5 w-5" />, label: 'Ganancias', hint: `Hoy ${formatMXN(todayTotal)}`, onClick: () => setView('earnings') }] : []),
             { icon: <History className="h-5 w-5" />, label: 'Entregas de hoy', onClick: () => setView('history') },
+            ...(fleet ? [{
+              icon: <Landmark className="h-5 w-5" />, label: 'Datos bancarios',
+              hint: bank?.bank_clabe ? `${bank.bank_name} ${clabeMasked(bank.bank_clabe)}` : 'Agrega tu CLABE para tus depósitos',
+              onClick: () => setView('bank'),
+            }] : []),
             ...(fleet && fleetMe && (fleetMe.self_registered || fleetMe.base)
               ? [{ icon: <MapPin className="h-5 w-5" />, label: 'Mi zona', hint: fleetMe.base ? `${fleetMe.radius_km} km a la redonda` : 'Sin elegir', onClick: () => setView('zone') }]
               : []),

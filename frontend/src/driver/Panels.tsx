@@ -1,4 +1,4 @@
-import { ArrowLeft, CreditCard, History, LogOut, Wallet, X } from 'lucide-react';
+import { ArrowLeft, CreditCard, History, Landmark, LogOut, Wallet, X } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NayoMark } from '../components/NayoLogo';
 import { Alert, Button, Field, Modal, Spinner } from '../components/ui';
@@ -78,8 +78,8 @@ const KIND_LABEL: Record<string, string> = {
  * Ganancias: hoy y la semana, el saldo con Nayo (a favor o en contra) con
  * sus movimientos, el efectivo por entregar y pagar el adeudo con tarjeta.
  */
-export function Earnings({ board, cashPending, fleetToday, onClose }: {
-  board: NayoBoard | null; cashPending: number; fleetToday: number; onClose: () => void;
+export function Earnings({ board, cashPending, fleetToday, hasBank, onBank, onClose }: {
+  board: NayoBoard | null; cashPending: number; fleetToday: number; hasBank: boolean; onBank: () => void; onClose: () => void;
 }) {
   const [entries, setEntries] = useState<Entry[] | null>(null);
   const [error, setError] = useState('');
@@ -113,6 +113,14 @@ export function Earnings({ board, cashPending, fleetToday, onClose }: {
             <Button className="mt-3 w-full" onClick={() => setPaying(true)}><CreditCard className="h-4 w-4" /> Pagar con tarjeta</Button>
           )}
         </section>
+      )}
+
+      {board && (
+        <button type="button" onClick={onBank}
+          className={`flex w-full items-center justify-between rounded-2xl px-4 py-3 text-left text-sm ring-1 ${hasBank ? 'bg-gray-900 text-gray-300 ring-gray-800' : 'bg-brand/15 font-semibold text-brand ring-brand/40'}`}>
+          <span className="flex items-center gap-2"><Landmark className="h-4 w-4" /> {hasBank ? 'Datos bancarios para tus depósitos' : 'Agrega tu CLABE para recibir tus depósitos'}</span>
+          <span>{hasBank ? 'Cambiar' : 'Agregar'}</span>
+        </button>
       )}
 
       {cashPending > 0 && (
