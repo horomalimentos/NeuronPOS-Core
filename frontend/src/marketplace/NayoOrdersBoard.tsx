@@ -18,6 +18,8 @@ import { ChatButton } from './OrderChat';
 import { ACTIVE, STATUS_LABEL, itemCount, type DeliveryOrder, type DeliveryStatus } from './orders';
 
 const POLL_MS = 8000;
+/** Latido de "conectado" para las horas conectado de Nayo Partner. */
+const PRESENCE_MS = 60000;
 const RING_MS = 3500;
 const PREP_CHOICES = [10, 15, 20, 25, 30, 40, 50, 60];
 const REJECT_REASONS = ['Se nos agotó un producto', 'La cocina está saturada', 'Estamos por cerrar'];
@@ -49,7 +51,7 @@ const minutesBetween = (from: string, to: number) => Math.round((to - new Date(f
  * el seleccionado se ve a la derecha con sus botones. Suena mientras haya un
  * pedido sin aceptar y se actualiza al instante (canal en vivo + consulta).
  */
-export default function NayoOrdersBoard() {
+export default function NayoOrdersBoard({ exitTo = '/admin/delivery' }: { exitTo?: string } = {}) {
   useNayoFavicon();
   const [orders, setOrders] = useState<DeliveryOrder[] | null>(null);
   const [listings, setListings] = useState<Listing[]>([]);
@@ -139,6 +141,19 @@ export default function NayoOrdersBoard() {
     return () => { document.title = prev; };
   }, [waiting]);
 
+  // Mientras la pantalla esta abierta el restaurante cuenta como conectado
+  // (si su ficha esta publicada y sin pausa; lo decide el servidor).
+  useEffect(() => {
+    const beat = () => {
+      if (document.visibilityState !== 'visible') return;
+      api('/marketplace/presence', { method: 'POST', body: { branch_id: branch || undefined } }).catch(() => {});
+    };
+    beat();
+    const t = setInterval(beat, PRESENCE_MS);
+    document.addEventListener('visibilitychange', beat);
+    return () => { clearInterval(t); document.removeEventListener('visibilitychange', beat); };
+  }, [branch]);
+
   // Mantiene la pantalla encendida (tablet en el mostrador).
   useEffect(() => {
     let lock: { release: () => Promise<void> } | null = null;
@@ -201,7 +216,7 @@ export default function NayoOrdersBoard() {
             <Maximize className="h-5 w-5" />
           </button>
         )}
-        <Link to="/admin/delivery" title="Salir" className="rounded-xl border border-gray-700 p-2 text-gray-200 hover:bg-gray-800">
+        <Link to={exitTo} title="Salir" className="rounded-xl border border-gray-700 p-2 text-gray-200 hover:bg-gray-800">
           <LogOut className="h-5 w-5" />
         </Link>
       </header>

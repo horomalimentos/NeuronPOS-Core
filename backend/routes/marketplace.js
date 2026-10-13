@@ -42,10 +42,12 @@ import { subscribeLive } from '../services/live.js';
 import { verifyGoogleIdToken } from '../services/googleSignIn.js';
 import { deleteNayoSubscription, saveNayoSubscription, sendNayoTestPush } from '../services/nayoPush.js';
 import { getVapidKeys } from '../services/push.js';
+import { notifyPlatform } from '../services/platformPush.js';
 import {
   sendNayoOrderReceived, sendNayoReset, sendNayoVerifyCode, sendNayoWelcome,
 } from '../services/nayoEmails.js';
 import { RESET_TTL_MINUTES, hashToken, readResetToken } from '../services/passwordReset.js';
+import { STATS_DAYS, readPartnerStats, recordOnlineMinute } from '../services/partnerStats.js';
 import { loadMenu } from './pos/menu.js';
 import { restaurantSiteUrl } from '../services/urls.js';
 import {
@@ -152,6 +154,8 @@ marketplacePublicRouter.post('/restaurants', signupLimiter, ah(async (req, res) 
     );
     return { id: r.id, slug, name, custom_domain: null };
   });
+  // Aviso a la app Panel: hay un restaurante por aprobar.
+  await notifyPlatform('restaurante', created.name).catch((e) => console.error('[panel push]', e.message));
   res.status(201).json({
     restaurant: { id: created.id, slug: created.slug, name: created.name },
     admin_url: `${restaurantSiteUrl(created)}/admin`,
@@ -185,6 +189,7 @@ marketplacePublicRouter.post('/drivers', signupLimiter, ah(async (req, res) => {
       [account.name, phone, account.email, hash, vehicle, plate, base.latitude, base.longitude, Math.round(radius * 10) / 10],
     )).rows[0];
   });
+  await notifyPlatform('repartidor', driver.name).catch((e) => console.error('[panel push]', e.message));
   res.status(201).json({ token: signFleetToken(driver), driver });
 }));
 
@@ -694,6 +699,27 @@ marketplaceRouter.post('/listings/:branchId/pause', requireRole('admin', 'gerent
     return (await readListings(db, rid, req.params.branchId))[0];
   });
   res.json({ listing });
+}));
+
+// ---------------------------------------------------------------------------
+// Nayo Partner: horas conectado y numeros del restaurante
+// ---------------------------------------------------------------------------
+
+// Latido de la pantalla de pedidos (cada minuto mientras esta abierta).
+marketplaceRouter.post('/presence', requireRole('admin', 'gerente', 'cajero'), ah(async (req, res) => {
+  const raw = (req.body || {}).branch_id;
+  const branchId = raw ? requireUuid(raw, 'branch_id') : null;
+  const online = await withTenant(req.tenant.id, (db) => recordOnlineMinute(db, req.tenant.id, branchId));
+  res.json({ online });
+}));
+
+// Ventas, pedidos, tiempos y horas conectado: hoy, 7 o 30 dias.
+marketplaceRouter.get('/stats', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  const days = Number(req.query.days || 7);
+  if (!STATS_DAYS.includes(days)) throw badRequest(`days debe ser ${STATS_DAYS.join(', ')}`, 'INVALID_FIELD');
+  const branchId = req.query.branch_id ? requireUuid(req.query.branch_id, 'branch_id') : null;
+  const stats = await withTenant(req.tenant.id, (db) => readPartnerStats(db, req.tenant.id, { days, branchId }));
+  res.set('Cache-Control', 'no-store').json(stats);
 }));
 
 // ---------------------------------------------------------------------------

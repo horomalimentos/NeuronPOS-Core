@@ -1,24 +1,35 @@
-// Apps instalables de Nayo (PWA): cliente, restaurante y repartidor. Cada
-// pantalla pone su manifest (nombre, icono, start_url y scope propios), asi
-// Chrome las instala como tres apps distintas. Tambien guarda el aviso de
-// "instalar" de Chrome y borra el globito del icono al abrir la app.
+// Apps instalables (PWA): las tres de Nayo (cliente, restaurante y
+// repartidor), Nayo Partner (el restaurante administra su ficha y ve sus
+// numeros) y Panel (la plataforma). Cada pantalla pone su manifest (nombre,
+// icono, start_url y scope propios), asi Chrome las instala como apps
+// distintas. Tambien guarda el aviso de "instalar" de Chrome y borra el
+// globito del icono al abrir la app.
 import { useEffect, useSyncExternalStore } from 'react';
 import { onNayoHost } from '../marketplace/nayoUrl';
 
 export type NayoApp = 'cliente' | 'restaurante' | 'repartidor';
+export type InstallableApp = NayoApp | 'partner' | 'panel';
 
-/** Que app de Nayo es esta pantalla (null: NeuronPOS, sin manifest). */
-export function nayoAppFor(pathname: string): NayoApp | null {
-  if (pathname === '/repartidor' || pathname.startsWith('/repartidor/')) return 'repartidor';
+const under = (pathname: string, base: string) => pathname === base || pathname.startsWith(`${base}/`);
+
+/** Que app instalable es esta pantalla (null: NeuronPOS, sin manifest). */
+export function appFor(pathname: string): InstallableApp | null {
+  if (under(pathname, '/repartidor')) return 'repartidor';
+  // Partner y Panel viven en neuronpos.app (y el dominio de cada restaurante).
+  if (!onNayoHost() && under(pathname, '/partner')) return 'partner';
+  if (!onNayoHost() && under(pathname, '/panel')) return 'panel';
   if (pathname.startsWith('/admin/delivery')) return 'restaurante';
   if (onNayoHost()) return 'cliente';
   if (/^\/(nayo|delivery)(\/|$)/.test(pathname)) return 'cliente';
   return null;
 }
 
-function manifestFor(app: NayoApp) {
-  if (app === 'cliente') return onNayoHost() ? '/nayo.webmanifest' : '/nayo-np.webmanifest';
-  return `/nayo-${app}.webmanifest`;
+/** Manifest e icono de iPhone de cada app. */
+function filesFor(app: InstallableApp) {
+  if (app === 'panel') return { manifest: '/panel.webmanifest', apple: '/icons/panel-apple.png' };
+  if (app === 'partner') return { manifest: '/nayo-partner.webmanifest', apple: '/icons/nayo-partner-apple.png' };
+  const manifest = app === 'cliente' ? (onNayoHost() ? '/nayo.webmanifest' : '/nayo-np.webmanifest') : `/nayo-${app}.webmanifest`;
+  return { manifest, apple: `/icons/nayo-${app}-apple.png` };
 }
 
 function setLink(rel: string, href: string | null) {
@@ -33,9 +44,10 @@ const DEFAULT_TOUCH_ICON = '/apple-touch-icon.png';
 /** Pone el manifest y el icono de iPhone de la app que se esta viendo. */
 export function usePwaManifest(pathname: string) {
   useEffect(() => {
-    const app = nayoAppFor(pathname);
-    setLink('manifest', app ? manifestFor(app) : null);
-    setLink('apple-touch-icon', app ? `/icons/nayo-${app}-apple.png` : DEFAULT_TOUCH_ICON);
+    const app = appFor(pathname);
+    const files = app ? filesFor(app) : null;
+    setLink('manifest', files?.manifest ?? null);
+    setLink('apple-touch-icon', files?.apple ?? DEFAULT_TOUCH_ICON);
     if (app && 'serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
   }, [pathname]);
 }
