@@ -110,9 +110,11 @@ WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,pr
 WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,price,sort_order) SELECT r.id,c.id,'Rollo Oriental',NULL,50,18 FROM r, c WHERE c.n='Complementos' RETURNING id) INSERT INTO it SELECT id,false,NULL FROM x;
 INSERT INTO c SELECT 'Bebidas', id FROM menu_categories WHERE restaurant_id=(SELECT id FROM r) AND name ILIKE 'bebidas' ORDER BY created_at LIMIT 1;
 WITH x AS (INSERT INTO menu_categories (restaurant_id,name,sort_order) SELECT id,'Bebidas',3 FROM r WHERE NOT EXISTS (SELECT 1 FROM c WHERE n='Bebidas') RETURNING id) INSERT INTO c SELECT 'Bebidas', id FROM x;
+CREATE TEMP TABLE te ON COMMIT DROP AS SELECT i.id FROM menu_items i JOIN c ON c.id=i.category_id AND c.n='Bebidas' WHERE i.restaurant_id=(SELECT id FROM r) AND i.name ILIKE 'te' LIMIT 1;
+UPDATE menu_items SET name='Té de Litro', price=40, sort_order=3, active=true, updated_at=now() WHERE id IN (SELECT id FROM te);
 WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,price,sort_order) SELECT r.id,c.id,'Agua',NULL,25,1 FROM r, c WHERE c.n='Bebidas' RETURNING id) INSERT INTO it SELECT id,false,NULL FROM x;
 WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,price,sort_order) SELECT r.id,c.id,'Soda',NULL,30,2 FROM r, c WHERE c.n='Bebidas' RETURNING id) INSERT INTO it SELECT id,false,NULL FROM x;
-WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,price,sort_order) SELECT r.id,c.id,'Té de Litro',NULL,40,3 FROM r, c WHERE c.n='Bebidas' RETURNING id) INSERT INTO it SELECT id,false,NULL FROM x;
+WITH x AS (INSERT INTO menu_items (restaurant_id,category_id,name,description,price,sort_order) SELECT r.id,c.id,'Té de Litro',NULL,40,3 FROM r, c WHERE c.n='Bebidas' AND NOT EXISTS (SELECT 1 FROM te) RETURNING id) INSERT INTO it SELECT id,false,NULL FROM x;
 UPDATE menu_categories SET sort_order=3 WHERE id=(SELECT id FROM c WHERE n='Bebidas');
 INSERT INTO menu_item_modifier_groups (restaurant_id,menu_item_id,modifier_group_id,sort_order) SELECT (SELECT id FROM r), it.id, g.id, 0 FROM it JOIN g ON g.k=it.grp;
 INSERT INTO menu_item_modifier_groups (restaurant_id,menu_item_id,modifier_group_id,sort_order) SELECT (SELECT id FROM r), it.id, g.id, 1 FROM it JOIN g ON g.k='sin' WHERE it.burger;
