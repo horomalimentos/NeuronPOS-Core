@@ -294,4 +294,18 @@ describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
     assert.equal((await api(R.token, 'GET', '/api/platform/marketplace/balances')).status, 403);
     assert.ok(cardToken);
   });
+  test('datos bancarios: el repartidor captura su CLABE y el Panel la ve en su cuenta', async () => {
+    assert.deepEqual((await fleet(juan, 'GET', '/bank')).body.bank.bank_clabe, null);
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '1234', holder: 'Juan Perez' })).body.code, 'INVALID_CLABE');
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '012180001234567890', holder: 'Juan Perez' })).body.code, 'INVALID_CLABE');
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '012180001234567899', holder: '' })).body.code, 'MISSING_FIELD');
+    const ok = await fleet(juan, 'PUT', '/bank', { clabe: '0121 8000 1234 5678 99', holder: ' Juan  Perez ' });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual([ok.body.bank.bank_name, ok.body.bank.bank_clabe, ok.body.bank.bank_holder], ['BBVA', '012180001234567899', 'Juan Perez']);
+    assert.equal((await fleet(pedro, 'GET', '/bank')).body.bank.bank_clabe, null); // cada quien ve la suya
+
+    const row = (await panel('GET', '/marketplace/balances')).body.drivers.find((d) => d.id === juan.id);
+    assert.equal(row.bank_clabe, '012180001234567899');
+    assert.equal((await panel('GET', `/marketplace/drivers/${juan.id}/ledger`)).body.driver.bank_holder, 'Juan Perez');
+  });
 });
