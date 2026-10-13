@@ -20,8 +20,9 @@ android {
         buildConfig = true
     }
 
-    // Dos apps instalables por separado: NeuronPOS (punto de venta) y Neuron
-    // KDS (pantalla de cocina). Mismo codigo; cambia el modo y el nombre.
+    // Apps instalables por separado: NeuronPOS (punto de venta), Neuron KDS
+    // (pantalla de cocina), Nayo Restaurante y Nayo Repartidor. Mismo codigo;
+    // cambia el modo y el nombre.
     flavorDimensions 'product'
     productFlavors {
         pos {
@@ -36,6 +37,25 @@ android {
             resValue 'string', 'app_name', 'Neuron KDS'
             buildConfigField 'String', 'NEURON_MODE', '"kds"'
         }
+        // Apps de Nayo: suenan con su propio tono y salen encima de cualquier
+        // app cuando hay un pedido sin atender (AlertService).
+        nayorest {
+            dimension 'product'
+            applicationId 'com.elnayo.restaurante'
+            resValue 'string', 'app_name', 'Nayo Restaurante'
+            buildConfigField 'String', 'NEURON_MODE', '"nayorest"'
+        }
+        nayorep {
+            dimension 'product'
+            applicationId 'com.elnayo.repartidor'
+            resValue 'string', 'app_name', 'Nayo Repartidor'
+            buildConfigField 'String', 'NEURON_MODE', '"nayorep"'
+        }
+    }
+
+    sourceSets {
+        nayorest.manifest.srcFile 'src/nayo/AndroidManifest.xml'
+        nayorep.manifest.srcFile 'src/nayo/AndroidManifest.xml'
     }
 
     signingConfigs {

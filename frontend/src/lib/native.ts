@@ -7,10 +7,12 @@ export type PrintRole = 'ticket' | 'comanda' | 'documento';
 
 export interface NativeInfo {
   platform: 'desktop' | 'android';
-  mode: 'pos' | 'kds';
+  mode: 'pos' | 'kds' | 'nayorest' | 'nayorep';
   version: string;
   printers: { ticket: boolean; comanda: boolean };
   drawer: boolean;
+  /** Apps de Nayo: la app suena con su tono cuando hay pedidos sin atender. */
+  alerts?: boolean;
 }
 
 interface NativeBridge {
@@ -18,6 +20,9 @@ interface NativeBridge {
   print(job: { role: PrintRole; html: string; openDrawer?: boolean }): Promise<{ printed: boolean }>;
   openDrawer(): Promise<boolean>;
   openSettings(): Promise<boolean>;
+  startAlerts?(token: string, everySeconds: number): Promise<boolean>;
+  stopAlerts?(): Promise<boolean>;
+  skipAlert?(id: string): Promise<boolean>;
 }
 
 // La app de Android (MainActivity.WebBridge) expone metodos de Java: info()
@@ -28,6 +33,10 @@ interface AndroidBridge {
   print(job: string, callbackId: string): void;
   openDrawer(callbackId: string): void;
   openSettings(): void;
+  // Solo las apps de Nayo.
+  startAlerts?(token: string, everySeconds: number): void;
+  stopAlerts?(): void;
+  skipAlert?(id: string): void;
 }
 
 declare global {
@@ -61,6 +70,9 @@ function androidBridge(a: AndroidBridge): NativeBridge {
     print: (job) => later((id) => a.print(JSON.stringify(job), id)),
     openDrawer: () => later((id) => a.openDrawer(id)),
     openSettings: async () => { a.openSettings(); return true; },
+    startAlerts: a.startAlerts ? async (token, every) => { a.startAlerts?.(token, every); return true; } : undefined,
+    stopAlerts: a.stopAlerts ? async () => { a.stopAlerts?.(); return true; } : undefined,
+    skipAlert: a.skipAlert ? async (id) => { a.skipAlert?.(id); return true; } : undefined,
   };
 }
 

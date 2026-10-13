@@ -1,3 +1,4 @@
+import DownloadNayoApp from '../components/DownloadNayoApp';
 import InstallApp from '../components/InstallApp';
 import {
   Bike, Check, ChevronUp, History, Landmark, LocateFixed, MapPin, Menu, Power, Wallet,
@@ -13,6 +14,7 @@ import type { DeliveryStatus, DriverJob, FleetOffer } from '../delivery/types';
 import { ApiError, api, errorMessage, fleetApi } from '../lib/api';
 import { applyBranding, resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
+import { skipNativeAlert, stopNativeAlerts, useNativeAlerts } from '../lib/nativeAlerts';
 import { closeNotification } from '../lib/pwa';
 import { disablePush } from '../lib/push';
 import { session } from '../lib/session';
@@ -48,6 +50,7 @@ type Kind = 'propio' | 'flota';
 export default function DriverApp() {
   const [kind, setKind] = useState<Kind | null>(() => (session.getToken('fleet') ? 'flota' : session.getToken('restaurant') ? 'propio' : null));
   const logout = async () => {
+    stopNativeAlerts();
     if (kind === 'flota') session.setToken('fleet', null);
     else {
       await disablePush({ realm: 'restaurant' }).catch(() => {});
@@ -379,7 +382,9 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
       if (trips.length) setOffersOpen(false);
     }
   }, [offers, trips.length]);
-  const waiting = offers.length > 0;
+  // En la app instalada (APK) suena la app, con su tono, aunque este en otra app.
+  const nativeAlerts = useNativeAlerts('repartidor', fleet && onDuty);
+  const waiting = offers.length > 0 && !nativeAlerts;
   useEffect(() => {
     if (!waiting) return undefined;
     const t = setInterval(() => { if (document.visibilityState === 'visible') ding(); }, RING_MS);
@@ -403,6 +408,7 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
     else {
       setSkipped((s) => [...s, offerKey(o)]);
       closeNotification(`disponible-${o.offer.id}`, true);
+      skipNativeAlert(o.offer.id);
     }
   };
 
@@ -599,6 +605,7 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
                     </button>
                   </div>
                 )}
+                {!trip && fleet && <DownloadNayoApp app="repartidor" />}
                 {!trip && <div className="flex justify-center"><InstallApp label="Instalar la app" /></div>}
                 {!trip && !fleet && cash > 0 && (
                   <p className="rounded-2xl bg-amber-500/10 px-4 py-3 text-sm text-amber-200 ring-1 ring-amber-500/30">Traes {formatMXN(cash)} en efectivo por entregar en caja.</p>

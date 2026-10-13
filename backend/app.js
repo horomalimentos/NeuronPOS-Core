@@ -18,6 +18,7 @@ import liveRouter from './routes/live.js';
 import { liveAfterChange } from './services/live.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
+import alertasRouter from './routes/alertas.js';
 import fleetRouter from './routes/fleet.js';
 import { marketplacePublicRouter, marketplaceRouter } from './routes/marketplace.js';
 import inventoryRouter from './routes/inventory/index.js';
@@ -96,6 +97,8 @@ export function createApp() {
   }));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
+  // Apps instalables de Nayo (APK/EXE): pedidos sin atender para que suenen.
+  app.use('/api/alertas', alertasRouter);
   // Nayo: registro de restaurantes y repartidores (sin tenant).
   app.use('/api/marketplace', marketplacePublicRouter);
 

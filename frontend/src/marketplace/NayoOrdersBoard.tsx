@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import DownloadNayoApp from '../components/DownloadNayoApp';
 import InstallApp from '../components/InstallApp';
 import { NayoMark } from '../components/NayoLogo';
 import { PushBell, PushFab } from '../components/PushBell';
@@ -11,6 +12,7 @@ import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Button, Modal } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
+import { useNativeAlerts } from '../lib/nativeAlerts';
 import { closeNotification } from '../lib/pwa';
 import { useLive } from '../lib/live';
 import { formatTime } from '../pos/lib';
@@ -128,13 +130,15 @@ export default function NayoOrdersBoard({ exitTo = '/admin/delivery' }: { exitTo
   const history = visible.filter((o) => !ACTIVE.includes(o.status));
   const waiting = active.filter((o) => o.status === 'nuevo').length;
 
-  // Suena sin parar mientras haya pedidos sin aceptar.
+  // Suena sin parar mientras haya pedidos sin aceptar. En la app instalada
+  // (APK/EXE) suena la app con su tono, aunque este en otra ventana.
+  const nativeAlerts = useNativeAlerts('restaurante', true);
   useEffect(() => {
-    if (!waiting) return undefined;
+    if (!waiting || nativeAlerts) return undefined;
     ring();
     const t = setInterval(ring, RING_MS);
     return () => clearInterval(t);
-  }, [waiting, sound, audioReady]);
+  }, [waiting, sound, audioReady, nativeAlerts]);
 
   // Pedido aceptado o rechazado (aqui o en otro dispositivo): se quita su
   // aviso del telefono; el servidor ya no lo repite.
@@ -231,7 +235,9 @@ export default function NayoOrdersBoard({ exitTo = '/admin/delivery' }: { exitTo
         </Link>
       </header>
 
-      {sound && !audioReady && (
+      <div className="px-4 pt-3 empty:hidden"><DownloadNayoApp app="restaurante" /></div>
+
+      {sound && !audioReady && !nativeAlerts && (
         <button type="button" onClick={unlock} className="bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-gray-950">
           Toca aquí para activar el sonido de pedidos nuevos
         </button>
