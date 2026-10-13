@@ -13,6 +13,7 @@ import { isOfflineError, meCache, useOfflineQueue } from '../lib/offline';
 import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
+import { stopNativeAlerts } from '../lib/nativeAlerts';
 import { invCan } from '../inventory/lib';
 import ApprovalPinButton from '../pos/ApprovalPin';
 import { posCan, setSessionCapabilities } from '../pos/lib';
@@ -62,6 +63,7 @@ export default function AdminLayout() {
   const logout = async () => {
     // Este navegador deja de recibir los avisos de esta cuenta.
     await disablePush({ realm: 'restaurant' }).catch(() => {});
+    stopNativeAlerts();
     session.setToken('restaurant', null);
     meCache.clear();
     navigate('/admin/login', { replace: true });

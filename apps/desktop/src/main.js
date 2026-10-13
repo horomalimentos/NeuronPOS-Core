@@ -3,13 +3,16 @@
 // Abre el sistema del restaurante (https://<restaurante>.neuronpos.app) en
 // una ventana propia y le da lo que el navegador no puede: imprimir directo a
 // las impresoras termicas (tickets, cortes y comandas) y abrir el cajon de
-// dinero. Las dos apps salen del mismo codigo; "mode" (pos o kds) viene del
-// package.json que arma electron-builder.
+// dinero. Las apps salen del mismo codigo; "mode" (pos, kds o nayorest) viene
+// del package.json que arma electron-builder. Nayo Restaurante ademas se queda
+// en la bandeja y salta encima de todo con su tono cuando entra un pedido de
+// Nayo (alerts.js).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BrowserWindow, Menu, app, dialog, ipcMain, net, shell } from 'electron';
+import { BrowserWindow, Menu, Tray, app, dialog, ipcMain, nativeImage, net, shell } from 'electron';
 import updater from 'electron-updater';
+import { createAlerts } from './alerts.js';
 import { createStore, normalizeUrl } from './config.js';
 import { drawerCapable, openDrawer, printSystem, printWith, testPageHtml } from './printing.js';
 
@@ -17,8 +20,9 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(here, '..', 'package.json'), 'utf8'));
 const MODE = process.env.NEURON_MODE || pkg.neuronMode || 'pos';
 const IS_KDS = MODE === 'kds';
-const APP_NAME = IS_KDS ? 'Neuron KDS' : 'NeuronPOS';
-const START_PATH = IS_KDS ? '/admin/cocina' : '/admin/pos';
+const IS_NAYO = MODE === 'nayorest';
+const APP_NAME = IS_KDS ? 'Neuron KDS' : IS_NAYO ? 'Nayo Restaurante' : 'NeuronPOS';
+const START_PATH = IS_KDS ? '/admin/cocina' : IS_NAYO ? '/admin/delivery/pedidos' : '/admin/pos';
 
 app.setName(APP_NAME);
 // Solo para pruebas: carpeta de datos aparte.
@@ -28,6 +32,10 @@ if (!app.requestSingleInstanceLock()) app.quit();
 let store;
 let mainWin = null;
 let setupWin = null;
+let alertWin = null;
+let alerts = null;
+let tray = null;
+let quitting = false;
 
 const allowedOrigin = () => store.get().url;
 
@@ -74,8 +82,90 @@ function createMainWindow() {
     if (!isMainFrame || code === -3) return; // -3 = navegacion cancelada
     mainWin.loadFile(path.join(here, 'offline.html'), { query: { url: failedUrl || url + START_PATH, error: desc } });
   });
+  // Nayo: cerrar la ventana la manda a la bandeja; sigue atenta a pedidos.
+  mainWin.on('close', (e) => {
+    if (IS_NAYO && !quitting && alerts?.active()) { e.preventDefault(); mainWin.hide(); }
+  });
   mainWin.on('closed', () => { mainWin = null; });
   mainWin.loadURL(url + START_PATH);
+}
+
+function showMain(pathname) {
+  if (!mainWin) createMainWindow();
+  if (pathname) mainWin.loadURL(store.get().url + pathname);
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show();
+  mainWin.focus();
+}
+
+// ---------------------------------------------------------------------------
+// Nayo: ventana de "Nuevo pedido" encima de todo
+// ---------------------------------------------------------------------------
+
+function ringAlert(order, fresh) {
+  const query = { title: order.title, body: order.body };
+  if (!alertWin) {
+    alertWin = new BrowserWindow({
+      width: 480,
+      height: 380,
+      frame: false,
+      resizable: false,
+      alwaysOnTop: true,
+      skipTaskbar: false,
+      show: false,
+      title: 'Nuevo pedido · Nayo',
+      backgroundColor: '#F2B705',
+      webPreferences: {
+        preload: path.join(here, 'preload-alert.cjs'),
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+        backgroundThrottling: false,
+        autoplayPolicy: 'no-user-gesture-required',
+      },
+    });
+    alertWin.setAlwaysOnTop(true, 'screen-saver');
+    alertWin.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    alertWin.on('closed', () => { alertWin = null; });
+    alertWin.once('ready-to-show', () => { alertWin?.show(); alertWin?.focus(); });
+    alertWin.loadFile(path.join(here, 'alert.html'), { query });
+  } else if (fresh) {
+    alertWin.loadFile(path.join(here, 'alert.html'), { query });
+  }
+  alertWin.__link = order.link;
+  if (fresh) {
+    alertWin.show();
+    alertWin.moveTop();
+    alertWin.flashFrame(true);
+  }
+}
+
+function quietAlert() {
+  if (alertWin) alertWin.destroy();
+  alertWin = null;
+}
+
+ipcMain.handle('alert:open', (event) => {
+  if (!alertWin || event.sender !== alertWin.webContents) return false;
+  const link = alertWin.__link || START_PATH;
+  // La ventana sigue sonando (minimizada) hasta que el pedido se atiende.
+  alertWin.setAlwaysOnTop(false);
+  alertWin.minimize();
+  showMain(link);
+  return true;
+});
+
+function buildTray() {
+  if (tray) return;
+  const icon = nativeImage.createFromPath(path.join(here, '..', 'build', 'icon-nayorest.png')).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  tray.setToolTip(`${APP_NAME}: atenta a pedidos`);
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: 'Abrir pedidos', click: () => showMain(START_PATH) },
+    { type: 'separator' },
+    { label: 'Salir (ya no sonará)', click: () => { quitting = true; app.quit(); } },
+  ]));
+  tray.on('click', () => showMain());
 }
 
 function openSetup() {
@@ -136,7 +226,25 @@ ipcMain.handle('native:info', (event) => {
     version: app.getVersion(),
     printers: { ticket: printers.ticket.type !== 'none', comanda: printers.comanda.type !== 'none' },
     drawer: drawerCapable(printers.ticket),
+    // Nayo: el sonido de pedidos lo hace la app (alerts.js).
+    alerts: IS_NAYO,
+    alertsOn: IS_NAYO && Boolean(alerts?.active()),
   };
+});
+
+// La pagina con sesion entrega el token de /api/alertas.
+ipcMain.handle('native:alerts:start', (event, token, every) => {
+  if (!IS_NAYO || !fromRestaurant(event) || typeof token !== 'string' || !token) return false;
+  alerts.start(allowedOrigin(), token, every);
+  buildTray();
+  app.setLoginItemSettings({ openAtLogin: true, args: ['--hidden'] });
+  return true;
+});
+
+ipcMain.handle('native:alerts:stop', (event) => {
+  if (!IS_NAYO || !fromRestaurant(event)) return false;
+  alerts.stop();
+  return true;
 });
 
 ipcMain.handle('native:print', async (event, job) => {
@@ -234,6 +342,7 @@ async function checkUpdates() {
 }
 
 app.on('second-instance', () => {
+  if (mainWin && !mainWin.isVisible()) { showMain(); return; }
   const w = mainWin || setupWin;
   if (w) { if (w.isMinimized()) w.restore(); w.focus(); }
 });
@@ -242,9 +351,22 @@ app.whenReady().then(() => {
   store = createStore(app.getPath('userData'));
   if (process.env.NEURON_URL) store.set({ ...store.get(), url: process.env.NEURON_URL });
   buildMenu();
-  if (store.get().url) createMainWindow();
-  else openSetup();
+  if (IS_NAYO) {
+    alerts = createAlerts({
+      dir: app.getPath('userData'),
+      fetch: net.fetch,
+      onRing: ringAlert,
+      onQuiet: quietAlert,
+    });
+    if (alerts.active()) { buildTray(); alerts.resume(); }
+  }
+  if (store.get().url) {
+    createMainWindow();
+    // Al prender la computadora arranca en la bandeja.
+    if (IS_NAYO && process.argv.includes('--hidden') && alerts.active()) mainWin.hide();
+  } else openSetup();
   checkUpdates();
 });
 
-app.on('window-all-closed', () => app.quit());
+app.on('before-quit', () => { quitting = true; });
+app.on('window-all-closed', () => { if (!(IS_NAYO && alerts?.active())) app.quit(); });

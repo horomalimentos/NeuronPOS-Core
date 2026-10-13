@@ -14,7 +14,9 @@
     "start:kds": "NEURON_MODE=kds electron .",
     "test": "node --test test/*.test.js",
     "dist:pos": "electron-builder --config builder-pos.json",
-    "dist:kds": "electron-builder --config builder-kds.json"
+    "dist:kds": "electron-builder --config builder-kds.json",
+    "start:nayorest": "NEURON_MODE=nayorest electron .",
+    "dist:nayorest": "electron-builder --config builder-nayorest.json"
   },
   "dependencies": {
     "electron-updater": "^6.8.9"

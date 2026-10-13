@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Compila los instaladores de NeuronPOS y Neuron KDS y los publica en
+# Compila los instaladores de NeuronPOS, Neuron KDS y las apps de Nayo
+# (Restaurante y Repartidor) y los publica en
 # https://neuronpos.app/descargas (archivos en /api/descargas, servidos por el
 # backend desde ./descargas).
 #
 #   Escritorio: Windows (.exe) y Linux (.AppImage), con actualizacion automatica.
 #   Android:    NeuronPOS.apk y NeuronKDS.apk; la app avisa cuando hay version nueva.
+#   Nayo:       NayoRestaurante (APK y .exe) y NayoRepartidor (APK): suenan con
+#               su tono y salen encima de otras apps con pedidos sin atender.
 #
 # Uso (en el servidor, despues de deploy/actualizar.sh):
 #   cd /opt/neuronpos-core && bash deploy/instaladores.sh            # todo
@@ -30,7 +33,7 @@ cd "$APP_DIR"
 COUNT="$(git rev-list --count HEAD)"
 VERSION="1.0.${COUNT}"
 echo "==> Versión ${VERSION} ($(git rev-parse --short HEAD))"
-mkdir -p "$OUT/pos" "$OUT/kds" "$OUT/android"
+mkdir -p "$OUT/pos" "$OUT/kds" "$OUT/nayorest" "$OUT/android"
 
 # Deja solo las 2 versiones mas recientes de cada archivo versionado.
 prune() {
@@ -55,7 +58,7 @@ build_desktop() {
     echo "AVISO: no hay wine; se omite el instalador de Windows (sudo apt install wine)." >&2
   fi
 
-  for mode in pos kds; do
+  for mode in pos kds nayorest; do
     echo "==> Escritorio: compilando ${mode}"
     npx electron-builder --config "builder-${mode}.json" "${targets[@]}" --publish never \
       -c.extraMetadata.version="$VERSION"
@@ -71,6 +74,9 @@ build_desktop() {
   prune "$OUT/kds" 'NeuronKDS-Setup-*.exe'
   prune "$OUT/kds" 'NeuronKDS-Setup-*.exe.blockmap'
   prune "$OUT/kds" 'NeuronKDS-*-linux.AppImage'
+  prune "$OUT/nayorest" 'NayoRestaurante-Setup-*.exe'
+  prune "$OUT/nayorest" 'NayoRestaurante-Setup-*.exe.blockmap'
+  prune "$OUT/nayorest" 'NayoRestaurante-*-linux.AppImage'
   cd "$APP_DIR"
 }
 
@@ -118,24 +124,25 @@ build_android() {
   cd "$APP_DIR/apps/android"
   printf 'sdk.dir=%s\n' "$sdk" > local.properties
   chmod +x gradlew
-  ./gradlew --no-daemon clean assemblePosRelease assembleKdsRelease \
+  ./gradlew --no-daemon clean assemblePosRelease assembleKdsRelease assembleNayorestRelease assembleNayorepRelease \
     -PneuronVersionName="$VERSION" -PneuronVersionCode="$COUNT" \
     -PneuronKeystore="$SECRETS/android.jks" -PneuronKeyAlias=neuronpos \
     -PneuronKeystorePassword="$(cat "$SECRETS/android.pass")"
 
-  local pos kds
-  pos="$(ls app/build/outputs/apk/pos/release/*.apk | head -1)"
-  kds="$(ls app/build/outputs/apk/kds/release/*.apk | head -1)"
-  cp -f "$pos" "$OUT/android/NeuronPOS-${VERSION}.apk"
-  cp -f "$kds" "$OUT/android/NeuronKDS-${VERSION}.apk"
-  for mode in pos kds; do
-    local file
-    [ "$mode" = pos ] && file="NeuronPOS-${VERSION}.apk" || file="NeuronKDS-${VERSION}.apk"
+  local mode name file
+  for mode in pos kds nayorest nayorep; do
+    case "$mode" in
+      pos) name=NeuronPOS ;;
+      kds) name=NeuronKDS ;;
+      nayorest) name=NayoRestaurante ;;
+      nayorep) name=NayoRepartidor ;;
+    esac
+    file="${name}-${VERSION}.apk"
+    cp -f "$(ls app/build/outputs/apk/${mode}/release/*.apk | head -1)" "$OUT/android/$file"
     printf '{"versionName":"%s","versionCode":%s,"url":"%s/android/%s"}\n' \
       "$VERSION" "$COUNT" "$PUBLIC_URL" "$file" > "$OUT/android/latest-${mode}.json"
+    prune "$OUT/android" "${name}-*.apk"
   done
-  prune "$OUT/android" 'NeuronPOS-*.apk'
-  prune "$OUT/android" 'NeuronKDS-*.apk'
   cd "$APP_DIR"
 }
 
@@ -167,6 +174,16 @@ cat > "$OUT/index.json" <<JSON
     "windows": $(entry "$(latest "$OUT/kds" 'NeuronKDS-Setup-*.exe')" kds),
     "linux": $(entry "$(latest "$OUT/kds" 'NeuronKDS-*-linux.AppImage')" kds),
     "android": $(entry "$(latest "$OUT/android" 'NeuronKDS-*.apk')" android)
+  },
+  "nayorest": {
+    "windows": $(entry "$(latest "$OUT/nayorest" 'NayoRestaurante-Setup-*.exe')" nayorest),
+    "linux": $(entry "$(latest "$OUT/nayorest" 'NayoRestaurante-*-linux.AppImage')" nayorest),
+    "android": $(entry "$(latest "$OUT/android" 'NayoRestaurante-*.apk')" android)
+  },
+  "nayorep": {
+    "windows": null,
+    "linux": null,
+    "android": $(entry "$(latest "$OUT/android" 'NayoRepartidor-*.apk')" android)
   }
 }
 JSON

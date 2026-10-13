@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'self'; media-src 'self'">
+  <title>Nuevo pedido · Nayo</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    body { display: flex; align-items: center; justify-content: center; background: #F2B705; color: #1F1F1F; font-family: system-ui, sans-serif; text-align: center; -webkit-app-region: drag; user-select: none; }
+    .card { padding: 24px; max-width: 460px; }
+    .dot { width: 18px; height: 18px; border-radius: 50%; background: #1F1F1F; margin: 0 auto 16px; animation: pulse 1s infinite; }
+    @keyframes pulse { 50% { transform: scale(1.6); opacity: .4; } }
+    h1 { font-size: 26px; margin: 0 0 8px; }
+    p { font-size: 17px; margin: 0; }
+    button { -webkit-app-region: no-drag; margin-top: 24px; width: 100%; background: #1F1F1F; color: #F2B705; border: 0; border-radius: 14px; padding: 16px; font-size: 19px; font-weight: 700; cursor: pointer; }
+    small { display: block; margin-top: 12px; opacity: .7; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="dot"></div>
+    <h1 id="title">Nuevo pedido</h1>
+    <p id="body"></p>
+    <button id="open" type="button">Ver pedido</button>
+    <small>Suena hasta que aceptes o rechaces el pedido.</small>
+  </div>
+  <audio id="tone" src="nayo-pedido.wav" loop autoplay></audio>
+  <script src="alert.js"></script>
+</body>
+</html>
