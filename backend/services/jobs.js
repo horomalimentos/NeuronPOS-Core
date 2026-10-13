@@ -17,7 +17,7 @@
 import { env } from '../config/env.js';
 import { reconcilePendingCheckouts } from './clip/reconcile.js';
 import { cleanupPush, dispatchPushOutbox, startPushListener } from './push.js';
-import { cleanupNayoPush, dispatchNayoPush, startNayoPushListener } from './nayoPush.js';
+import { cleanupNayoPush, dispatchNayoPush, insistNayoPush, startNayoPushListener } from './nayoPush.js';
 import { releaseScheduledOrders } from './scheduledOrders.js';
 import { reconcilePendingMarketplaceCheckouts } from './marketplaceMoney.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
@@ -55,6 +55,7 @@ export function startJobs() {
     every('push', 30 * 1000, () => dispatchPushOutbox()),
     every('push-limpieza', 60 * 60 * 1000, () => cleanupPush()),
     every('nayo-push', 30 * 1000, () => dispatchNayoPush()),
+    every('nayo-push-insistir', 5 * 1000, () => insistNayoPush()),
     every('nayo-push-limpieza', 60 * 60 * 1000, () => cleanupNayoPush()),
     every('whatsapp', 10 * 1000, () => dispatchWhatsAppOutbox()),
     every('whatsapp-limpieza', 60 * 60 * 1000, () => cleanupWhatsApp()),

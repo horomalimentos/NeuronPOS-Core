@@ -13,6 +13,7 @@ import type { DeliveryStatus, DriverJob, FleetOffer } from '../delivery/types';
 import { ApiError, api, errorMessage, fleetApi } from '../lib/api';
 import { applyBranding, resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
+import { closeNotification } from '../lib/pwa';
 import { disablePush } from '../lib/push';
 import { session } from '../lib/session';
 import { DRIVER_STATUS_LABEL, type DriverStatus, type MarketplaceInfo } from '../marketplace/lib';
@@ -208,6 +209,8 @@ const fromFleet = (r: FleetRow): DriverJob => ({
   maps_url: r.maps_url, waze_url: r.waze_url, items: [], fail_reason: r.fail_reason, delivered_at: r.delivered_at,
 });
 
+const RING_MS = 4000;
+
 /** Aviso de pedido nuevo: vibra y suena un "ding" corto. */
 function ding() {
   try { navigator.vibrate?.([250, 120, 250]); } catch { /* sin vibracion */ }
@@ -365,7 +368,8 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   }, [onDuty, fleetOffers, board, skipped]);
   const offer = offers[0] ?? null;
 
-  // Suena y vibra cuando aparece un pedido que no habia visto.
+  // Suena y vibra cuando aparece un pedido que no habia visto, y sigue sonando
+  // mientras haya pedidos esperando a que los tome o los salte.
   const seen = useRef(new Set<string>());
   useEffect(() => {
     const fresh = offers.filter((o) => !seen.current.has(offerKey(o)));
@@ -375,6 +379,20 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
       if (trips.length) setOffersOpen(false);
     }
   }, [offers, trips.length]);
+  const waiting = offers.length > 0;
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const t = setInterval(() => { if (document.visibilityState === 'visible') ding(); }, RING_MS);
+    return () => clearInterval(t);
+  }, [waiting]);
+
+  // Pedido de Nayo que ya no esta (lo tomo el o alguien mas): se quita su aviso.
+  const offered = useRef(new Set<string>());
+  useEffect(() => {
+    const now = new Set((board?.available ?? []).map((o) => o.id));
+    offered.current.forEach((id) => { if (!now.has(id)) closeNotification(`disponible-${id}`); });
+    offered.current = now;
+  }, [board]);
 
   const accept = (o: AnyOffer) => act(`offer:${offerKey(o)}`, () => (o.kind === 'nayo'
     ? fleetApi(`/fleet/marketplace/orders/${o.offer.id}/take`, { method: 'POST' })
@@ -382,7 +400,10 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
     .then((ok) => { if (ok) { setOffersOpen(false); setCollapsed(false); setFit((n) => n + 1); } });
   const skip = (o: AnyOffer) => {
     if (o.kind === 'flota') void act(`decline:${o.offer.id}`, () => fleetApi(`/fleet/offers/${o.offer.id}/decline`, { method: 'POST' }));
-    else setSkipped((s) => [...s, offerKey(o)]);
+    else {
+      setSkipped((s) => [...s, offerKey(o)]);
+      closeNotification(`disponible-${o.offer.id}`, true);
+    }
   };
 
   const advance = (t: Trip) => {

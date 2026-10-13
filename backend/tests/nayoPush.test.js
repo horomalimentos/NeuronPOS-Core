@@ -122,4 +122,50 @@ describe('Nayo: notificaciones push', { skip: SKIP_DB }, () => {
     const left = await ctx.withPlatform((db) => db.query('SELECT count(*)::int AS n FROM nayo_push_subscriptions WHERE customer_id IS NOT NULL'));
     assert.equal(left.rows[0].n, 0);
   });
+
+  test('pedido nuevo y pedido disponible insisten hasta que alguien lo atiende', async () => {
+    await pub('POST', '/push/cliente', { subscription: sub('maria'), link_base: '/nayo' }, shopper);
+    const res = await ctx.request('POST', '/api/marketplace/orders', { token: shopper, body: {
+      branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 2 }], location: CERCA,
+      customer: { name: 'Maria Lopez', phone: '656 123 4567' }, address: { address: 'Calle Uno 123' },
+    } });
+    assert.equal(res.status, 201, JSON.stringify(res.body));
+    const first = await flush();
+    assert.equal(to(first, 'pepa')[0].insist, true);
+    const id = (await ctx.withPlatform((db) => db.query(
+      'SELECT id FROM marketplace_orders ORDER BY created_at DESC LIMIT 1',
+    ))).rows[0].id;
+    // Hace `secs` segundos que salio el ultimo aviso de este pedido.
+    const age = (secs) => ctx.withPlatform((db) => db.query(
+      "UPDATE nayo_push_outbox SET created_at = created_at - make_interval(secs => $2) WHERE marketplace_order_id = $1",
+      [id, secs],
+    ));
+    const insist = async () => { sent.length = 0; await nayoPush.insistNayoPush(); return sent.map((m) => [m.endpoint.split('/').pop(), m.payload]); };
+
+    assert.deepEqual(await insist(), [], 'todavia no toca repetir');
+    await age(20);
+    let msgs = await insist();
+    assert.equal(to(msgs, 'pepa').length, 1, 'el restaurante vuelve a sonar');
+    assert.equal(to(msgs, 'pepa')[0].tag, `nayo-${id}`);
+    assert.deepEqual(await insist(), [], 'no repite antes de tiempo');
+
+    await api(R.token, 'POST', `/api/marketplace/orders/${id}/accept`, { prep_minutes: 10 });
+    await flush();
+    await age(20);
+    msgs = await insist();
+    assert.equal(to(msgs, 'pepa').length, 0, 'aceptado: el restaurante deja de sonar');
+    assert.equal(to(msgs, 'juan').length, 1, 'el repartidor de la zona vuelve a sonar');
+    assert.equal(to(msgs, 'juan')[0].insist, true);
+    assert.equal(to(msgs, 'maria').length, 0, 'al cliente no le repite');
+
+    await age(16 * 60);
+    assert.deepEqual(await insist(), [], 'con tope de tiempo');
+
+    await ctx.withPlatform((db) => db.query(
+      'UPDATE nayo_push_outbox SET created_at = now() - interval \'20 seconds\' WHERE marketplace_order_id = $1', [id],
+    ));
+    await ctx.request('POST', `/api/fleet/marketplace/orders/${id}/take`, { token: juan });
+    await flush();
+    assert.deepEqual(await insist(), [], 'tomado: deja de sonar');
+  });
 });
