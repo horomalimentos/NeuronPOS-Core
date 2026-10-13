@@ -86,6 +86,9 @@ router.put('/marketplace/fee-tiers', ah(async (req, res) => {
 
 const DRIVER_COLUMNS = `d.id, d.name, d.phone, d.email, d.vehicle, d.plate, d.active, d.on_duty, d.status, d.self_registered,
   d.base_latitude, d.base_longitude, d.radius_km, d.review_note, d.reviewed_at, d.last_login_at, d.created_at`;
+// Cuenta para depositos (CLABE completa: el Panel es quien transfiere).
+const PAYOUT_JSON = (col, id) => `(SELECT json_build_object('holder_name', p.holder_name, 'bank', p.bank, 'clabe', p.clabe, 'updated_at', p.updated_at)
+  FROM nayo_payout_accounts p WHERE p.${col} = ${id}) AS payout`;
 
 const driverView = (d) => ({
   ...d,
@@ -98,7 +101,7 @@ const driverView = (d) => ({
 router.get('/marketplace/drivers', ah(async (req, res) => {
   const status = oneOf(req.query.status || undefined, ['pendiente', 'aprobado', 'rechazado', 'bloqueado'], 'status');
   const rows = await withPlatform(async (db) => (await db.query(
-    `SELECT ${DRIVER_COLUMNS} FROM fleet_drivers d
+    `SELECT ${DRIVER_COLUMNS}, ${PAYOUT_JSON('driver_id', 'd.id')} FROM fleet_drivers d
       WHERE ($1::text IS NULL OR d.status = $1)
       ORDER BY (d.status = 'pendiente') DESC, d.created_at DESC LIMIT 500`,
     [status ?? null],
@@ -133,7 +136,7 @@ router.get('/marketplace/listings', ah(async (req, res) => {
     `SELECT l.restaurant_id, r.name AS restaurant_name, r.slug, r.status AS restaurant_status, r.contact_phone,
             l.branch_id, b.name AS branch_name, b.address, l.latitude, l.longitude, l.cuisine, l.published,
             l.paused_until, l.blocked, l.blocked_reason, l.approval_status, l.approval_note, l.reviewed_at,
-            r.contact_name, r.contact_email, l.created_at, l.published_at
+            r.contact_name, r.contact_email, l.created_at, l.published_at, ${PAYOUT_JSON('restaurant_id', 'l.restaurant_id')}
        FROM marketplace_listings l
        JOIN restaurants r ON r.id = l.restaurant_id
        JOIN branches b ON b.id = l.branch_id

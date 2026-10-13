@@ -36,6 +36,7 @@ import {
   customerChat, customerSend, readMessageBody, restaurantChat, restaurantSend,
 } from '../services/marketplaceChat.js';
 import { acceptOnlineOrder } from '../services/online.js';
+import { getPayoutAccount, maskedAccount, savePayoutAccount } from '../services/nayoPayouts.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
 import { verifyGoogleIdToken } from '../services/googleSignIn.js';
@@ -594,6 +595,17 @@ async function readListings(db, rid, branchId = null) {
 marketplaceRouter.get('/listings', ah(async (req, res) => {
   const listings = await withTenant(req.tenant.id, (db) => readListings(db, req.tenant.id));
   res.json({ listings });
+}));
+
+// Cuenta para depositos de Nayo (CLABE). La captura el dueno o gerente;
+// aqui se regresa enmascarada.
+marketplaceRouter.get('/payout-account', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  res.set('Cache-Control', 'no-store').json({ account: maskedAccount(await getPayoutAccount({ restaurant_id: req.tenant.id })) });
+}));
+
+marketplaceRouter.put('/payout-account', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  const saved = await savePayoutAccount({ restaurant_id: req.tenant.id }, req.body, `user:${req.user.id}`);
+  res.json({ account: maskedAccount(saved) });
 }));
 
 marketplaceRouter.put('/listings/:branchId', requireRole('admin', 'gerente'), ah(async (req, res) => {
