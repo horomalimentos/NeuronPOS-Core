@@ -6,6 +6,7 @@ import { Alert, Button, Field, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
+import ImageInput from '../components/ImageInput';
 import CuisineSelect from './CuisineSelect';
 import type { Listing } from './lib';
 import RestaurantBankCard from './RestaurantBankCard';
@@ -76,7 +77,7 @@ function stateOf(l: Listing): { label: string; style: string } {
 function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l: Listing) => void }) {
   const [location, setLocation] = useState<Point | null>(l.location);
   const [form, setForm] = useState({
-    cuisine: l.cuisine || '', description: l.description || '', prep: String(l.prep_minutes), minOrder: String(Number(l.min_order)),
+    cuisine: l.cuisine || '', description: l.description || '', cover: l.cover_url || '', prep: String(l.prep_minutes), minOrder: String(Number(l.min_order)),
   });
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -96,7 +97,7 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
   };
   const put = (body: Record<string, unknown>) => api<{ listing: Listing }>(`/marketplace/listings/${l.branch_id}`, { method: 'PUT', body });
   const save = () => run('save', () => put({
-    location: location ?? undefined, cuisine: form.cuisine || null, description: form.description || null,
+    location: location ?? undefined, cuisine: form.cuisine || null, description: form.description || null, cover_url: form.cover || null,
     prep_minutes: Number(form.prep), min_order: Number(form.minOrder || 0),
   }));
   const pause = (minutes: number) => run(`pause${minutes}`, () => api<{ listing: Listing }>(`/marketplace/listings/${l.branch_id}/pause`, { method: 'POST', body: { minutes } }));
@@ -168,6 +169,10 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
           <p className="text-xs text-gray-500">Los clientes ven tu restaurante si un repartidor conectado cubre este punto.</p>
         </div>
         <div className="space-y-4">
+          <div>
+            <ImageInput label="Foto de portada" value={form.cover} onChange={(cover) => { setForm((f) => ({ ...f, cover })); setSaved(false); }} />
+            <p className="mt-1 text-xs text-gray-500">La que ven los clientes en la lista de restaurantes y arriba de tu menú. Mejor horizontal, de tu comida o tu local.</p>
+          </div>
           <Field label="Tipo de comida"><CuisineSelect value={form.cuisine} onChange={(cuisine) => setForm((f) => ({ ...f, cuisine }))} /></Field>
           <Field label="Descripción" hint="Lo que ve el cliente debajo de tu nombre">
             <textarea className="input min-h-[80px]" maxLength={500} value={form.description} onChange={set('description')} />
