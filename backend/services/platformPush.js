@@ -1,4 +1,4 @@
-// Avisos push de la app Panel (dueno de la plataforma, migracion 062):
+// Avisos push de la app Panel (dueno de la plataforma, migracion 063):
 // restaurante o repartidor nuevo esperando revision. Mismas llaves VAPID y
 // mismo envio que push.js.
 import { withPlatform } from '../config/database.js';

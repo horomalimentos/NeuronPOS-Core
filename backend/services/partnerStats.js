@@ -1,5 +1,5 @@
 // Nayo Partner: numeros del restaurante en Nayo (ventas, pedidos, horas
-// conectado) y el registro de minutos conectado (migracion 062).
+// conectado) y el registro de minutos conectado (migracion 063).
 //
 // "Conectado" = la pantalla de pedidos (app Nayo Restaurante o Partner) esta
 // abierta y manda su latido cada minuto, con la ficha publicada, aprobada,
