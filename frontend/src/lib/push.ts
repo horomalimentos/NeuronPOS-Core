@@ -8,7 +8,8 @@ import type { Realm } from './session';
 
 // Nayo: avisos de la plataforma (routes/marketplace.js /push/*), con la
 // sesion de cada app: cliente (nayo), repartidor (fleet) o personal (restaurant).
-export type PushTarget = { realm: 'restaurant' } | { realm: 'customer'; token?: string } | { realm: 'nayo'; app: NayoApp };
+// Panel: avisos al dueno de la plataforma (routes/platform.js /push/*).
+export type PushTarget = { realm: 'restaurant' } | { realm: 'customer'; token?: string } | { realm: 'nayo'; app: NayoApp } | { realm: 'platform' };
 
 export const pushSupported = () =>
   typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
@@ -41,13 +42,14 @@ const NAYO = {
 
 function route(t: PushTarget): { realm: Realm; key: string; sub: string; unsub: string } {
   if (t.realm === 'nayo') return { ...NAYO[t.app], key: '/marketplace/push/key' };
+  if (t.realm === 'platform') return { realm: 'platform', key: '/marketplace/push/key', sub: '/platform/push/subscribe', unsub: '/platform/push/unsubscribe' };
   if (t.realm === 'customer') return { realm: 'customer', key: '/push/key', sub: '/push/customer/subscribe', unsub: '/push/customer/unsubscribe' };
   return { realm: 'restaurant', key: '/push/key', sub: '/push/subscribe', unsub: '/push/unsubscribe' };
 }
 
-// Los avisos de Nayo van a otra lista que los de NeuronPOS: aqui se recuerda
-// en que app de Nayo se activaron en este navegador.
-const nayoFlag = (t: PushTarget) => (t.realm === 'nayo' ? `npc_push_nayo_${t.app}` : null);
+// Los avisos de Nayo y del Panel van a otra lista que los de NeuronPOS: aqui
+// se recuerda en que app se activaron en este navegador.
+const nayoFlag = (t: PushTarget) => (t.realm === 'nayo' ? `npc_push_nayo_${t.app}` : t.realm === 'platform' ? 'npc_push_panel' : null);
 function setFlag(t: PushTarget, on: boolean) {
   const k = nayoFlag(t);
   if (!k) return;

@@ -18,7 +18,8 @@ import RestaurantBankCard from './RestaurantBankCard';
  * ubicacion, horario y al menos un producto en el menu, y los clientes solo
  * la ven cuando NeuronPOS aprobo el registro (Panel › Nayo).
  */
-export default function ListingPage() {
+/** base: rutas de la app (Nayo Partner usa /partner/...). */
+export default function ListingPage({ base = '/admin' }: { base?: string } = {}) {
   const [listings, setListings] = useState<Listing[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -30,10 +31,10 @@ export default function ListingPage() {
     <>
       <PageHeader title="Nayo" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
       {error && <Alert>{error}</Alert>}
-      {listings?.some((l) => l.published) && <OrdersScreenLink />}
+      {listings?.some((l) => l.published) && <OrdersScreenLink to={base === '/admin' ? '/admin/delivery/pedidos' : `${base}/pedidos`} />}
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
-          {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
+          {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} base={base} />)}
           <RestaurantBankCard />
         </div>
       )}
@@ -42,14 +43,14 @@ export default function ListingPage() {
 }
 
 /** Acceso a la pantalla de pedidos (tipo Uber Eats), con los que esperan respuesta. */
-function OrdersScreenLink() {
+function OrdersScreenLink({ to }: { to: string }) {
   const [waiting, setWaiting] = useState(0);
   useEffect(() => {
     api<{ orders: { status: string }[] }>('/marketplace/orders')
       .then((r) => setWaiting(r.orders.filter((o) => o.status === 'nuevo').length)).catch(() => {});
   }, []);
   return (
-    <Link to="/admin/delivery/pedidos"
+    <Link to={to}
       className={`card mb-6 flex items-center gap-4 p-5 transition hover:bg-gray-800/60 ${waiting ? 'border-amber-600/70' : ''}`}>
       <Bell className={`h-8 w-8 shrink-0 ${waiting ? 'text-amber-300' : 'text-brand'}`} />
       <div className="mr-auto">
@@ -74,7 +75,7 @@ function stateOf(l: Listing): { label: string; style: string } {
   return { label: 'Visible para los clientes', style: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40' };
 }
 
-function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l: Listing) => void }) {
+function ListingCard({ listing: l, onChange, base }: { listing: Listing; onChange: (l: Listing) => void; base: string }) {
   const [location, setLocation] = useState<Point | null>(l.location);
   const [form, setForm] = useState({
     cuisine: l.cuisine || '', description: l.description || '', cover: l.cover_url || '', prep: String(l.prep_minutes), minOrder: String(Number(l.min_order)),
@@ -104,8 +105,8 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
 
   const steps = [
     { ok: !l.missing.includes('ubicacion'), label: 'Ubicación en el mapa', hint: 'Abajo, en esta misma ficha' },
-    { ok: !l.missing.includes('horario'), label: 'Horario', hint: 'Sucursales › Horario', to: '/admin/sucursales' },
-    { ok: !l.missing.includes('menu'), label: l.products ? `Menú (${l.products} productos)` : 'Menú', hint: 'Sube al menos un producto', to: '/admin/menu' },
+    { ok: !l.missing.includes('horario'), label: 'Horario', hint: base === '/admin' ? 'Sucursales › Horario' : 'Abre Horario', to: base === '/admin' ? '/admin/sucursales' : `${base}/horario` },
+    { ok: !l.missing.includes('menu'), label: l.products ? `Menú (${l.products} productos)` : 'Menú', hint: 'Sube al menos un producto', to: `${base}/menu` },
   ];
 
   return (

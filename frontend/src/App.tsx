@@ -29,6 +29,9 @@ import SelfOrderKiosk from './pos/SelfOrderKiosk';
 import ReportsPage from './pos/ReportsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
+import PartnerHomePage from './partner/PartnerHomePage';
+import PartnerHoursPage from './partner/PartnerHoursPage';
+import PartnerLayout from './partner/PartnerLayout';
 import PlatformLogin from './platform/PlatformLogin';
 import PlatformSettingsPage from './platform/PlatformSettingsPage';
 import RestaurantDetailPage from './platform/RestaurantDetailPage';
@@ -172,6 +175,16 @@ export default function App() {
           <Route path="flota" element={<FleetPage />} />
           <Route path="delivery" element={<MarketplacePage />} />
           <Route path="ajustes" element={<PlatformSettingsPage />} />
+        </Route>
+
+        {/* Nayo Partner: app instalable del restaurante (pantallas del panel del restaurante) */}
+        <Route path="/partner/entrar" element={<RestaurantLogin next="/partner" />} />
+        <Route path="/partner" element={<PartnerLayout />}>
+          <Route index element={<PartnerHomePage />} />
+          <Route path="pedidos" element={<NayoOrdersBoard exitTo="/partner" />} />
+          <Route path="menu" element={<MenuAdminPage />} />
+          <Route path="horario" element={<PartnerHoursPage />} />
+          <Route path="ajustes" element={<ListingPage base="/partner" />} />
         </Route>
 
         {/* Administracion del restaurante */}

@@ -8,7 +8,8 @@ import { session } from '../lib/session';
 import TenantPicker from './TenantPicker';
 import { useSite } from './useSite';
 
-export default function RestaurantLogin() {
+/** next: a donde entra despues (la app Partner usa su propio login en /partner/entrar). */
+export default function RestaurantLogin({ next = '/admin' }: { next?: string } = {}) {
   const navigate = useNavigate();
   const { site, state } = useSite();
   const [email, setEmail] = useState('');
@@ -26,7 +27,7 @@ export default function RestaurantLogin() {
     try {
       const res = await api<{ token: string }>('/auth/login', { method: 'POST', body: { email, password }, noRedirect: true });
       session.setToken('restaurant', res.token);
-      navigate('/admin', { replace: true });
+      navigate(next, { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {

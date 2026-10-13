@@ -5,6 +5,7 @@ import { withPlatform } from '../config/database.js';
 import { authenticatePlatform } from '../middleware/auth.js';
 import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
+import { deletePlatformSubscription, savePlatformSubscription } from '../services/platformPush.js';
 import {
   createRestaurant, getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant,
 } from '../services/restaurants.js';
@@ -92,6 +93,19 @@ async function getRestaurantDetail(db, id) {
 }
 
 router.get('/me', (req, res) => res.json({ admin: req.platformAdmin }));
+
+// Avisos de la app Panel en este navegador (la llave publica es la de
+// /api/marketplace/push/key).
+router.post('/push/subscribe', ah(async (req, res) => {
+  const ok = await savePlatformSubscription((req.body || {}).subscription, req.platformAdmin.id);
+  if (!ok) throw badRequest('Suscripcion invalida', 'INVALID_SUBSCRIPTION');
+  res.status(201).json({ ok: true });
+}));
+
+router.post('/push/unsubscribe', ah(async (req, res) => {
+  await deletePlatformSubscription((req.body || {}).endpoint, req.platformAdmin.id);
+  res.json({ ok: true });
+}));
 
 // ---------------------------------------------------------------------------
 // Catalogo de modulos
