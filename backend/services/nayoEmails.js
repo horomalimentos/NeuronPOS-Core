@@ -48,6 +48,17 @@ export function sendNayoReset(customer, token) {
   });
 }
 
+/** Liga para que el repartidor cambie su contrasena; abre la app del repartidor. */
+export function sendNayoDriverReset(driver, token) {
+  return send({
+    to: driver.email,
+    subject: 'Cambia tu contraseña de repartidor Nayo',
+    title: 'Cambia tu contraseña',
+    text: `Hola ${driver.name}, pediste cambiar la contraseña de tu cuenta de repartidor en Nayo.\n\nLa liga sirve una sola vez y vence en ${RESET_TTL_MINUTES} minutos. Si no fuiste tú, ignora este correo: tu contraseña no cambia.`,
+    button: { label: 'Cambiar contraseña', url: `${env.nayoSiteUrl}/repartidor#reset=${token}` },
+  });
+}
+
 export function sendNayoOrderReceived(customer, order) {
   return send({
     to: customer.email,

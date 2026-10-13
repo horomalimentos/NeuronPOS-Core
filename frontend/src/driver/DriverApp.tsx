@@ -73,6 +73,9 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Liga del correo "Cambia tu contraseña" (#reset=...): pide la nueva y entra.
+  const [resetToken] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get('reset') || '');
+  const [mode, setMode] = useState<'login' | 'forgot' | 'sent' | 'reset'>(resetToken ? 'reset' : 'login');
   useEffect(() => { if (tab === 'flota') resetBranding(); }, [tab]);
 
   async function submit(e: FormEvent) {
@@ -80,6 +83,19 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
     setError('');
     setLoading(true);
     try {
+      if (mode === 'forgot') {
+        await fleetApi('/fleet/auth/forgot', { method: 'POST', body: { email }, noRedirect: true });
+        setMode('sent');
+        return;
+      }
+      if (mode === 'reset') {
+        const r = await fleetApi<{ token: string }>('/fleet/auth/reset', { method: 'POST', body: { token: resetToken, password }, noRedirect: true });
+        session.setToken('fleet', r.token);
+        session.setToken('restaurant', null);
+        window.history.replaceState(null, '', window.location.pathname);
+        onLogged('flota');
+        return;
+      }
       if (tab === 'flota') {
         const r = await fleetApi<{ token: string }>('/fleet/auth/login', { method: 'POST', body: { email, password }, noRedirect: true });
         session.setToken('fleet', r.token);
@@ -107,7 +123,7 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
         : <NayoLogo size="md" className="mb-6" />}
     >
       {/* Los repartidores de un restaurante solo entran desde el sitio de su restaurante. */}
-      {!nayoHost && state === 'ok' && (
+      {!nayoHost && state === 'ok' && mode === 'login' && (
         <div className="mb-5 grid grid-cols-2 gap-2">
           {(['flota', 'propio'] as const).map((k) => (
             <button key={k} type="button" onClick={() => { setPicked(k); setError(''); }}
@@ -117,21 +133,41 @@ function DriverLogin({ onLogged }: { onLogged: (k: Kind) => void }) {
           ))}
         </div>
       )}
-      <form onSubmit={submit} className="space-y-5">
-        {error && <Alert>{error}</Alert>}
-        <Field label="Correo">
-          <input className="input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
-        </Field>
-        <Field label="Contraseña">
-          <input className="input" type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} />
-        </Field>
-        <Button type="submit" loading={loading} className="w-full py-3 text-base">Entrar</Button>
-        {tab === 'flota' && (
-          <div className="space-y-2 text-center text-sm text-gray-400">
-            <p>¿Todavía no repartes con Nayo? <Link to={nayoPath('/repartidores')} className="font-semibold text-brand">Regístrate gratis</Link></p>
-          </div>
-        )}
-      </form>
+      {mode === 'sent' ? (
+        <div className="space-y-5 text-center">
+          <p className="text-sm text-gray-300">Si {email} tiene cuenta de repartidor, te llegó un correo con una liga para cambiar tu contraseña. Revisa también la carpeta de spam.</p>
+          <Button className="w-full py-3 text-base" onClick={() => { setMode('login'); setPassword(''); }}>Volver a entrar</Button>
+        </div>
+      ) : (
+        <form onSubmit={submit} className="space-y-5">
+          {mode === 'forgot' && <p className="text-sm text-gray-300">Escribe el correo de tu cuenta y te mandamos una liga para cambiar tu contraseña.</p>}
+          {mode === 'reset' && <p className="text-sm text-gray-300">Escribe tu contraseña nueva.</p>}
+          {error && <Alert>{error}</Alert>}
+          {mode !== 'reset' && (
+            <Field label="Correo">
+              <input className="input" type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} />
+            </Field>
+          )}
+          {mode !== 'forgot' && (
+            <Field label={mode === 'reset' ? 'Contraseña nueva' : 'Contraseña'} hint={mode === 'reset' ? 'Mínimo 8 caracteres' : undefined}>
+              <input className="input" type="password" required minLength={mode === 'reset' ? 8 : undefined}
+                autoComplete={mode === 'reset' ? 'new-password' : 'current-password'} value={password} onChange={(e) => setPassword(e.target.value)} />
+            </Field>
+          )}
+          <Button type="submit" loading={loading} className="w-full py-3 text-base">
+            {mode === 'forgot' ? 'Mandarme la liga' : mode === 'reset' ? 'Guardar y entrar' : 'Entrar'}
+          </Button>
+          {tab === 'flota' && mode === 'login' && (
+            <div className="space-y-3 text-center text-sm text-gray-400">
+              <button type="button" onClick={() => { setMode('forgot'); setError(''); }} className="underline hover:text-white">¿Olvidaste tu contraseña?</button>
+              <p>¿Todavía no repartes con Nayo? <Link to={nayoPath('/repartidores')} className="font-semibold text-brand">Regístrate gratis</Link></p>
+            </div>
+          )}
+          {mode !== 'login' && (
+            <button type="button" onClick={() => { setMode('login'); setError(''); }} className="w-full text-center text-sm text-gray-400 underline hover:text-white">Volver a entrar</button>
+          )}
+        </form>
+      )}
     </AuthCard>
   );
 }
