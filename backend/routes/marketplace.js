@@ -36,7 +36,7 @@ import {
   customerChat, customerSend, readMessageBody, restaurantChat, restaurantSend,
 } from '../services/marketplaceChat.js';
 import { acceptOnlineOrder } from '../services/online.js';
-import { getPayoutAccount, maskedAccount, savePayoutAccount } from '../services/nayoPayouts.js';
+import { clabeBank, clabeIsValid } from '../services/clabe.js';
 import { createRestaurant } from '../services/restaurants.js';
 import { subscribeLive } from '../services/live.js';
 import { verifyGoogleIdToken } from '../services/googleSignIn.js';
@@ -597,15 +597,32 @@ marketplaceRouter.get('/listings', ah(async (req, res) => {
   res.json({ listings });
 }));
 
-// Cuenta para depositos de Nayo (CLABE). La captura el dueno o gerente;
-// aqui se regresa enmascarada.
-marketplaceRouter.get('/payout-account', requireRole('admin', 'gerente'), ah(async (req, res) => {
-  res.set('Cache-Control', 'no-store').json({ account: maskedAccount(await getPayoutAccount({ restaurant_id: req.tenant.id })) });
+// Datos bancarios del restaurante para que Nayo le deposite lo de sus
+// pedidos (como /fleet/bank del repartidor). Los ve y cambia el dueno o gerente.
+const BANK_COLUMNS = 'bank_name, bank_clabe, bank_holder, bank_updated_at';
+
+marketplaceRouter.get('/bank', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  const bank = await withPlatform(async (db) => (await db.query(
+    `SELECT ${BANK_COLUMNS} FROM restaurants WHERE id = $1`, [req.tenant.id],
+  )).rows[0]);
+  res.set('Cache-Control', 'no-store').json({ bank });
 }));
 
-marketplaceRouter.put('/payout-account', requireRole('admin', 'gerente'), ah(async (req, res) => {
-  const saved = await savePayoutAccount({ restaurant_id: req.tenant.id }, req.body, `user:${req.user.id}`);
-  res.json({ account: maskedAccount(saved) });
+marketplaceRouter.put('/bank', requireRole('admin', 'gerente'), ah(async (req, res) => {
+  const body = req.body || {};
+  const clabe = String(body.clabe ?? '').replace(/\D/g, '');
+  if (clabe.length !== 18) throw badRequest('La CLABE debe tener 18 dígitos', 'INVALID_CLABE');
+  if (!clabeIsValid(clabe)) throw badRequest('La CLABE no es válida: revisa los dígitos', 'INVALID_CLABE');
+  const holder = String(body.holder ?? '').trim().replace(/\s+/g, ' ');
+  if (holder.length < 3 || holder.length > 120) throw badRequest('Escribe el nombre del titular de la cuenta', 'MISSING_FIELD');
+  const bank = String(body.bank ?? '').trim() || clabeBank(clabe);
+  if (!bank || bank.length < 2 || bank.length > 80) throw badRequest('Escribe el nombre del banco', 'MISSING_FIELD');
+  const saved = await withPlatform(async (db) => (await db.query(
+    `UPDATE restaurants SET bank_name = $2, bank_clabe = $3, bank_holder = $4, bank_updated_at = now(), updated_at = now()
+      WHERE id = $1 RETURNING ${BANK_COLUMNS}`,
+    [req.tenant.id, bank, clabe, holder],
+  )).rows[0]);
+  res.json({ bank: saved });
 }));
 
 marketplaceRouter.put('/listings/:branchId', requireRole('admin', 'gerente'), ah(async (req, res) => {

@@ -8,7 +8,7 @@ import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import CuisineSelect from './CuisineSelect';
 import type { Listing } from './lib';
-import PayoutAccountForm, { type PayoutAccount } from './PayoutAccountForm';
+import RestaurantBankCard from './RestaurantBankCard';
 
 /**
  * Ficha del restaurante en Nayo (modulo marketplace): por
@@ -33,10 +33,7 @@ export default function ListingPage() {
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
           {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
-          <PayoutAccountForm
-            intro="Aquí te depositamos lo de tus pedidos de Nayo. Usa una cuenta a nombre del restaurante o del dueño."
-            load={() => api<{ account: PayoutAccount | null }>('/marketplace/payout-account')}
-            save={(body) => api<{ account: PayoutAccount | null }>('/marketplace/payout-account', { method: 'PUT', body })} />
+          <RestaurantBankCard />
         </div>
       )}
     </>

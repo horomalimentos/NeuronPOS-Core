@@ -15,25 +15,23 @@ interface Summary { pending_drivers: number; pending_listings: number; online_dr
 interface Driver {
   id: string; name: string; phone: string; email: string; vehicle: string | null; plate: string | null; on_duty: boolean;
   status: DriverStatus; self_registered: boolean; base: Point | null; radius_km: number | null; review_note: string | null; created_at: string;
-  payout: Payout | null;
 }
-interface Payout { holder_name: string; bank: string; clabe: string; updated_at: string }
 interface PanelListing {
   restaurant_id: string; restaurant_name: string; slug: string; contact_phone: string | null; branch_id: string; branch_name: string;
   address: string | null; location: Point | null; cuisine: string | null; published: boolean; paused_until: string | null;
   blocked: boolean; blocked_reason: string | null; created_at: string;
   approval_status: ListingApproval; approval_note: string | null; contact_name: string | null; contact_email: string | null;
-  payout: Payout | null;
+  bank_name: string | null; bank_clabe: string | null; bank_holder: string | null;
 }
 type ListingApproval = 'pendiente' | 'aprobado' | 'rechazado';
 
-/** Cuenta para depositos (CLABE completa para transferir). */
-function PayoutCell({ p }: { p: Payout | null }) {
-  if (!p) return <span className="text-xs text-gray-500">Sin cuenta</span>;
+/** Datos bancarios del restaurante (CLABE completa para transferir). */
+function BankCell({ l }: { l: PanelListing }) {
+  if (!l.bank_clabe) return <span className="text-xs text-gray-500">Sin datos</span>;
   return (
     <div className="text-xs">
-      <div className="font-mono text-gray-200 select-all">{p.clabe}</div>
-      <div className="text-gray-400">{p.bank} · {p.holder_name}</div>
+      <div className="select-all font-mono text-gray-200">{l.bank_clabe}</div>
+      <div className="text-gray-400">{l.bank_name} · {l.bank_holder}</div>
     </div>
   );
 }
@@ -268,7 +266,7 @@ function DriversCard({ onChange }: { onChange: () => void }) {
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
-              <tr><th className="py-2">Repartidor</th><th>Vehículo</th><th>Zona</th><th>Depósitos</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
+              <tr><th className="py-2">Repartidor</th><th>Vehículo</th><th>Zona</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {drivers.map((d) => (
@@ -285,7 +283,6 @@ function DriversCard({ onChange }: { onChange: () => void }) {
                       </a>
                     ) : 'Sin zona'}
                   </td>
-                  <td className="py-3 pr-3"><PayoutCell p={d.payout} /></td>
                   <td className="py-3 pr-3 text-gray-400">{formatDate(d.created_at)}{!d.self_registered && <div className="text-xs">Alta del Panel</div>}</td>
                   <td className="py-3 pr-3">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ring-1 ${DRIVER_STATUS_STYLE[d.status]}`}>{DRIVER_STATUS_LABEL[d.status]}</span>
@@ -379,7 +376,7 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
-              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Depósitos</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
+              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Datos bancarios</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {rows.map((l) => (
@@ -392,7 +389,7 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
                   <td className="py-3 pr-3 text-gray-300">
                     {l.location ? <a href={mapsLink(l.location)} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">{l.address || 'Ver mapa'}</a> : '—'}
                   </td>
-                  <td className="py-3 pr-3"><PayoutCell p={l.payout} /></td>
+                  <td className="py-3 pr-3"><BankCell l={l} /></td>
                   <td className="py-3 pr-3 text-gray-400">{formatDate(l.created_at)}</td>
                   <td className="py-3 pr-3">
                     {l.approval_status === 'pendiente' ? <span className="text-amber-300">Por aprobar</span>
