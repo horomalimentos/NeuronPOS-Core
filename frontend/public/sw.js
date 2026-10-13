@@ -3,7 +3,7 @@
 // Las paginas se piden primero a la red (una actualizacion nunca se queda
 // atorada) y solo si no hay red se usa la copia; los archivos de /assets
 // llevan hash en el nombre, asi que se guardan una vez y no cambian.
-// El backend manda { title, body, link, tag, icon, badge, driver } (services/push.js
+// El backend manda { title, body, link, tag, icon, badge, driver, insist, sticky } (services/push.js
 // y services/nayoPush.js).
 
 const SHELL = 'npc-shell-v1';
@@ -73,6 +73,14 @@ async function appVisible() {
 
 self.addEventListener('message', (event) => {
   if (event.data?.type === 'clear-badge') event.waitUntil(setBadge(0).catch(() => {}));
+  // La app ya atendio (o salto) el pedido: quita el aviso y calla sus repeticiones.
+  if (event.data?.type === 'close-tag' && typeof event.data.tag === 'string') {
+    const { tag } = event.data;
+    event.waitUntil(Promise.all([
+      self.registration.getNotifications({ tag }).then((list) => list.forEach((n) => n.close())),
+      event.data.mute ? mute(tag) : null,
+    ]).catch(() => {}));
+  }
 });
 
 self.addEventListener('push', (event) => {
@@ -91,15 +99,46 @@ self.addEventListener('push', (event) => {
     tag: data.tag || undefined,
     renotify: Boolean(data.tag),
   };
-  // Repartidor: vibra fuerte y se queda en pantalla hasta que la toque.
-  if (data.driver) {
-    options.vibrate = [300, 150, 300, 150, 300];
-    options.requireInteraction = true;
-  }
-  event.waitUntil(Promise.all([
-    self.registration.showNotification(data.title || 'Aviso', options),
-    appVisible().then((visible) => (visible ? null : setBadge((n) => n + 1))).catch(() => {}),
-  ]));
+  // Los avisos de Nayo se quedan en pantalla hasta que los toquen.
+  if (data.driver || data.insist || data.sticky) options.requireInteraction = true;
+  // Repartidor y pedido nuevo del restaurante: vibra fuerte. El servidor los
+  // vuelve a mandar con la misma etiqueta hasta que alguien atiende el pedido
+  // (nayoPush.js, insistNayoPush), asi que siguen sonando.
+  if (data.driver || data.insist) options.vibrate = [400, 150, 400, 150, 400, 150, 400];
+  event.waitUntil((async () => {
+    const visible = await appVisible().catch(() => false);
+    // Con la app abierta ella misma suena; la repeticion entra callada.
+    // Si el repartidor salto o descarto ese pedido, tambien.
+    if (data.insist && (visible || (data.tag && await isMuted(data.tag)))) options.silent = true;
+    await Promise.all([
+      self.registration.showNotification(data.title || 'Aviso', options),
+      visible ? null : setBadge((n) => n + 1).catch(() => {}),
+    ]);
+  })());
+});
+
+// Pedidos disponibles que el repartidor salto (desde la app o deslizando el
+// aviso): sus repeticiones ya no suenan. Se guardan en Cache Storage porque el
+// service worker no tiene localStorage.
+const MUTE_KEY = '/__muted-tags';
+
+async function mutedTags() {
+  const cache = await caches.open(BADGE_CACHE);
+  try { return JSON.parse(await (await cache.match(MUTE_KEY))?.text() || '[]'); } catch { return []; }
+}
+
+async function isMuted(tag) {
+  return (await mutedTags()).includes(tag);
+}
+
+async function mute(tag) {
+  const list = (await mutedTags()).filter((t) => t !== tag).concat(tag).slice(-50);
+  await (await caches.open(BADGE_CACHE)).put(MUTE_KEY, new Response(JSON.stringify(list)));
+}
+
+self.addEventListener('notificationclose', (event) => {
+  const tag = event.notification.tag || '';
+  if (tag.startsWith('disponible-')) event.waitUntil(mute(tag).catch(() => {}));
 });
 
 // Al tocarla: enfoca una pestana abierta (y la lleva a la pantalla del aviso)

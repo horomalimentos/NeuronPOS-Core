@@ -11,6 +11,7 @@ import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Button, Modal } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
+import { closeNotification } from '../lib/pwa';
 import { useLive } from '../lib/live';
 import { formatTime } from '../pos/lib';
 import type { Listing } from './lib';
@@ -134,6 +135,15 @@ export default function NayoOrdersBoard({ exitTo = '/admin/delivery' }: { exitTo
     const t = setInterval(ring, RING_MS);
     return () => clearInterval(t);
   }, [waiting, sound, audioReady]);
+
+  // Pedido aceptado o rechazado (aqui o en otro dispositivo): se quita su
+  // aviso del telefono; el servidor ya no lo repite.
+  const ringing = useRef(new Set<string>());
+  useEffect(() => {
+    const now = new Set((orders || []).filter((o) => o.status === 'nuevo').map((o) => o.id));
+    ringing.current.forEach((id) => { if (!now.has(id)) closeNotification(`nayo-${id}`); });
+    ringing.current = now;
+  }, [orders]);
 
   useEffect(() => {
     const prev = document.title;

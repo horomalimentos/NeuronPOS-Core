@@ -87,6 +87,14 @@ export function clearAppBadge() {
   navigator.serviceWorker?.controller?.postMessage({ type: 'clear-badge' });
 }
 
+/**
+ * Quita el aviso con esa etiqueta (pedido ya atendido). mute: ademas calla sus
+ * repeticiones en este telefono (pedido disponible que el repartidor salto).
+ */
+export function closeNotification(tag: string, mute = false) {
+  navigator.serviceWorker?.controller?.postMessage({ type: 'close-tag', tag, mute });
+}
+
 export function initPwa() {
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();

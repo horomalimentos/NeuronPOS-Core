@@ -81,6 +81,7 @@ export function composeNayoMessage(ev, m, msg) {
         body: [m.customer_name, m.branch_name, m.payment_method === 'tarjeta' ? 'pagado con tarjeta' : 'efectivo'].filter(Boolean).join(' · '),
         link: '/admin/delivery',
         tag: `nayo-${m.id}`,
+        insist: true,
       };
     case 'repartidores:disponible':
       return {
@@ -89,6 +90,7 @@ export function composeNayoMessage(ev, m, msg) {
         link: '/repartidor',
         tag: `disponible-${m.id}`,
         driver: true,
+        insist: true,
       };
     case 'repartidor:cancelado':
       return { title: `Se canceló el pedido ${n}`, body: m.cancel_reason || m.restaurant_name, link: '/repartidor', tag: `reparto-${m.id}`, driver: true };
@@ -170,7 +172,8 @@ export async function dispatchNayoPush({ limit = 100 } = {}) {
       for (const s of subs) {
         // El cliente en neuronpos.app abre /nayo/pedido/...
         const link = app === 'cliente' ? `${s.link_base}${text.link}` : text.link;
-        out.push({ sub: s, payload: { ...text, link, icon: ICON[app], badge: `/icons/nayo-${app}-badge.png` } });
+        // sticky: el aviso se queda en pantalla hasta que lo toquen (sw.js).
+        out.push({ sub: s, payload: { ...text, link, icon: ICON[app], badge: `/icons/nayo-${app}-badge.png`, sticky: true } });
       }
     }
     return out;
@@ -218,6 +221,34 @@ export async function sendNayoTestPush(customerId) {
     await withPlatform((db) => db.query('DELETE FROM nayo_push_subscriptions WHERE id = ANY($1::uuid[])', [gone]));
   }
   return { devices: subs.length, sent };
+}
+
+// Avisos que insisten: el de pedido nuevo al restaurante y el de pedido
+// disponible a los repartidores se vuelven a mandar (misma etiqueta, el
+// telefono vuelve a sonar) hasta que el restaurante acepte o rechace o un
+// repartidor lo tome. Con tope para no sonar para siempre.
+export const INSIST_EVERY_S = 15;
+export const INSIST_FOR_MIN = 15;
+
+/** Encola otra vez los avisos que siguen sin atender. Regresa cuantos encolo. */
+export async function insistNayoPush() {
+  const added = await withPlatform(async (db) => (await db.query(
+    `INSERT INTO nayo_push_outbox (marketplace_order_id, audience, kind)
+     SELECT x.marketplace_order_id, x.audience, x.kind
+       FROM (SELECT marketplace_order_id, audience, kind, min(created_at) AS first_at, max(created_at) AS last_at
+               FROM nayo_push_outbox
+              WHERE (audience, kind) IN (('restaurante', 'nuevo_pedido'), ('repartidores', 'disponible'))
+                AND created_at > now() - make_interval(mins => $2 + 1)
+              GROUP BY 1, 2, 3) x
+       JOIN marketplace_orders m ON m.id = x.marketplace_order_id
+      WHERE x.last_at < now() - make_interval(secs => $1)
+        AND x.first_at > now() - make_interval(mins => $2)
+        AND ((x.audience = 'restaurante' AND m.status = 'nuevo')
+          OR (x.audience = 'repartidores' AND m.status IN ('aceptado', 'listo') AND m.driver_id IS NULL))`,
+    [INSIST_EVERY_S, INSIST_FOR_MIN],
+  )).rowCount);
+  if (added) await dispatchNayoPush();
+  return added;
 }
 
 export async function cleanupNayoPush() {
