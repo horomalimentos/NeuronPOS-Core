@@ -204,10 +204,14 @@ export async function authenticateFleet(req, res, next) {
     if (payload.typ !== 'fleet' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
     const driver = await withFleetDriver(payload.sub, async (db) => (await db.query(
       `SELECT id, name, email, phone, vehicle, plate, active, on_duty, status, self_registered,
-              base_latitude, base_longitude, radius_km, review_note FROM fleet_drivers WHERE id = $1`,
+              base_latitude, base_longitude, radius_km, review_note, password_changed_at FROM fleet_drivers WHERE id = $1`,
       [payload.sub],
     )).rows[0]);
     if (!driver) throw unauthorized('Repartidor no encontrado', 'INVALID_TOKEN');
+    if (issuedBeforePasswordChange(payload, driver.password_changed_at)) {
+      throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+    }
+    delete driver.password_changed_at;
     if (!driver.active) throw forbidden('Tu cuenta de repartidor esta desactivada', 'ACCOUNT_DEACTIVATED');
     req.fleetDriver = driver;
     next();

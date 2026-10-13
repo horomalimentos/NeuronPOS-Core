@@ -5,6 +5,7 @@
 // datos del pedido), nunca tablas de los restaurantes.
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
 import { withFleetDriver, withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
@@ -13,6 +14,8 @@ import {
   acceptOffer, applyRequestTransition, driverRequestView, lockRequest,
 } from '../services/delivery/fleet.js';
 import { clabeBank, clabeIsValid } from '../services/clabe.js';
+import { sendNayoDriverReset } from '../services/nayoEmails.js';
+import { RESET_TTL_MINUTES, hashToken, readResetToken } from '../services/passwordReset.js';
 import { DRIVER_STATUSES } from '../services/delivery/flow.js';
 import { readLocation } from '../services/delivery/location.js';
 import { readPoint } from '../services/deliveryZones.js';
@@ -52,6 +55,47 @@ router.post('/auth/login', loginLimiter, ah(async (req, res) => {
   if (!driver || !ok || !driver.active) throw new HttpError(401, 'Correo o contrasena incorrectos', 'INVALID_CREDENTIALS');
   await withFleetDriver(driver.id, (db) => db.query('UPDATE fleet_drivers SET last_login_at = now() WHERE id = $1', [driver.id]));
   res.json({ token: signFleetToken(driver), driver: { id: driver.id, name: driver.name, email: driver.email } });
+}));
+
+// Olvide mi contrasena: siempre responde igual (no revela si el correo existe).
+// Pedir otra liga antes de 1 minuto no manda otro correo.
+router.post('/auth/forgot', loginLimiter, ah(async (req, res) => {
+  const email = str((req.body || {}).email, { field: 'email', required: true, max: 200 }).toLowerCase();
+  const found = await withPlatform(async (db) => {
+    const d = (await db.query(
+      'SELECT id, name, email, reset_expires_at FROM fleet_drivers WHERE email = $1 AND active FOR UPDATE', [email],
+    )).rows[0];
+    if (!d) return null;
+    const issuedAt = d.reset_expires_at ? new Date(d.reset_expires_at).getTime() - RESET_TTL_MINUTES * 60000 : 0;
+    if (Date.now() - issuedAt < 60000) return null;
+    const token = crypto.randomBytes(32).toString('base64url');
+    await db.query(
+      'UPDATE fleet_drivers SET reset_token_hash = $2, reset_expires_at = now() + make_interval(mins => $3::int) WHERE id = $1',
+      [d.id, hashToken(token), RESET_TTL_MINUTES],
+    );
+    return { driver: d, token };
+  });
+  if (found) void sendNayoDriverReset(found.driver, found.token);
+  res.json({ ok: true });
+}));
+
+// Cambia la contrasena con la liga del correo y entra de una vez.
+router.post('/auth/reset', loginLimiter, ah(async (req, res) => {
+  const body = req.body || {};
+  const token = readResetToken(body.token);
+  const password = typeof body.password === 'string' ? body.password : '';
+  if (password.length < 8) throw badRequest('La contrasena debe tener al menos 8 caracteres', 'WEAK_PASSWORD');
+  const hash = await bcrypt.hash(password, 12);
+  const driver = await withPlatform(async (db) => (await db.query(
+    `UPDATE fleet_drivers SET password_hash = $2, password_changed_at = now(), reset_token_hash = NULL, reset_expires_at = NULL,
+            last_login_at = now(), updated_at = now()
+      WHERE reset_token_hash = $1 AND reset_expires_at > now() AND active
+      RETURNING id, name, email`,
+    [hashToken(token), hash],
+  )).rows[0]);
+  if (!driver) throw badRequest('La liga para cambiar tu contraseña no es válida o ya venció. Pide otra.', 'INVALID_RESET_TOKEN');
+  // El token nuevo es posterior al cambio: las sesiones viejas dejan de servir.
+  res.json({ token: signFleetToken(driver), driver });
 }));
 
 router.use(authenticateFleet);
