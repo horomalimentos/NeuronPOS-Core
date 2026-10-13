@@ -12,6 +12,7 @@ import { authenticateFleet, signFleetToken } from '../middleware/auth.js';
 import {
   acceptOffer, applyRequestTransition, driverRequestView, lockRequest,
 } from '../services/delivery/fleet.js';
+import { clabeBank, clabeIsValid } from '../services/clabe.js';
 import { DRIVER_STATUSES } from '../services/delivery/flow.js';
 import { readLocation } from '../services/delivery/location.js';
 import { readPoint } from '../services/deliveryZones.js';
@@ -104,6 +105,35 @@ router.put('/zone', ah(async (req, res) => {
     )).rows[0];
   });
   res.json({ driver: driverMe(driver) });
+}));
+
+// Datos bancarios para que Nayo le deposite su saldo a favor.
+const bankView = (d) => ({
+  bank_name: d.bank_name, bank_clabe: d.bank_clabe, bank_holder: d.bank_holder, bank_updated_at: d.bank_updated_at,
+});
+
+router.get('/bank', ah(async (req, res) => {
+  const d = await withFleetDriver(req.fleetDriver.id, async (db) => (await db.query(
+    'SELECT bank_name, bank_clabe, bank_holder, bank_updated_at FROM fleet_drivers WHERE id = $1', [req.fleetDriver.id],
+  )).rows[0]);
+  res.set('Cache-Control', 'no-store').json({ bank: bankView(d) });
+}));
+
+router.put('/bank', ah(async (req, res) => {
+  const body = req.body || {};
+  const clabe = String(body.clabe ?? '').replace(/\D/g, '');
+  if (clabe.length !== 18) throw badRequest('La CLABE debe tener 18 dígitos', 'INVALID_CLABE');
+  if (!clabeIsValid(clabe)) throw badRequest('La CLABE no es válida: revisa los dígitos', 'INVALID_CLABE');
+  const holder = String(body.holder ?? '').trim().replace(/\s+/g, ' ');
+  if (holder.length < 3 || holder.length > 120) throw badRequest('Escribe el nombre del titular de la cuenta', 'MISSING_FIELD');
+  const bank = String(body.bank ?? '').trim() || clabeBank(clabe);
+  if (!bank || bank.length < 2 || bank.length > 80) throw badRequest('Escribe el nombre del banco', 'MISSING_FIELD');
+  const d = await withFleetDriver(req.fleetDriver.id, async (db) => (await db.query(
+    `UPDATE fleet_drivers SET bank_name = $2, bank_clabe = $3, bank_holder = $4, bank_updated_at = now(), updated_at = now()
+      WHERE id = $1 RETURNING bank_name, bank_clabe, bank_holder, bank_updated_at`,
+    [req.fleetDriver.id, bank, clabe, holder],
+  )).rows[0]);
+  res.json({ bank: bankView(d) });
 }));
 
 router.post('/duty', ah(async (req, res) => {

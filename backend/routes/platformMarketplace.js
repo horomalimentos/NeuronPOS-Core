@@ -193,7 +193,7 @@ router.post('/marketplace/listings/:branchId/block', ah(async (req, res) => {
 
 router.get('/marketplace/balances', ah(async (req, res) => {
   const rows = await withPlatform(async (db) => (await db.query(
-    `SELECT d.id, d.name, d.phone, d.status, d.on_duty,
+    `SELECT d.id, d.name, d.phone, d.status, d.on_duty, d.bank_name, d.bank_clabe, d.bank_holder,
             coalesce(sum(l.amount), 0)::numeric(10,2) AS balance,
             count(l.id)::int AS entries, max(l.created_at) AS last_entry_at,
             (SELECT count(*) FROM marketplace_orders m WHERE m.driver_id = d.id AND m.status = 'entregado')::int AS deliveries
@@ -210,7 +210,7 @@ router.get('/marketplace/balances', ah(async (req, res) => {
 router.get('/marketplace/drivers/:id/ledger', ah(async (req, res) => {
   requireUuid(req.params.id);
   const data = await withPlatform(async (db) => {
-    const d = (await db.query('SELECT id, name, phone FROM fleet_drivers WHERE id = $1', [req.params.id])).rows[0];
+    const d = (await db.query('SELECT id, name, phone, bank_name, bank_clabe, bank_holder FROM fleet_drivers WHERE id = $1', [req.params.id])).rows[0];
     if (!d) throw notFound('Repartidor no encontrado', 'DRIVER_NOT_FOUND');
     const entries = (await db.query(
       `SELECT l.id, l.kind, l.amount, l.note, l.created_at, a.name AS created_by_name
