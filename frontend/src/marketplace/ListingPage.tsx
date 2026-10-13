@@ -8,6 +8,7 @@ import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import CuisineSelect from './CuisineSelect';
 import type { Listing } from './lib';
+import RestaurantBankCard from './RestaurantBankCard';
 
 /**
  * Ficha del restaurante en Nayo (modulo marketplace): por
@@ -32,6 +33,7 @@ export default function ListingPage() {
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
           {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
+          <RestaurantBankCard />
         </div>
       )}
     </>

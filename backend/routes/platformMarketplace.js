@@ -87,6 +87,7 @@ router.put('/marketplace/fee-tiers', ah(async (req, res) => {
 const DRIVER_COLUMNS = `d.id, d.name, d.phone, d.email, d.vehicle, d.plate, d.active, d.on_duty, d.status, d.self_registered,
   d.base_latitude, d.base_longitude, d.radius_km, d.review_note, d.reviewed_at, d.last_login_at, d.created_at`;
 
+
 const driverView = (d) => ({
   ...d,
   base: d.base_latitude === null ? null : { latitude: Number(d.base_latitude), longitude: Number(d.base_longitude) },
@@ -133,7 +134,8 @@ router.get('/marketplace/listings', ah(async (req, res) => {
     `SELECT l.restaurant_id, r.name AS restaurant_name, r.slug, r.status AS restaurant_status, r.contact_phone,
             l.branch_id, b.name AS branch_name, b.address, l.latitude, l.longitude, l.cuisine, l.published,
             l.paused_until, l.blocked, l.blocked_reason, l.approval_status, l.approval_note, l.reviewed_at,
-            r.contact_name, r.contact_email, l.created_at, l.published_at
+            r.contact_name, r.contact_email, l.created_at, l.published_at,
+            r.bank_name, r.bank_clabe, r.bank_holder, r.bank_updated_at
        FROM marketplace_listings l
        JOIN restaurants r ON r.id = l.restaurant_id
        JOIN branches b ON b.id = l.branch_id

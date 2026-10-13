@@ -21,8 +21,20 @@ interface PanelListing {
   address: string | null; location: Point | null; cuisine: string | null; published: boolean; paused_until: string | null;
   blocked: boolean; blocked_reason: string | null; created_at: string;
   approval_status: ListingApproval; approval_note: string | null; contact_name: string | null; contact_email: string | null;
+  bank_name: string | null; bank_clabe: string | null; bank_holder: string | null;
 }
 type ListingApproval = 'pendiente' | 'aprobado' | 'rechazado';
+
+/** Datos bancarios del restaurante (CLABE completa para transferir). */
+function BankCell({ l }: { l: PanelListing }) {
+  if (!l.bank_clabe) return <span className="text-xs text-gray-500">Sin datos</span>;
+  return (
+    <div className="text-xs">
+      <div className="select-all font-mono text-gray-200">{l.bank_clabe}</div>
+      <div className="text-gray-400">{l.bank_name} · {l.bank_holder}</div>
+    </div>
+  );
+}
 
 const mapsLink = (p: Point) => `https://www.google.com/maps?q=${p.latitude},${p.longitude}`;
 
@@ -252,7 +264,7 @@ function DriversCard({ onChange }: { onChange: () => void }) {
         <p className="py-6 text-center text-sm text-gray-500">{filter === 'pendiente' ? 'No hay registros por aprobar.' : 'Sin repartidores.'}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
               <tr><th className="py-2">Repartidor</th><th>Vehículo</th><th>Zona</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
@@ -362,9 +374,9 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
         <p className="py-6 text-center text-sm text-gray-500">{filter === 'pendiente' ? 'No hay restaurantes por aprobar.' : 'Aún no se registra ningún restaurante.'}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
-              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
+              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Datos bancarios</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {rows.map((l) => (
@@ -377,6 +389,7 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
                   <td className="py-3 pr-3 text-gray-300">
                     {l.location ? <a href={mapsLink(l.location)} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">{l.address || 'Ver mapa'}</a> : '—'}
                   </td>
+                  <td className="py-3 pr-3"><BankCell l={l} /></td>
                   <td className="py-3 pr-3 text-gray-400">{formatDate(l.created_at)}</td>
                   <td className="py-3 pr-3">
                     {l.approval_status === 'pendiente' ? <span className="text-amber-300">Por aprobar</span>
