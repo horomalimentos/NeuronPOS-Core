@@ -1,9 +1,10 @@
-import { Bike, Check, MapPin, Plus, ShieldAlert, ShieldCheck, Store, Trash2, X } from 'lucide-react';
+import { Bike, Check, LogIn, MapPin, Plus, ShieldAlert, ShieldCheck, Store, Trash2, X } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, PageHeader, Spinner, Toggle } from '../components/ui';
 import type { Point } from '../components/ZoneMap';
 import { errorMessage, platformApi } from '../lib/api';
 import { formatDate, formatMXN } from '../lib/format';
+import { session } from '../lib/session';
 import { DriverAccountsCard, MarketplaceOrdersCard } from './MarketplaceMoney';
 import { DRIVER_STATUS_LABEL, DRIVER_STATUS_STYLE, type DriverStatus, type FeeTier } from '../marketplace/lib';
 
@@ -352,6 +353,26 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
     void run(l, 'approval', { status, note });
   }
 
+  // Abre el panel del restaurante en otra pestana con una sesion de soporte
+  // (2 h, queda en su bitacora de accesos). La pestana se abre antes de la
+  // llamada para que el navegador no la bloquee.
+  async function enter(l: PanelListing) {
+    const tab = window.open('about:blank', '_blank');
+    setBusy(l.branch_id);
+    setError('');
+    try {
+      const r = await platformApi<{ token: string; restaurant: { slug: string } }>(`/platform/restaurants/${l.restaurant_id}/enter`, { method: 'POST' });
+      session.setDevSlug(r.restaurant.slug);
+      session.setToken('restaurant', r.token);
+      if (tab) tab.location.href = '/admin';
+      else window.location.href = '/admin';
+    } catch (e) {
+      tab?.close();
+      setError(errorMessage(e));
+    }
+    setBusy('');
+  }
+
   function block(l: PanelListing, blocked: boolean) {
     const reason = blocked ? window.prompt(`¿Por qué se oculta ${l.restaurant_name}? (lo verá en su panel)`) : null;
     if (blocked && !reason) return;
@@ -401,6 +422,9 @@ function ListingsCard({ pending, onChange }: { pending: number; onChange: () => 
                   </td>
                   <td className="py-3">
                     <div className="flex justify-end gap-1">
+                      <Button variant="ghost" className="px-3 py-1.5" disabled={busy === l.branch_id} onClick={() => void enter(l)} title="Abrir su panel en otra pestaña">
+                        <LogIn className="h-4 w-4" /> Entrar al panel
+                      </Button>
                       {l.approval_status !== 'aprobado' && (
                         <Button className="px-3 py-1.5" loading={busy === l.branch_id} onClick={() => review(l, 'aprobado')}><Check className="h-4 w-4" /> Aprobar</Button>
                       )}

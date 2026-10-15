@@ -3,7 +3,7 @@
 import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { withPlatform } from '../config/database.js';
-import { authenticatePlatform } from '../middleware/auth.js';
+import { authenticatePlatform, signUserToken } from '../middleware/auth.js';
 import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
 import { sendStaffReset } from '../services/emails.js';
@@ -412,6 +412,33 @@ router.post('/restaurants/:id/users/:userId/reset-link', ah(async (req, res) => 
   if (!reset) throw badRequest('Ya se mando una liga hace menos de un minuto', 'RESET_TOO_SOON');
   await sendStaffReset(tenant, reset.account, reset.token);
   res.json({ ok: true, email: reset.account.email });
+}));
+
+// Entrar al panel de un restaurante (soporte desde el Panel NeuronPOS): una
+// sesion corta como su administrador. Queda en su bitacora de accesos con el
+// correo del dueno de la plataforma.
+router.post('/restaurants/:id/enter', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const { restaurant, user } = await withPlatform(async (db) => {
+    const restaurant = (await db.query('SELECT id, slug, name FROM restaurants WHERE id = $1', [req.params.id])).rows[0];
+    if (!restaurant) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
+    const user = (await db.query(
+      `SELECT id, restaurant_id, email, name, role FROM users
+        WHERE restaurant_id = $1 AND active AND role = 'admin' ORDER BY created_at LIMIT 1`,
+      [restaurant.id],
+    )).rows[0];
+    if (!user) throw badRequest('Este restaurante no tiene un administrador activo', 'NO_ADMIN');
+    await db.query(
+      'INSERT INTO access_log (restaurant_id, user_id, email, result, ip, user_agent) VALUES ($1, $2, $3, $4, $5, $6)',
+      [restaurant.id, user.id, req.platformAdmin.email, 'ok', String(req.ip || '').replace(/^::ffff:/, '').slice(0, 64), 'Panel NeuronPOS (soporte)'],
+    );
+    return { restaurant, user };
+  });
+  res.json({
+    token: signUserToken(user, { expiresIn: '2h' }),
+    user: { id: user.id, email: user.email, name: user.name, role: user.role },
+    restaurant,
+  });
 }));
 
 // Cobro de suscripciones: facturas, ligas de Clip y configuracion (fase 3).
