@@ -9,6 +9,8 @@
 //   - Pedidos programados (cada minuto): entran a cocina antes de su hora.
 //   - Notificaciones push (cada 30 s): respaldo del LISTEN; limpieza cada hora.
 //   - Avisos por WhatsApp de pedidos del bot (cada 10 s); limpieza cada hora.
+//   - Restaurantes con POS propio (Horom): menu cada 10 min, reenvio de
+//     pedidos de Nayo cada 10 s y su estado (listo/cancelado) cada 20 s.
 //   - Empleado del mes (cada hora): desde el dia 1 cierra el mes anterior de
 //     los restaurantes con cierre automatico (idempotente).
 //
@@ -21,6 +23,7 @@ import { cleanupNayoPush, dispatchNayoPush, insistNayoPush, startNayoPushListene
 import { releaseScheduledOrders } from './scheduledOrders.js';
 import { reconcilePendingMarketplaceCheckouts } from './marketplaceMoney.js';
 import { expireUnpaidOrders } from './restaurantPayments.js';
+import { forwardExternalOrders, pollExternalOrders, syncExternalMenus } from './externalPos.js';
 import { runRecognitionCycle } from './rh/recognition.js';
 import { runBillingCycle } from './subscriptions.js';
 import { cleanupWhatsApp, dispatchWhatsAppOutbox } from './whatsapp/notify.js';
@@ -59,6 +62,9 @@ export function startJobs() {
     every('nayo-push-limpieza', 60 * 60 * 1000, () => cleanupNayoPush()),
     every('whatsapp', 10 * 1000, () => dispatchWhatsAppOutbox()),
     every('whatsapp-limpieza', 60 * 60 * 1000, () => cleanupWhatsApp()),
+    every('pos-externo-menu', 10 * 60 * 1000, () => syncExternalMenus()),
+    every('pos-externo-pedidos', 10 * 1000, () => forwardExternalOrders()),
+    every('pos-externo-estado', 20 * 1000, () => pollExternalOrders()),
   ];
   startPushListener();
   startNayoPushListener();
