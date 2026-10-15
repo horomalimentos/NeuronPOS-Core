@@ -18,11 +18,11 @@ import { findRestaurantById } from './tenant.js';
 
 const unauthorized = (msg = 'Se requiere iniciar sesion', code = 'AUTH_REQUIRED') => new HttpError(401, msg, code);
 
-export function signUserToken(user) {
+export function signUserToken(user, { expiresIn = env.jwtExpiresIn } = {}) {
   return jwt.sign(
     { sub: user.id, typ: 'user', rid: user.restaurant_id, role: user.role },
     env.jwtSecret,
-    { expiresIn: env.jwtExpiresIn },
+    { expiresIn },
   );
 }
 
