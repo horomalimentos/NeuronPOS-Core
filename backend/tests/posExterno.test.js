@@ -169,6 +169,8 @@ describe('Nayo: restaurante conectado a su propio POS', { skip: SKIP_DB }, () =>
     const sent = horom.state.received.at(-1);
     assert.equal(sent.branch_id, HOROM_BRANCH);
     assert.equal(sent.nayo_order_id, id);
+    assert.equal(sent.customer_name, 'Maria Lopez');
+    assert.equal(sent.customer_phone, undefined); // la entrega es de Nayo
     assert.equal(sent.payment_method, 'efectivo');
     assert.equal(sent.paid, false);
     assert.equal(sent.food_total, 260);

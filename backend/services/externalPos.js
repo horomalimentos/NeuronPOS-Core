@@ -273,10 +273,8 @@ export async function externalOrderPayload(db, link, m) {
     branch_id: link.external_branch_id,
     nayo_order_id: m.id,
     folio: m.folio,
+    // Solo el nombre para la comanda: la entrega la hace el repartidor de Nayo.
     customer_name: m.customer_name,
-    customer_phone: m.customer_phone,
-    address: m.address,
-    reference: m.reference,
     notes: m.notes,
     payment_method: m.payment_method,
     paid: m.payment_method === 'tarjeta',
