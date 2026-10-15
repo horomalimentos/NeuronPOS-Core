@@ -3,6 +3,7 @@ import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import AppUpdateBanner from './components/AppUpdateBanner';
 import { usePwaManifest } from './lib/pwa';
 import CustomersPage from './loyalty/CustomersPage';
 import CountPage from './inventory/CountPage';
@@ -124,10 +125,11 @@ function PwaManifest() {
 }
 
 export default function App() {
-  if (onNayoHost()) return <BrowserRouter><PwaManifest /><NayoSite /></BrowserRouter>;
+  if (onNayoHost()) return <BrowserRouter><PwaManifest /><AppUpdateBanner /><NayoSite /></BrowserRouter>;
   return (
     <BrowserRouter>
       <PwaManifest />
+      <AppUpdateBanner />
       <Routes>
         {/* Sitio publico y portal de clientes del restaurante (por dominio) */}
         <Route element={<SiteLayout />}>
