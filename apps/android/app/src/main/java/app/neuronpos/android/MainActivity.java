@@ -16,9 +16,11 @@ import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
 import android.view.WindowManager;
+import android.webkit.GeolocationPermissions;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -56,6 +58,7 @@ public class MainActivity extends Activity {
         : IS_NAYO_REP ? "/repartidor" : "/admin/pos";
     static final String EXTRA_PATH = "path";
     private static final int REQ_NOTIFICATIONS = 8;
+    private static final int REQ_LOCATION = 9;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
@@ -63,6 +66,8 @@ public class MainActivity extends Activity {
     private Printer printer;
     private volatile String currentUrl = "";
     private String pendingBluetoothCb;
+    private String pendingGeoOrigin;
+    private GeolocationPermissions.Callback pendingGeoCb;
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     @Override
@@ -92,6 +97,10 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new WebBridge(), "NeuronAndroid");
         web.addJavascriptInterface(new SetupBridge(), "NeuronSetup");
         web.setWebViewClient(new Client());
+        if (IS_NAYO) {
+            s.setGeolocationEnabled(true);
+            web.setWebChromeClient(new Chrome());
+        }
 
         String url = baseUrl();
         if (url.isEmpty()) web.loadUrl(SETUP_URL);
@@ -180,6 +189,41 @@ public class MainActivity extends Activity {
             String target = Uri.encode(request.getUrl().toString());
             String desc = Uri.encode(String.valueOf(error.getDescription()));
             view.loadUrl(OFFLINE_URL + "?url=" + target + "&error=" + desc);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Ubicacion (apps de Nayo): cuando la pagina pide navigator.geolocation se
+    // pide el permiso de Android y se le responde a la pagina.
+    // -----------------------------------------------------------------------
+
+    private boolean hasLocation() {
+        return Build.VERSION.SDK_INT < 23
+            || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+            || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private class Chrome extends WebChromeClient {
+        @Override
+        public void onGeolocationPermissionsShowPrompt(String origin, GeolocationPermissions.Callback cb) {
+            if (!isRestaurant(origin)) {
+                cb.invoke(origin, false, false);
+                return;
+            }
+            if (hasLocation()) {
+                cb.invoke(origin, true, false);
+                return;
+            }
+            if (pendingGeoCb != null) pendingGeoCb.invoke(pendingGeoOrigin, false, false);
+            pendingGeoOrigin = origin;
+            pendingGeoCb = cb;
+            requestPermissions(new String[] {Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOCATION);
+        }
+
+        @Override
+        public void onGeolocationPermissionsHidePrompt() {
+            pendingGeoOrigin = null;
+            pendingGeoCb = null;
         }
     }
 
@@ -521,6 +565,12 @@ public class MainActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode == REQ_NOTIFICATIONS) {
             askOverlayAndBattery();
+            return;
+        }
+        if (requestCode == REQ_LOCATION) {
+            if (pendingGeoCb != null) pendingGeoCb.invoke(pendingGeoOrigin, hasLocation(), false);
+            pendingGeoOrigin = null;
+            pendingGeoCb = null;
             return;
         }
         if (requestCode != REQ_BLUETOOTH) return;
