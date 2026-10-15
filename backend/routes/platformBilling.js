@@ -12,12 +12,14 @@ import { Router } from 'express';
 import { withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { hasCheckoutCredentials, platformClipCredentials } from '../services/clip/client.js';
+import { platformProvider } from '../services/platformGateway.js';
 import { secretsAvailable } from '../services/secrets.js';
+import { platformStripeCredentials } from '../services/stripe/client.js';
 import {
   afterInvoicePaid, generateNow, getInvoice, getPlatformSettings, listInvoices, markInvoicePaid,
   resendInvoiceLink, runBillingCycle,
 } from '../services/subscriptions.js';
-import { platformWebhookUrl } from '../services/urls.js';
+import { platformWebhookUrl, stripeWebhookUrl } from '../services/urls.js';
 import { ah, badRequest, oneOf, requireUuid, str } from '../utils/http.js';
 
 const router = Router();
@@ -87,6 +89,7 @@ router.post('/billing/run', ah(async (req, res) => {
 async function settingsView(db) {
   const s = await getPlatformSettings(db);
   const creds = platformClipCredentials();
+  const stripe = platformStripeCredentials();
   return {
     grace_days: s.grace_days,
     billing_auto: env.billingAuto,
@@ -98,6 +101,14 @@ async function settingsView(db) {
       webhook_url: platformWebhookUrl(),
       restaurant_webhook_url_example: `${env.publicApiUrl}/api/webhooks/clip/r/<slug-del-restaurante>`,
     },
+    stripe: {
+      configured: Boolean(stripe.secretKey),
+      test_mode: stripe.secretKey.startsWith('sk_test_'),
+      webhook_secret_configured: Boolean(stripe.webhookSecret),
+      webhook_url: stripeWebhookUrl(),
+    },
+    // Con que se crean las ligas nuevas de mensualidades y Nayo.
+    provider: platformProvider(),
     secrets_key_configured: secretsAvailable(),
     updated_at: s.updated_at,
   };

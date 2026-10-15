@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 2) contra Postgres: el cliente ve los
+// Nayo (fase 2) contra Postgres: el cliente ve los
 // restaurantes cercanos y pide. Cubre: sin repartidor en turno que cubra al
 // restaurante no se puede pedir (como en Horom); envio por km de la tabla;
 // precios del servidor (se ignora el precio que mande el cliente), pedido
@@ -7,17 +7,21 @@
 // el restaurante no puede cambiar el envio; pausa y repartidor fuera de turno.
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SKIP_DB, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, ownerToken, setupDb, nayoShopper } from './helpers.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const LEJOS = { latitude: 31.8199, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 2 (el cliente pide)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let branchId; let taco; let salsaVerde; let driverToken; let driverId;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
+  // Para pedir hay que tener cuenta de Nayo.
+  let shopper;
+  const mails = [];
+  const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const near = (p) => pub('GET', `/restaurants?lat=${p.latitude}&lng=${p.longitude}`);
   const orderBody = (extra = {}) => ({
     branch_id: branchId,
@@ -30,6 +34,8 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
 
   before(async () => {
     ctx = await setupDb();
+    (await import('../services/mailer.js')).setMailTransport((m) => { mails.push(m); });
+    shopper = await nayoShopper(ctx, { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' });
     owner = await ownerToken(ctx);
     const r = await pub('POST', '/restaurants', {
       name: 'Tacos Pepa', phone: '6561112222', address: 'Av. Juarez 100', location: CENTRO,
@@ -43,12 +49,13 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     })).body.group;
     salsaVerde = group.modifiers.find((m) => m.name === 'Verde');
     const cat = (await api(R.token, 'POST', '/api/pos/categories', { name: 'Tacos' })).body.category;
-    taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25, modifier_group_ids: [group.id] })).body.item;
+    taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25, image_url: 'https://cdn.test/taco.jpg', modifier_group_ids: [group.id] })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     const pubd = await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true, min_order: 50, cuisine: 'Tacos' });
     assert.equal(pubd.status, 200, JSON.stringify(pubd.body));
+    await ctx.request('POST', `/api/platform/marketplace/listings/${branchId}/approval`, { token: owner, body: { status: 'aprobado' } });
   });
-  after(() => ctx?.close());
+  after(async () => { (await import('../services/mailer.js')).setMailTransport(null); await ctx?.close(); });
 
   test('sin repartidores conectados el restaurante aparece pero no se puede pedir', async () => {
     const res = await near(CERCA);
@@ -58,7 +65,8 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     assert.equal(t.can_order, false);
     assert.equal(t.reason, 'sin_repartidor');
     assert.equal(t.delivery_fee, 35);
-    const order = await pub('POST', '/orders', orderBody());
+    assert.deepEqual(t.photos, ['https://cdn.test/taco.jpg']); // fotos del menu para la tarjeta
+    const order = await buy(orderBody());
     assert.equal(order.status, 409);
     assert.equal(order.body.code, 'NO_DRIVERS');
   });
@@ -95,10 +103,13 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     const q = await pub('POST', '/quote', orderBody());
     assert.equal(q.status, 200, JSON.stringify(q.body));
     assert.equal(Number(q.body.totals.total), 75 + 35);
-    assert.equal((await pub('POST', '/orders', orderBody({ pay_with: 100 }))).body.code, 'PAY_WITH_TOO_LOW');
-    assert.equal((await pub('POST', '/orders', orderBody({ customer: {} }))).status, 400);
+    assert.equal((await buy(orderBody({ pay_with: 100 }))).body.code, 'PAY_WITH_TOO_LOW');
+    // Sin cuenta no se puede pedir.
+    const guest = await pub('POST', '/orders', orderBody());
+    assert.equal(guest.status, 401);
+    assert.equal(guest.body.code, 'AUTH_REQUIRED');
 
-    const res = await pub('POST', '/orders', orderBody({ pay_with: 200 }));
+    const res = await buy(orderBody({ pay_with: 200 }));
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const o = res.body.order;
     assert.equal(o.status, 'nuevo');
@@ -110,6 +121,16 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     const m = (await ctx.withPlatform((db) => db.query('SELECT * FROM marketplace_orders WHERE public_token = $1', [o.token]))).rows[0];
     assert.equal(Number(m.driver_share), 28);
     assert.equal(Number(m.platform_share), 7);
+    // Le llega la confirmacion de Nayo con la liga de seguimiento.
+    await new Promise((r) => setTimeout(r, 50));
+    const mail = mails.find((x) => x.subject === 'Tu pedido de Tacos Pepa en Nayo');
+    assert.ok(mail, JSON.stringify(mails.map((x) => x.subject)));
+    assert.ok(mail.text.includes(`https://elnayo.com/pedido/${o.token}`));
+    // El pedido queda en la cuenta del cliente.
+    const mine = await ctx.request('GET', '/api/marketplace/account', { token: shopper });
+    assert.equal(mine.status, 200);
+    assert.equal(mine.body.customer.email, 'maria@cliente.test');
+    assert.deepEqual(mine.body.orders.map((x) => x.token), [o.token]);
     const order = (await ctx.withTenant(R.id, (db) => db.query('SELECT * FROM orders WHERE id = $1', [m.order_id]))).rows[0];
     assert.equal(order.channel, 'marketplace');
     assert.equal(order.order_type, 'domicilio');
@@ -136,7 +157,7 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     assert.equal(track.body.order.status, 'listo');
     assert.equal(track.body.order.restaurant.name, 'Tacos Pepa');
 
-    const second = (await pub('POST', '/orders', orderBody())).body.order;
+    const second = (await buy(orderBody())).body.order;
     const id2 = (await api(R.token, 'GET', '/api/marketplace/orders')).body.orders.find((x) => x.status === 'nuevo').id;
     assert.equal((await api(R.token, 'POST', `/api/marketplace/orders/${id2}/reject`, {})).status, 400);
     await api(R.token, 'POST', `/api/marketplace/orders/${id2}/reject`, { reason: 'Se acabo la carne' });
@@ -145,7 +166,7 @@ describe('NeuronPOS Delivery: fase 2 (el cliente pide)', { skip: SKIP_DB }, () =
     assert.equal(t2.cancel_reason, 'Se acabo la carne');
 
     // Cancelado desde el POS (orders): tambien se refleja.
-    const third = (await pub('POST', '/orders', orderBody())).body.order;
+    const third = (await buy(orderBody())).body.order;
     await ctx.withTenant(R.id, (db) => db.query(
       "UPDATE orders SET status = 'cancelada', cancel_reason = 'Cliente no contesta', cancelled_at = now() WHERE public_token = $1",
       [third.token],

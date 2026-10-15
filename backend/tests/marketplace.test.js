@@ -1,11 +1,12 @@
-// NeuronPOS Delivery (fase 1) contra Postgres: registro gratis de
+// Nayo (fase 1) contra Postgres: registro gratis de
 // restaurantes y repartidores, ficha de la sucursal, ajustes y tabla de
 // envio del Panel, aprobacion de repartidores y cobertura por epicentro.
 //
 // Cubre: el restaurante registrado entra a su admin con el modulo
 // 'marketplace' ($0) y usa el menu sin el POS (pero no las ordenes); no
 // puede publicar sin ubicacion, horario y menu; no se quita un bloqueo del
-// Panel (API y trigger); el repartidor pendiente no se pone en turno ni
+// Panel (API y trigger); el restaurante nuevo queda pendiente hasta que el
+// Panel lo aprueba y no se aprueba solo (trigger); el repartidor pendiente no se pone en turno ni
 // cambia su propio estado (trigger); el Panel aprueba, rechaza y bloquea
 // (sale de turno); solo cubren el punto los repartidores aprobados, en
 // turno y con el punto dentro de su radio.
@@ -22,7 +23,7 @@ const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const LEJOS = { latitude: 31.8199, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: reglas puras', () => {
+describe('Nayo: reglas puras', () => {
   test('envio por tramos y reparto 80/20', () => {
     const tiers = [{ up_to_km: 3, fee: 35 }, { up_to_km: 5, fee: 45 }, { up_to_km: 8, fee: 60 }];
     assert.equal(feeForDistance(tiers, 0), 35);
@@ -42,7 +43,7 @@ describe('NeuronPOS Delivery: reglas puras', () => {
   });
 });
 
-describe('NeuronPOS Delivery: fase 1', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 1', { skip: SKIP_DB }, () => {
   let ctx; let owner;
   let R; let branchR; let driverToken; let driverId; let pos;
 
@@ -115,6 +116,8 @@ describe('NeuronPOS Delivery: fase 1', { skip: SKIP_DB }, () => {
 
     const detail = await panel('GET', `/restaurants/${R.id}`);
     assert.equal(detail.body.restaurant.status, 'active');
+    // La cuenta esta activa, pero la ficha de Nayo espera aprobacion.
+    assert.deepEqual(detail.body.nayo.map((l) => l.approval_status), ['pendiente']);
     assert.equal(detail.body.monthly_total_mxn ?? detail.body.charge?.total_mxn ?? 0, 0);
 
     const list = await api(R.token, 'GET', '/api/marketplace/listings');
@@ -152,8 +155,39 @@ describe('NeuronPOS Delivery: fase 1', { skip: SKIP_DB }, () => {
     });
     assert.equal(ok.status, 200, JSON.stringify(ok.body));
     assert.equal(ok.body.listing.published, true);
-    assert.equal(ok.body.listing.visible, true);
     assert.equal(ok.body.listing.prep_minutes, 20);
+    // Publicada pero en revision: el cliente todavia no la ve.
+    assert.equal(ok.body.listing.approval_status, 'pendiente');
+    assert.equal(ok.body.listing.visible, false);
+    assert.equal((await ctx.request('GET', `/api/marketplace/restaurants?lat=${CENTRO.latitude}&lng=${CENTRO.longitude}`)).body.restaurants.length, 0);
+    // El restaurante no puede aprobarse solo, ni con SQL directo.
+    await assert.rejects(
+      ctx.withTenant(R.id, (db) => db.query(`UPDATE marketplace_listings SET approval_status = 'aprobado' WHERE branch_id = $1`, [branchR.branch_id])),
+      /Solo el Panel/,
+    );
+
+    const settings = await panel('GET', '/marketplace/settings');
+    // Las dos de la prueba de registro (Pepa y su gemela) esperan revision.
+    assert.equal(settings.body.summary.pending_listings, 2);
+    const pending = await panel('GET', '/marketplace/listings?status=pendiente');
+    assert.equal(pending.status, 200);
+    assert.equal(pending.body.listings.length, 2);
+    const pepa = pending.body.listings.find((l) => l.branch_id === branchR.branch_id);
+    assert.equal(pepa.contact_email, 'pepa@tacos.test');
+    const noReason = await panel('POST', `/marketplace/listings/${branchR.branch_id}/approval`, { status: 'rechazado' });
+    assert.equal(noReason.status, 400);
+    const rejected = await panel('POST', `/marketplace/listings/${branchR.branch_id}/approval`, { status: 'rechazado', note: 'Falta tu menu con fotos' });
+    assert.equal(rejected.status, 200, JSON.stringify(rejected.body));
+    const mineRejected = (await api(R.token, 'GET', '/api/marketplace/listings')).body.listings[0];
+    assert.equal(mineRejected.approval_status, 'rechazado');
+    assert.equal(mineRejected.approval_note, 'Falta tu menu con fotos');
+    assert.equal(mineRejected.visible, false);
+    const approved = await panel('POST', `/marketplace/listings/${branchR.branch_id}/approval`, { status: 'aprobado' });
+    assert.equal(approved.status, 200);
+    assert.equal(approved.body.listing.approval_status, 'aprobado');
+    const mine = (await api(R.token, 'GET', '/api/marketplace/listings')).body.listings[0];
+    assert.equal(mine.visible, true);
+    assert.equal(mine.approval_note, null);
 
     const paused = await api(R.token, 'POST', `/api/marketplace/listings/${branchR.branch_id}/pause`, { minutes: 30 });
     assert.equal(paused.body.listing.visible, false);

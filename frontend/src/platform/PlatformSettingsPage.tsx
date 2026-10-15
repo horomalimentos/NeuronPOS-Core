@@ -41,7 +41,7 @@ export default function PlatformSettingsPage() {
   if (!settings) return error ? <Alert>{error}</Alert> : <Spinner />;
   return (
     <>
-      <PageHeader title="Ajustes de cobro" subtitle="Cobranza de las mensualidades y cuenta de Clip de NeuronPOS." />
+      <PageHeader title="Ajustes de cobro" subtitle="Cobranza de las mensualidades y Nayo con las cuentas de Stripe y Clip de NeuronPOS." />
       <div className="mb-4 space-y-2">
         {error && <Alert>{error}</Alert>}
         {notice && <Alert kind="success">{notice}</Alert>}
@@ -58,6 +58,22 @@ export default function PlatformSettingsPage() {
           </p>
           <div className="flex justify-end"><Button type="submit" loading={saving}>Guardar</Button></div>
         </form>
+
+        <section className="card space-y-3 p-5 lg:col-span-2">
+          <h2 className="font-semibold text-white">Stripe de NeuronPOS</h2>
+          <p className="text-sm text-gray-300">
+            Las ligas nuevas de mensualidades y de Nayo se cobran con{' '}
+            <b className="text-white">{settings.provider === 'stripe' ? 'Stripe' : settings.provider === 'clip' ? 'Clip' : 'ninguna cuenta (falta configurar)'}</b>.
+            Con Stripe configurado se usa Stripe; si no, Clip.
+          </p>
+          <Status ok={settings.stripe.configured} label={`Llave secreta${settings.stripe.test_mode ? ' (modo de prueba)' : ''}`} />
+          <Status ok={settings.stripe.webhook_secret_configured} label="Secreto del webhook" />
+          <div className="rounded-xl bg-gray-950/60 p-3 text-xs text-gray-400">
+            <p className="mb-1 font-medium text-gray-300">Webhook (en Stripe › Desarrolladores › Webhooks, evento checkout.session.completed y checkout.session.expired):</p>
+            <code className="break-all text-sky-300">{settings.stripe.webhook_url}</code>
+          </div>
+          <p className="text-xs text-gray-500">Las llaves se configuran en el servidor (STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET) y nunca se muestran aquí.</p>
+        </section>
 
         <section className="card space-y-3 p-5">
           <h2 className="font-semibold text-white">Clip de NeuronPOS</h2>

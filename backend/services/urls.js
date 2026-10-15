@@ -11,6 +11,8 @@ export function restaurantSiteUrl(r) {
 }
 
 export const platformWebhookUrl = () => `${env.publicApiUrl}/api/webhooks/clip/plataforma`;
+export const stripeWebhookUrl = () => `${env.publicApiUrl}/api/webhooks/stripe/plataforma`;
 
 /** Por restaurante: el id no cambia aunque cambie el slug (tambien acepta el slug). */
 export const restaurantWebhookUrl = (r) => `${env.publicApiUrl}/api/webhooks/clip/r/${r.id}`;
+export const restaurantStripeWebhookUrl = (r) => `${env.publicApiUrl}/api/webhooks/stripe/r/${r.id}`;

@@ -85,8 +85,8 @@ export default function TrackOrderPage() {
   const failed = order.status === 'rechazado' || order.status === 'cancelado';
   const awaitingPayment = order.status === 'esperando_pago';
   const paidOnline = order.online_payment_status === 'pagado';
-  const paymentLabel = paidOnline ? (order.payment_provider === 'monedero' ? 'Pagado con tu monedero' : 'Pagado en línea con Clip')
-    : order.online_payment_status ? 'Pago en línea con Clip pendiente'
+  const paymentLabel = paidOnline ? (order.payment_provider === 'monedero' ? 'Pagado con tu monedero' : 'Pagado en línea')
+    : order.online_payment_status ? 'Pago en línea pendiente'
       : order.paid ? 'Pagado'
         : `Pago al ${delivery ? 'recibir' : 'recoger'}: ${order.payment_preference === 'tarjeta' ? 'tarjeta' : 'efectivo'}`;
 
@@ -107,7 +107,7 @@ export default function TrackOrderPage() {
         {awaitingPayment ? (
           <div className="mx-auto mt-5 max-w-md rounded-2xl bg-violet-50 p-4 text-left text-sm text-violet-900">
             <p className="flex items-center gap-2 font-semibold"><CreditCard className="h-5 w-5" /> Falta pagar tu pedido</p>
-            <p className="mt-1">El restaurante lo empezará a preparar en cuanto se confirme tu pago con Clip.</p>
+            <p className="mt-1">El restaurante lo empezará a preparar en cuanto se confirme tu pago.</p>
             {order.payment_due_at && <p className="mt-1">Si no se paga antes de las <b>{formatTimeShort(order.payment_due_at)}</b>, el pedido se cancela solo.</p>}
             <button className="btn-brand mt-3 w-full" onClick={payNow} disabled={paying}>
               {paying && <Loader2 className="h-4 w-4 animate-spin" />} Pagar ahora con Clip

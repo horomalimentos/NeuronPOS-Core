@@ -18,7 +18,7 @@ const POLL_MS = 10000;
  * lo ve en su seguimiento). Los aceptados se abren para cobrarlos con el
  * flujo normal de caja; los de domicilio se marcan "salió a reparto". Los
  * pagados en línea con Clip no pasan por caja: se marcan entregados.
- * Los de NeuronPOS Delivery los recoge un repartidor de la plataforma, que
+ * Los de Nayo los recoge un repartidor de la plataforma, que
  * paga la comida al recogerla: se cobran en caja y no se marcan "salió".
  */
 export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }: {
@@ -62,7 +62,7 @@ export default function OnlineOrdersPanel({ branchId, role, onOpen, onChanged }:
     if (action === 'reject') {
       const paidOnline = o.online_payment_status === 'pagado';
       const reason = window.prompt(paidOnline
-        ? 'Este pedido ya se pagó en línea: al rechazarlo tendrás que reembolsarlo desde tu panel de Clip.\n\nMotivo del rechazo (el cliente lo verá):'
+        ? 'Este pedido ya se pagó en línea: al rechazarlo tendrás que reembolsarlo desde tu panel de Stripe o Clip.\n\nMotivo del rechazo (el cliente lo verá):'
         : 'Motivo del rechazo (el cliente lo verá):');
       if (!reason?.trim()) return;
       body = { reason: reason.trim() };
@@ -167,7 +167,7 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
               {delivery ? <><Bike className="h-3 w-3" /> Domicilio</> : <><Store className="h-3 w-3" /> Recoger</>}
             </span>
             {o.marketplace && (
-              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300 ring-1 ring-violet-500/30">NeuronPOS Delivery</span>
+              <span className="rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-semibold text-violet-300 ring-1 ring-violet-500/30">Nayo</span>
             )}
           </div>
           <p className="mt-0.5 flex items-center gap-1 text-xs text-gray-500">
@@ -228,7 +228,7 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
           </span>
         ) : o.online_payment_status === 'pagado' ? (
           <span className="flex items-center gap-1.5 font-medium text-emerald-300">
-            <BadgeCheck className="h-4 w-4" /> {o.payment_provider === 'monedero' ? 'Pagado con monedero' : 'Pagado en línea con Clip'}
+            <BadgeCheck className="h-4 w-4" /> {o.payment_provider === 'monedero' ? 'Pagado con monedero' : 'Pagado en línea'}
             {num(o.delivery_fee) > 0 && <span className="font-normal text-gray-400">· envío {formatMXN(o.delivery_fee)}</span>}
           </span>
         ) : (
@@ -248,5 +248,5 @@ function OnlineCard({ order: o, now, children }: { order: Order; now: number; ch
 function marketplaceDriverLabel(m: NonNullable<Order['marketplace']>) {
   if (m.picked_up_at || m.status === 'en_camino') return 'El repartidor ya lo recogió';
   if (m.driver_assigned) return 'Repartidor asignado: viene en camino a recogerlo';
-  return 'Buscando repartidor de NeuronPOS Delivery';
+  return 'Buscando repartidor de Nayo';
 }

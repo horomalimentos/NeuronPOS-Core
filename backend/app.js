@@ -10,12 +10,15 @@ import { platformAuthRouter, restaurantAuthRouter } from './routes/auth.js';
 import branchesRouter from './routes/branches.js';
 import permissionsRouter from './routes/permissions.js';
 import devicesRouter from './routes/devices.js';
+import chatRouter from './routes/chat.js';
+import savingsRouter from './routes/savings.js';
 import eventsRouter from './routes/events.js';
 import eventsPublicRouter from './routes/eventsPublic.js';
 import liveRouter from './routes/live.js';
 import { liveAfterChange } from './services/live.js';
 import deliveryRouter from './routes/delivery/index.js';
 import employeesRouter from './routes/employees.js';
+import alertasRouter from './routes/alertas.js';
 import fleetRouter from './routes/fleet.js';
 import { marketplacePublicRouter, marketplaceRouter } from './routes/marketplace.js';
 import inventoryRouter from './routes/inventory/index.js';
@@ -94,7 +97,9 @@ export function createApp() {
   }));
   // Fase 5: app de los repartidores de la flota de la plataforma (sin tenant).
   app.use('/api/fleet', fleetRouter);
-  // NeuronPOS Delivery: registro de restaurantes y repartidores (sin tenant).
+  // Apps instalables de Nayo (APK/EXE): pedidos sin atender para que suenen.
+  app.use('/api/alertas', alertasRouter);
+  // Nayo: registro de restaurantes y repartidores (sin tenant).
   app.use('/api/marketplace', marketplacePublicRouter);
 
   // Todo lo demas es de un restaurante.
@@ -124,6 +129,8 @@ export function createApp() {
   // Control de dispositivos (modulo dispositivos).
   app.use('/api/devices', devicesRouter);
   // Ventas por evento y preventas (modulo eventos): personal y pagina publica.
+  app.use('/api/chat', chatRouter);
+  app.use('/api/savings', savingsRouter);
   app.use('/api/events', eventsRouter);
   app.use('/api/event-page', eventsPublicRouter);
   // Avisos en vivo (caja, cocina y pedidos en linea).
@@ -135,7 +142,7 @@ export function createApp() {
   app.use('/api/push', pushRouter);
   app.use('/api/feedback', feedbackRouter);
   app.use('/api/whatsapp', whatsappRouter);
-  // NeuronPOS Delivery: la ficha de cada sucursal (modulo marketplace).
+  // Nayo: la ficha de cada sucursal (modulo marketplace).
   app.use('/api/marketplace', marketplaceRouter);
 
   app.use('/api', (req, res, next) => next(notFound('Ruta no encontrada', 'ROUTE_NOT_FOUND')));

@@ -1,17 +1,21 @@
 import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { NayoLogo } from '../components/NayoLogo';
+import { useNayoFavicon } from '../components/useNayoFavicon';
+import { nayoPath } from './nayoUrl';
 
-/** Marco de los registros de NeuronPOS Delivery (mas ancho que el login: lleva mapa). */
+/** Marco de los registros de Nayo (mas ancho que el login: lleva mapa). */
 export default function SignupShell({ icon, title, subtitle, children }: {
   icon: ReactNode; title: string; subtitle: string; children: ReactNode;
 }) {
+  useNayoFavicon();
   return (
     <div className="relative min-h-screen overflow-hidden bg-gray-950 px-4 py-8">
       <div className="pointer-events-none absolute -right-40 -top-40 h-96 w-96 rounded-full bg-brand/20 blur-3xl" />
       <div className="relative mx-auto max-w-2xl">
-        <Link to="/delivery" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white">
-          <ArrowLeft className="h-4 w-4" /> NeuronPOS Delivery
+        <Link to={nayoPath('/socios')} className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white">
+          <ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" />
         </Link>
         <div className="card overflow-hidden shadow-2xl">
           <div className="h-1 bg-gradient-to-r from-brand/70 via-brand to-brand/70" />

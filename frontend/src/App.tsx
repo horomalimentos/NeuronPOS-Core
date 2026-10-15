@@ -1,8 +1,9 @@
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import DeliverySettingsPage from './delivery/DeliverySettingsPage';
 import DispatchPage from './delivery/DispatchPage';
 import DriverCutsPage from './delivery/DriverCutsPage';
 import DriverApp from './driver/DriverApp';
+import { usePwaManifest } from './lib/pwa';
 import CustomersPage from './loyalty/CustomersPage';
 import CountPage from './inventory/CountPage';
 import CountsPage from './inventory/CountsPage';
@@ -28,6 +29,9 @@ import SelfOrderKiosk from './pos/SelfOrderKiosk';
 import ReportsPage from './pos/ReportsPage';
 import RegisterPage from './pos/RegisterPage';
 import TablesAdminPage from './pos/TablesAdminPage';
+import PartnerHomePage from './partner/PartnerHomePage';
+import PartnerHoursPage from './partner/PartnerHoursPage';
+import PartnerLayout from './partner/PartnerLayout';
 import PlatformLogin from './platform/PlatformLogin';
 import PlatformSettingsPage from './platform/PlatformSettingsPage';
 import RestaurantDetailPage from './platform/RestaurantDetailPage';
@@ -44,6 +48,9 @@ import OnlineSettingsPage from './restaurant/OnlineSettingsPage';
 import UsersPage from './restaurant/UsersPage';
 import WebsitePage from './restaurant/WebsitePage';
 import AnnouncementsPage from './rh/AnnouncementsPage';
+import ChatPage from './chat/ChatPage';
+import SavingsDetailPage from './savings/SavingsDetailPage';
+import SavingsPage from './savings/SavingsPage';
 import AttendancePage from './rh/AttendancePage';
 import ChecklistsPage from './rh/ChecklistsPage';
 import EmployeesPage from './rh/EmployeesPage';
@@ -71,17 +78,56 @@ import PaymentResultPage from './site/PaymentResultPage';
 import DeliveryLanding from './marketplace/DeliveryLanding';
 import DriverSignupPage from './marketplace/DriverSignupPage';
 import ListingPage from './marketplace/ListingPage';
+import NayoOrdersBoard from './marketplace/NayoOrdersBoard';
 import DeliveryRestaurantPage from './marketplace/RestaurantPage';
 import RestaurantSignupPage from './marketplace/RestaurantSignupPage';
 import DeliveryTrackPage from './marketplace/TrackPage';
+import { onNayoHost } from './marketplace/nayoUrl';
+import NayoResetPage from './marketplace/NayoResetPage';
+import NayoPartnersPage from './marketplace/NayoPartnersPage';
 import MarketplacePage from './platform/MarketplacePage';
 import PublicSite from './site/PublicSite';
 import SiteLayout from './site/SiteLayout';
 import TrackOrderPage from './site/TrackOrderPage';
 
+/**
+ * elnayo.com: solo Nayo, en la raiz. Las ligas viejas /nayo/... (y /delivery/...)
+ * se redirigen quitando el prefijo; la app del repartidor sigue en /repartidor.
+ */
+function NayoSite() {
+  return (
+    <Routes>
+      <Route path="/" element={<DeliveryLanding />} />
+      <Route path="/socios" element={<NayoPartnersPage />} />
+      <Route path="/restaurantes" element={<RestaurantSignupPage />} />
+      <Route path="/repartidores" element={<DriverSignupPage />} />
+      <Route path="/r/:branchId" element={<DeliveryRestaurantPage />} />
+      <Route path="/pedido/:token" element={<DeliveryTrackPage />} />
+      <Route path="/restablecer" element={<NayoResetPage />} />
+      <Route path="/repartidor" element={<DriverApp />} />
+      <Route path="/nayo/*" element={<StripPrefix prefix="/nayo" />} />
+      <Route path="/delivery/*" element={<StripPrefix prefix="/delivery" />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+function StripPrefix({ prefix }: { prefix: string }) {
+  const { pathname, search } = useLocation();
+  return <Navigate to={`${pathname.slice(prefix.length) || '/'}${search}`} replace />;
+}
+
+/** Manifest de la app de Nayo que se esta viendo (lib/pwa.ts). */
+function PwaManifest() {
+  usePwaManifest(useLocation().pathname);
+  return null;
+}
+
 export default function App() {
+  if (onNayoHost()) return <BrowserRouter><PwaManifest /><NayoSite /></BrowserRouter>;
   return (
     <BrowserRouter>
+      <PwaManifest />
       <Routes>
         {/* Sitio publico y portal de clientes del restaurante (por dominio) */}
         <Route element={<SiteLayout />}>
@@ -102,12 +148,17 @@ export default function App() {
         {/* Instaladores de NeuronPOS y Neuron KDS */}
         <Route path="/descargas" element={<DownloadsPage />} />
 
-        {/* NeuronPOS Delivery: registro gratis de restaurantes y repartidores */}
-        <Route path="/delivery" element={<DeliveryLanding />} />
-        <Route path="/delivery/restaurantes" element={<RestaurantSignupPage />} />
-        <Route path="/delivery/repartidores" element={<DriverSignupPage />} />
-        <Route path="/delivery/r/:branchId" element={<DeliveryRestaurantPage />} />
-        <Route path="/delivery/pedido/:token" element={<DeliveryTrackPage />} />
+        {/* Nayo: registro gratis de restaurantes y repartidores. /nayo es la
+            ruta canonica; /delivery sigue sirviendo para los enlaces viejos. */}
+        {['/nayo', '/delivery'].flatMap((base) => [
+          <Route key={base} path={base} element={<DeliveryLanding />} />,
+          <Route key={`${base}/socios`} path={`${base}/socios`} element={<NayoPartnersPage />} />,
+          <Route key={`${base}/restaurantes`} path={`${base}/restaurantes`} element={<RestaurantSignupPage />} />,
+          <Route key={`${base}/repartidores`} path={`${base}/repartidores`} element={<DriverSignupPage />} />,
+          <Route key={`${base}/r`} path={`${base}/r/:branchId`} element={<DeliveryRestaurantPage />} />,
+          <Route key={`${base}/pedido`} path={`${base}/pedido/:token`} element={<DeliveryTrackPage />} />,
+          <Route key={`${base}/restablecer`} path={`${base}/restablecer`} element={<NayoResetPage />} />,
+        ])}
         {/* Kiosko de autoservicio (pantalla completa, sesion de caja) */}
         <Route path="/autoservicio" element={<SelfOrderKiosk />} />
 
@@ -124,6 +175,16 @@ export default function App() {
           <Route path="flota" element={<FleetPage />} />
           <Route path="delivery" element={<MarketplacePage />} />
           <Route path="ajustes" element={<PlatformSettingsPage />} />
+        </Route>
+
+        {/* Nayo Partner: app instalable del restaurante (pantallas del panel del restaurante) */}
+        <Route path="/partner/entrar" element={<RestaurantLogin next="/partner" />} />
+        <Route path="/partner" element={<PartnerLayout />}>
+          <Route index element={<PartnerHomePage />} />
+          <Route path="pedidos" element={<NayoOrdersBoard exitTo="/partner" />} />
+          <Route path="menu" element={<MenuAdminPage />} />
+          <Route path="horario" element={<PartnerHoursPage />} />
+          <Route path="ajustes" element={<ListingPage base="/partner" />} />
         </Route>
 
         {/* Administracion del restaurante */}
@@ -154,13 +215,14 @@ export default function App() {
             <Route path="eventos" element={<EventsPage />} />
             <Route path="eventos/:id" element={<EventDetailPage />} />
           </Route>
-          {/* Menu: lo usa el POS y tambien un restaurante que solo esta en NeuronPOS Delivery */}
+          {/* Menu: lo usa el POS y tambien un restaurante que solo esta en Nayo */}
           <Route element={<ModuleGate code={['pos', 'marketplace']} name="Menú" />}>
             <Route path="menu" element={<MenuAdminPage />} />
           </Route>
-          {/* NeuronPOS Delivery (modulo marketplace, sin costo) */}
-          <Route element={<ModuleGate code="marketplace" name="NeuronPOS Delivery" />}>
+          {/* Nayo (modulo marketplace, sin costo) */}
+          <Route element={<ModuleGate code="marketplace" name="Nayo" />}>
             <Route path="delivery" element={<ListingPage />} />
+            <Route path="delivery/pedidos" element={<NayoOrdersBoard />} />
           </Route>
           {/* Clientes: modulos lealtad y monedero */}
           <Route element={<ModuleGate code={['lealtad', 'monedero']} name="Clientes y lealtad" />}>
@@ -204,6 +266,15 @@ export default function App() {
             <Route path="reparto" element={<DispatchPage />} />
             <Route path="reparto/cortes" element={<DriverCutsPage />} />
             <Route path="domicilios" element={<DeliverySettingsPage />} />
+          </Route>
+          {/* Chat del equipo (modulo chat) */}
+          <Route element={<ModuleGate code="chat" name="Chat del equipo" />}>
+            <Route path="chat" element={<ChatPage />} />
+          </Route>
+          {/* Apartados y metas de aguinaldo (modulo apartados) */}
+          <Route element={<ModuleGate code="apartados" name="Apartados y aguinaldo" />}>
+            <Route path="apartados" element={<SavingsPage />} />
+            <Route path="apartados/:id" element={<SavingsDetailPage />} />
           </Route>
           {/* Bot de WhatsApp (modulo whatsapp) */}
           <Route element={<ModuleGate code="whatsapp" name="Bot de WhatsApp" />}>

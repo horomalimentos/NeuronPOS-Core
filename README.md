@@ -135,6 +135,9 @@ npm run dev                 # http://localhost:5173 (proxy de /api a :8100)
 | `CLIP_API_KEY`, `CLIP_SECRET_KEY` | Credenciales de la cuenta de Clip **de la plataforma** (cobro de mensualidades) | — |
 | `CLIP_WEBHOOK_SECRET` | Si se define, los webhooks de la plataforma sin firma `x-clip-signature` válida se rechazan | — |
 | `CLIP_API_URL` | API de Clip | `https://api.payclip.com` |
+| `STRIPE_SECRET_KEY` | Llave secreta (`sk_live_…` / `sk_test_…`) de la cuenta de Stripe **de la plataforma**. Si está, las ligas nuevas de mensualidades y de Nayo se crean con Stripe en vez de Clip | — |
+| `STRIPE_WEBHOOK_SECRET` | Signing secret (`whsec_…`) del webhook `PUBLIC_API_URL/api/webhooks/stripe/plataforma` (eventos `checkout.session.completed` y `checkout.session.expired`); si se define, la firma `Stripe-Signature` es obligatoria | — |
+| — | Cada restaurante puede capturar además su propia clave secreta de Stripe (y el secreto del webhook `PUBLIC_API_URL/api/webhooks/stripe/r/<id>`) en Pedidos en línea › Pago en línea; si la tiene, sus pedidos en línea y recargas del monedero se cobran con Stripe en vez de Clip | — |
 | `PAYMENT_SECRETS_KEY` | Llave de 32 bytes (base64 o hex) para cifrar las credenciales de Clip de cada restaurante. **No se cambia** una vez en uso | — |
 | `BILLING_TIMEZONE` | Zona horaria de día de cobro, vencimiento y gracia | `America/Mexico_City` |
 | `BILLING_AUTO` | `true` = generar facturas, marcar vencidas y suspender solas (cada hora) | `true` |
@@ -864,6 +867,84 @@ Recursos humanos. En *RH › Rol de turnos*:
 | PUT | `/api/rh/shifts/days` `{items: [{employee_id, date, shift_id \| rest \| start_time+end_time \| clear, note?}]}` | admin, gerente |
 | POST | `/api/rh/shifts/copy-week` `{from, to, branch_id?, overwrite?}` | admin, gerente |
 | GET | `/api/rh/shifts/mine?start=` | el empleado |
+
+## Chat del equipo (módulo `chat`)
+
+Como el chat del tablero de Horom. En *Chat* todo el personal publica
+mensajes y responde; un mensaje es para todas las sucursales o para una, y
+quien no es gerente solo ve (y publica en) las suyas. Admin y gerente fijan
+mensajes arriba y borran los de cualquiera; cada quien edita los suyos. El
+menú muestra cuántos mensajes nuevos hay desde la última vez que se abrió.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET | `/api/chat/posts?before=&branch_id=` | personal |
+| POST | `/api/chat/posts` `{body, branch_id?}` | personal (`branch_id` obligatorio si no es gerente) |
+| PUT / DELETE | `/api/chat/posts/:id` | autor (borrar: también gerente) |
+| PATCH | `/api/chat/posts/:id/pin` `{pinned}` | admin, gerente |
+| GET / POST | `/api/chat/posts/:id/replies` | personal |
+| DELETE | `/api/chat/replies/:id` | autor o gerente |
+| GET | `/api/chat/unread` · POST `/api/chat/seen` | personal |
+
+## Apartados y aguinaldo (módulo `apartados`)
+
+Como "Fianzas Sanas" de Horom. En *Apartados* se guarda dinero para una meta
+(renta, predial, un equipo) con fecha límite opcional y un plan de cuotas
+diarias (con los días que cuentan), semanales, quincenales o mensuales. Lo que
+falta se reparte en cuotas iguales (los centavos sobrantes van en las
+primeras); marcar una cuota crea su depósito y desmarcarla lo quita. Un
+depósito o retiro fuera de las cuotas vuelve a repartir lo que falta. No se
+retira más de lo apartado. Un apartado con movimientos se cancela en lugar de
+borrarse.
+
+- **Del negocio** (de una sucursal o de todo el restaurante): los manejan
+  admin y gerente. **Personales**: solo su dueño.
+- Se comparten con otros usuarios para consultar o también para registrar
+  movimientos y cuotas.
+- **Meta de aguinaldo** (con el módulo `rh`): la meta es el aguinaldo que falta
+  pagar a los empleados activos del año (el mismo cálculo de RH, sin los ya
+  pagados) y vence el 20 de diciembre. *Recalcular meta* la actualiza con altas,
+  bajas, aumentos y pagos.
+
+| Método | Ruta | Quién |
+|---|---|---|
+| GET / POST | `/api/savings/goals` | personal (del negocio: admin, gerente) |
+| GET / PUT / DELETE | `/api/savings/goals/:id` | con acceso (editar y borrar: quien lo administra) |
+| POST | `/api/savings/goals/:id/movements` `{kind, amount, occurred_on?, notes?}` | quien puede registrar |
+| DELETE | `/api/savings/movements/:id` | quien lo registró o quien administra |
+| PATCH | `/api/savings/installments/:id` `{done}` | quien puede registrar |
+| POST | `/api/savings/goals/:id/replan` | quien administra |
+| GET | `/api/savings/people` · PUT / DELETE `/api/savings/goals/:id/shares/:userId` `{can_edit}` | quien administra (salirse: el compartido) |
+| POST | `/api/savings/aguinaldo` `{year, branch_id?, frequency?, weekdays?}` · `/api/savings/goals/:id/recalculate` | admin, gerente (requiere `rh`) |
+
+## Caja sin internet (módulo `sin_internet`)
+
+Como la venta sin conexión de Horom. Mientras hay internet, la caja guarda en
+el navegador el menú de la sucursal, los métodos de pago, el impuesto, el turno
+abierto y una copia del panel (service worker `sw.js`: páginas de `/admin` red
+primero, `/assets` con hash desde la copia). Si se cae el internet, *Vender*
+pasa a la caja sin internet (o lo ofrece el aviso de error):
+
+- Venta **para llevar** con el menú guardado, con modificadores y nombre del
+  cliente. Cobro en **efectivo** (con cambio), **tarjeta**, transferencia u
+  otro en pesos; puntos, monedero, Clip y dólares necesitan internet.
+- Imprime ticket y comanda con folio provisional (`SI-1`, `SI-2`…).
+- Cada venta queda en una cola local y se sube sola al volver la conexión
+  (también cada 30 s y con *Subir ahora*). En *Vender* hay un contador y en
+  *Vender* y *Caja* la lista de lo que falta subir; antes del corte conviene
+  que esté vacía.
+
+Al subir (`POST /api/pos/offline-orders`, cajero): no se duplica (cada venta
+lleva su `offline_id`), se respeta el precio cobrado aunque el producto ya esté
+inactivo o haya cambiado de precio, entra pagada con la hora de la venta y su
+folio definitivo, descuenta inventario y no pasa por cocina. Entra al turno con
+el que se vendió; si ese turno ya se cerró, al abierto de la sucursal (de
+preferencia de la misma caja); sin turno abierto responde 409 y se reintenta.
+Una venta que el servidor rechaza se queda en la lista con el motivo y un
+gerente la puede descartar.
+
+Siguiente fase (no incluida): comanderas y pantallas de cocina en la red local
+del restaurante sin internet.
 
 ## Notificaciones push (módulo `push`)
 

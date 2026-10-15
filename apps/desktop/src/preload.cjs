@@ -8,4 +8,7 @@ contextBridge.exposeInMainWorld('neuronNative', {
   print: (job) => ipcRenderer.invoke('native:print', job),
   openDrawer: () => ipcRenderer.invoke('native:drawer'),
   openSettings: () => ipcRenderer.invoke('native:settings'),
+  // Nayo Restaurante: avisos de pedidos con sonido propio.
+  startAlerts: (token, every) => ipcRenderer.invoke('native:alerts:start', token, every),
+  stopAlerts: () => ipcRenderer.invoke('native:alerts:stop'),
 });

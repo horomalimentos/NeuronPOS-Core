@@ -15,21 +15,21 @@
 //   pasar la fecha limite + dias de gracia (platform_settings). Pagar la
 //   reactiva sola si ya no debe nada vencido. Una suspension manual del dueno
 //   nunca se levanta sola.
-// - Cada factura con importe tiene una liga de pago de Clip (cuenta de la
-//   plataforma). Una factura en 0 queda pagada "sin cargo".
+// - Cada factura con importe tiene una liga de pago de Stripe o Clip (cuenta
+//   de la plataforma, services/platformGateway.js). Una factura en 0 queda pagada "sin cargo".
 import { withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
 import {
   addDays, billingPeriod, buildInvoiceLines, effectiveBillingDay, localDate, suspensionDate,
 } from './billing.js';
-import { createClipClient, hasCheckoutCredentials, platformClipCredentials } from './clip/client.js';
 import { reconcileLocalCheckout } from './clip/reconcile.js';
 import { horomInvoiceLine, pendingInvoiceCharges } from './delivery/fleet.js';
 import { notify } from './notifier.js';
+import { createPlatformCheckout, paymentReference, platformPaymentsAvailable } from './platformGateway.js';
 import { toCents } from './posMath.js';
 import { listRestaurantModules } from './restaurants.js';
-import { platformWebhookUrl, restaurantSiteUrl } from './urls.js';
+import { restaurantSiteUrl } from './urls.js';
 
 const conflict = (msg, code) => new HttpError(409, msg, code);
 export const today = (now = new Date()) => localDate(now, env.billingTimezone);
@@ -341,9 +341,8 @@ export async function generateNow(restaurantId, { now = new Date() } = {}) {
  * factura" es la red de seguridad.
  */
 export async function ensureInvoiceCheckout(invoiceId, { now = new Date() } = {}) {
-  const creds = platformClipCredentials();
-  if (!hasCheckoutCredentials(creds)) {
-    throw conflict('La cuenta de Clip de la plataforma no esta configurada (CLIP_API_KEY / CLIP_SECRET_KEY)', 'CLIP_NOT_CONFIGURED');
+  if (!platformPaymentsAvailable()) {
+    throw conflict('La cuenta de cobro de la plataforma no esta configurada (STRIPE_SECRET_KEY o CLIP_API_KEY / CLIP_SECRET_KEY)', 'CLIP_NOT_CONFIGURED');
   }
   const stale = await withPlatform(async (db) => (await db.query(
     `SELECT * FROM clip_checkouts WHERE invoice_id = $1 AND status = 'pending'
@@ -374,20 +373,18 @@ export async function ensureInvoiceCheckout(invoiceId, { now = new Date() } = {}
       await db.query("UPDATE clip_checkouts SET status = 'expired', updated_at = now() WHERE id = $1", [current.id]);
     }
 
-    const back = `${restaurantSiteUrl(inv)}/admin/suscripcion?factura=${inv.id}`;
-    const link = await createClipClient(creds).createCheckout({
+    const link = await createPlatformCheckout({
       amount: Number(inv.amount_mxn),
       description: `NeuronPOS ${inv.restaurant_name} - mensualidad ${inv.period_txt}`,
-      redirect: { success: `${back}&pago=ok`, error: `${back}&pago=error`, default: `${back}&pago=cancelado` },
-      webhookUrl: platformWebhookUrl(),
+      back: `${restaurantSiteUrl(inv)}/admin/suscripcion?factura=${inv.id}`,
       metadata: { tipo: 'suscripcion', invoice_id: inv.id, restaurant_id: inv.restaurant_id },
     });
     const row = (await db.query(
       `INSERT INTO clip_checkouts (restaurant_id, purpose, invoice_id, checkout_id, payment_url, amount, currency,
-                                   expires_at, response_data)
-       VALUES ($1, 'suscripcion', $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+                                   expires_at, response_data, provider)
+       VALUES ($1, 'suscripcion', $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
       [inv.restaurant_id, inv.id, link.checkout_id, link.payment_url, inv.amount_mxn, inv.currency,
-        link.expires_at, JSON.stringify(link.raw)],
+        link.expires_at, JSON.stringify(link.raw), link.provider],
     )).rows[0];
     return { checkout_id: row.id, payment_url: row.payment_url, expires_at: row.expires_at, created: true };
   });
@@ -447,7 +444,7 @@ export async function markInvoicePaid(db, invoiceId, {
       WHERE id = $1`,
     [invoiceId, now, method, reference, note, paidBy],
   );
-  if (method !== 'clip') {
+  if (method !== 'clip' && method !== 'stripe') {
     // Las ligas pendientes ya no se concilian solas; si alguien paga una, su
     // webhook la marca como pago tardio.
     await db.query(
@@ -472,8 +469,9 @@ export async function applyInvoiceCheckout(db, checkout, data, now = new Date())
   if (!inv) return { late: true };
   // Ya pagada por otra via (manual u otra liga): el pago llega de mas.
   if (inv.status === 'paid' || inv.status === 'void') return { late: true };
-  const reference = String(data?.transaction_id || data?.receipt_no || checkout.checkout_id).slice(0, 200);
-  const result = await markInvoicePaid(db, checkout.invoice_id, { method: 'clip', reference, now });
+  const reference = String(paymentReference(data) || checkout.checkout_id).slice(0, 200);
+  const method = checkout.provider === 'stripe' ? 'stripe' : 'clip';
+  const result = await markInvoicePaid(db, checkout.invoice_id, { method, reference, now });
   return { late: false, after: () => afterInvoicePaid(checkout.invoice_id, result) };
 }
 

@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 3) contra Postgres con Clip simulado: el
+// Nayo (fase 3) contra Postgres con Clip simulado: el
 // repartidor y el dinero. Cubre: el repartidor ve los pedidos aceptados de
 // su zona (sin datos del cliente), los toma (uno a la vez, gana el primero),
 // recoge y entrega; efectivo -> adeudo de la parte de NeuronPOS del envio;
@@ -11,18 +11,21 @@
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createClipMock } from './clipMock.js';
-import { SKIP_DB, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, ownerToken, setupDb, nayoShopper } from './helpers.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 const OTRA_CIUDAD = { latitude: 32.5, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
+describe('Nayo: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, () => {
   let ctx; let owner; let clip; let sign; let money; let R; let branchId; let taco;
   let juan; let pedro;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
+  // Para pedir hay que tener cuenta de Nayo.
+  let shopper;
+  const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const panel = (method, path, body) => api(owner, method, `/api/platform${path}`, body);
   const fleet = (d, method, path, body) => api(d.token, method, `/api/fleet${path}`, body);
   const orderBody = (extra = {}) => ({
@@ -59,6 +62,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
 
   before(async () => {
     ctx = await setupDb();
+    shopper = await nayoShopper(ctx, { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' });
     const client = await import('../services/clip/client.js');
     ({ signClipBody: sign } = await import('../services/clip/status.js'));
     money = await import('../services/marketplaceMoney.js');
@@ -76,6 +80,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25 })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true });
+    await panel('POST', `/marketplace/listings/${branchId}/approval`, { status: 'aprobado' });
     // Tope de adeudo bajo para probar el bloqueo: $10.
     await panel('PUT', '/marketplace/settings', { driver_debt_limit: 10 });
     juan = await newDriver('Juan', 'juan@moto.test', CERCA);
@@ -86,7 +91,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
   let cashId;
   test('efectivo: el repartidor ve el pedido de su zona, lo toma, recoge y entrega; queda el adeudo del 20 %', async () => {
     assert.equal((await pub('GET', '/info')).body.card_payments, true);
-    const o = (await pub('POST', '/orders', orderBody({ pay_with: 200 }))).body.order;
+    const o = (await buy(orderBody({ pay_with: 200 }))).body.order;
     assert.equal(Number(o.total), 135); // 100 de comida + 35 de envio
     // Hasta que el restaurante acepta no se ofrece.
     assert.equal((await board(juan)).available.length, 0);
@@ -100,6 +105,8 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     assert.equal(Number(offer.collect), 135);
     assert.equal(Number(offer.driver_share), 28);
     assert.equal(offer.customer_phone, undefined); // sin datos del cliente hasta tomarlo
+    assert.equal(typeof offer.pickup.latitude, 'number'); // punto del restaurante para el mapa
+    assert.equal(offer.dropoff, undefined);
 
     // Fuera de zona no lo ve.
     const lejos = await newDriver('Lalo', 'lalo@moto.test', OTRA_CIUDAD);
@@ -110,6 +117,12 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     assert.equal(take.status, 200, JSON.stringify(take.body));
     assert.equal(take.body.job.customer_phone, '656 123 4567');
     assert.equal(take.body.job.change, 65);
+    assert.equal(typeof take.body.job.dropoff.latitude, 'number');
+    assert.match(take.body.job.dropoff_waze_url, /^https:\/\/waze\.com\/ul\?ll=/);
+    // La pantalla de pedidos del restaurante ve quien va por el pedido.
+    const seen = (await restaurantOrders()).find((x) => x.id === cashId);
+    assert.deepEqual(seen.driver, { name: 'Juan', vehicle: seen.driver.vehicle });
+    assert.equal(seen.driver_id, undefined);
     assert.equal((await step(pedro, cashId, 'take')).body.code, 'ORDER_TAKEN');
     assert.equal((await board(pedro)).available.length, 0);
     assert.equal((await step(juan, cashId, 'deliver')).body.code, 'INVALID_TRANSITION');
@@ -120,7 +133,14 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     await step(juan, cashId, 'take');
 
     const up = await step(juan, cashId, 'pickup');
+    assert.equal(up.status, 200, JSON.stringify(up.body));
     assert.equal(up.body.job.status, 'en_camino');
+    // Al recoger el repartidor pago la comida: la orden queda pagada en la caja.
+    const pos = (await ctx.withPlatform((db) => db.query(
+      `SELECT o.status, o.paid_amount::text AS paid, (SELECT count(*)::int FROM order_payments p WHERE p.order_id = o.id) AS payments
+         FROM orders o JOIN marketplace_orders m ON m.order_id = o.id WHERE m.id = $1`, [cashId],
+    ))).rows[0];
+    assert.deepEqual(pos, { status: 'pagada', paid: '100.00', payments: 1 });
     assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'en_camino');
     const del = await step(juan, cashId, 'deliver');
     assert.equal(del.status, 200, JSON.stringify(del.body));
@@ -131,13 +151,17 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     assert.equal(after1.balance, -7);
     assert.equal(after1.today.deliveries, 1);
     assert.equal(Number(after1.today.earned), 28);
+    assert.equal(after1.week.deliveries, 1);
+    assert.equal(after1.recent.length, 1);
+    assert.equal(Number(after1.recent[0].driver_share), 28);
     const ledger = (await fleet(juan, 'GET', '/marketplace/ledger')).body;
     assert.equal(ledger.entries.length, 1);
     assert.equal(ledger.entries[0].kind, 'comision_efectivo');
+    assert.match(ledger.entries[0].note, /parte de Nayo/);
   });
 
   test('con el adeudo en el tope ya no ve ni toma pedidos en efectivo', async () => {
-    const o = (await pub('POST', '/orders', orderBody())).body.order;
+    const o = (await buy(orderBody())).body.order;
     const id = await accept(o.token);
     await step(juan, id, 'take');
     await step(juan, id, 'pickup');
@@ -146,7 +170,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     assert.equal(b.balance, -14);
     assert.equal(b.cash_blocked, true);
 
-    await pub('POST', '/orders', orderBody());
+    await buy(orderBody());
     const id3 = await accept();
     assert.equal((await board(juan)).available.length, 0);
     assert.equal((await board(pedro)).available.length, 1);
@@ -158,7 +182,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
 
   let cardToken;
   test('tarjeta: Clip confirma y el pedido llega al restaurante; al entregar se abona comida + envio y cubre el adeudo', async () => {
-    const res = await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta', pay_with: 500 }));
+    const res = await buy(orderBody({ payment_method: 'tarjeta', pay_with: 500 }));
     assert.equal(res.status, 201, JSON.stringify(res.body));
     const o = res.body.order;
     cardToken = o.token;
@@ -168,7 +192,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     const chk = clip.lastCreated();
     assert.equal(chk.auth.startsWith('Basic '), true);
     assert.equal(chk.body.amount, 135);
-    assert.match(JSON.stringify(chk.body), /delivery\/pedido\//);
+    assert.match(JSON.stringify(chk.body), /nayo\/pedido\//);
 
     // El restaurante todavia no lo ve.
     assert.equal((await restaurantOrders()).some((x) => x.status === 'nuevo' || x.status === 'pago_pendiente'), false);
@@ -180,11 +204,15 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     clip.pay(checkoutId);
     const w = await webhook(checkoutId);
     assert.equal(w.status, 200);
-    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'nuevo');
+    // Pagado: entra aceptado solo, sin que el restaurante toque Aceptar.
+    assert.equal((await pub('GET', `/orders/${o.token}`)).body.order.status, 'aceptado');
     const ev = (await ctx.withPlatform((db) => db.query('SELECT matched FROM clip_webhook_events WHERE checkout_id = $1', [checkoutId]))).rows[0];
     assert.equal(ev.matched, true);
 
-    const id = await accept(o.token);
+    const auto = (await restaurantOrders()).find((x) => x.status === 'aceptado');
+    assert.ok(auto?.estimated_ready_at, 'tiene hora estimada');
+    assert.equal((await api(R.token, 'POST', `/api/marketplace/orders/${auto.id}/accept`, {})).body.code, 'INVALID_TRANSITION');
+    const { id } = auto;
     const offer = (await board(juan)).available.find((x) => x.id === id);
     assert.ok(offer, 'el bloqueado por adeudo si ve pedidos con tarjeta');
     assert.equal(Number(offer.collect), 0);
@@ -198,7 +226,7 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
   });
 
   test('una liga que vence cancela el pedido; pagado despues de cancelar queda para reembolso', async () => {
-    const o = (await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta' }))).body.order;
+    const o = (await buy(orderBody({ payment_method: 'tarjeta' }))).body.order;
     const checkoutId = o.payment_url.split('/').pop();
     clip.expire(checkoutId);
     await money.reconcilePendingMarketplaceCheckouts();
@@ -209,13 +237,15 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     ))).rows[0];
     assert.deepEqual(order, { status: 'cancelada', online_payment_status: 'cancelado' });
 
-    // Un pedido pagado que el restaurante rechaza aparece en "por reembolsar".
-    const p = (await pub('POST', '/orders', orderBody({ payment_method: 'tarjeta' }))).body.order;
+    // Un pedido pagado (entra aceptado) que el restaurante rechaza aparece en "por reembolsar".
+    const p = (await buy(orderBody({ payment_method: 'tarjeta' }))).body.order;
     const pid = p.payment_url.split('/').pop();
     clip.pay(pid);
     await money.reconcilePendingMarketplaceCheckouts();
-    const n = (await restaurantOrders()).find((x) => x.status === 'nuevo');
-    await api(R.token, 'POST', `/api/marketplace/orders/${n.id}/reject`, { reason: 'Sin gas' });
+    const n = (await restaurantOrders()).find((x) => x.status === 'aceptado' && x.payment_method === 'tarjeta');
+    const rj = await api(R.token, 'POST', `/api/marketplace/orders/${n.id}/reject`, { reason: 'Sin gas' });
+    assert.equal(rj.status, 200, JSON.stringify(rj.body));
+    assert.equal((await pub('GET', `/orders/${p.token}`)).body.order.status, 'rechazado');
     const refunds = (await panel('GET', '/marketplace/orders?status=reembolsar')).body.orders;
     assert.equal(refunds.length, 1);
     assert.equal(refunds[0].refund_needed, true);
@@ -263,5 +293,19 @@ describe('NeuronPOS Delivery: fase 3 (repartidor y dinero)', { skip: SKIP_DB }, 
     assert.deepEqual(seen.map((r) => r.driver_id), [juan.id]);
     assert.equal((await api(R.token, 'GET', '/api/platform/marketplace/balances')).status, 403);
     assert.ok(cardToken);
+  });
+  test('datos bancarios: el repartidor captura su CLABE y el Panel la ve en su cuenta', async () => {
+    assert.deepEqual((await fleet(juan, 'GET', '/bank')).body.bank.bank_clabe, null);
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '1234', holder: 'Juan Perez' })).body.code, 'INVALID_CLABE');
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '012180001234567890', holder: 'Juan Perez' })).body.code, 'INVALID_CLABE');
+    assert.equal((await fleet(juan, 'PUT', '/bank', { clabe: '012180001234567899', holder: '' })).body.code, 'MISSING_FIELD');
+    const ok = await fleet(juan, 'PUT', '/bank', { clabe: '0121 8000 1234 5678 99', holder: ' Juan  Perez ' });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.deepEqual([ok.body.bank.bank_name, ok.body.bank.bank_clabe, ok.body.bank.bank_holder], ['BBVA', '012180001234567899', 'Juan Perez']);
+    assert.equal((await fleet(pedro, 'GET', '/bank')).body.bank.bank_clabe, null); // cada quien ve la suya
+
+    const row = (await panel('GET', '/marketplace/balances')).body.drivers.find((d) => d.id === juan.id);
+    assert.equal(row.bank_clabe, '012180001234567899');
+    assert.equal((await panel('GET', `/marketplace/drivers/${juan.id}/ledger`)).body.driver.bank_holder, 'Juan Perez');
   });
 });

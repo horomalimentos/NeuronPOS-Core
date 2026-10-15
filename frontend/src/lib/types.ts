@@ -75,6 +75,17 @@ export interface RestaurantDetail {
   monthly: MonthlyCharge;
   counts: { branches: number; users: number };
   invoices: Invoice[];
+  /** Fichas de Nayo de cada sucursal (vacio si no esta en Nayo). */
+  nayo: NayoListingStatus[];
+}
+
+export interface NayoListingStatus {
+  branch_id: string;
+  branch_name: string;
+  approval_status: 'pendiente' | 'aprobado' | 'rechazado';
+  approval_note: string | null;
+  published: boolean;
+  blocked: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +120,7 @@ export interface Invoice {
   amount_mxn: string;
   status: InvoiceStatus;
   paid_at: string | null;
-  paid_method: 'clip' | 'manual' | 'sin_cargo' | null;
+  paid_method: 'clip' | 'stripe' | 'manual' | 'sin_cargo' | null;
   paid_reference: string | null;
   paid_note: string | null;
   last_sent_at: string | null;
@@ -136,12 +147,16 @@ export interface PlatformSettings {
   billing_auto: boolean;
   billing_timezone: string;
   clip: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string; restaurant_webhook_url_example: string };
+  stripe: { configured: boolean; test_mode: boolean; webhook_secret_configured: boolean; webhook_url: string };
+  provider: 'stripe' | 'clip' | null;
   secrets_key_configured: boolean;
 }
 
 /** Pago en línea con Clip del restaurante: nunca trae las credenciales. */
 export interface OnlinePayments {
   clip: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string | null };
+  stripe: { configured: boolean; webhook_secret_configured: boolean; webhook_url: string | null };
+  provider: 'stripe' | 'clip' | null;
   online_payment_enabled: boolean;
   payment_timeout_minutes: number;
   secrets_key_configured: boolean;

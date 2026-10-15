@@ -1,8 +1,9 @@
-// Estado del cliente de NeuronPOS Delivery en el navegador: su ubicacion,
+// Estado del cliente de Nayo en el navegador: su ubicacion,
 // su carrito (de un solo restaurante a la vez) y sus datos de contacto. Los
 // precios del carrito son un estimado: el servidor valua todo al cotizar.
 import { useSyncExternalStore } from 'react';
 import type { Point } from '../components/ZoneMap';
+import { session } from '../lib/session';
 import type { CartLine } from '../site/cart';
 
 export interface DeliveryCart { branch_id: string | null; restaurant_name: string | null; lines: CartLine[] }
@@ -48,6 +49,25 @@ export const contactStore = store<Contact>(KEYS.contact, { name: '', phone: '', 
 /** Ultimos pedidos (token y restaurante) para volver al seguimiento. */
 export const ordersStore = store<{ token: string; restaurant: string; at: string }[]>(KEYS.orders, []);
 
+/** Cliente de Nayo con sesion (el token va aparte, en session 'nayo'). */
+/** Las cuentas de Google no traen telefono hasta su primer pedido. */
+export interface NayoAccount {
+  id: string; name: string; phone: string | null; email: string;
+  /** false hasta escribir el codigo que llega por correo (sin el campo: cuenta anterior, ya confirmada). */
+  email_verified?: boolean;
+}
+export const accountStore = store<NayoAccount | null>('npd_account', null);
+
+export function signIn(token: string, customer: NayoAccount) {
+  session.setToken('nayo', token);
+  accountStore.set(customer);
+}
+
+export function signOut() {
+  session.setToken('nayo', null);
+  accountStore.set(null);
+}
+
 export const useStore = <T,>(s: { get: () => T; subscribe: (fn: () => void) => () => void }) => useSyncExternalStore(s.subscribe, s.get);
 
 let seq = 0;
@@ -68,3 +88,9 @@ export function setQuantity(key: string, quantity: number) {
 export const clearCart = () => cartStore.set({ branch_id: null, restaurant_name: null, lines: [] });
 
 export const cartTotal = (c: DeliveryCart) => Math.round(c.lines.reduce((s, l) => s + l.unit_price * l.quantity, 0) * 100) / 100;
+
+/** true cuando el cliente ya entro y confirmo su correo. */
+export function useNayoSignedIn() {
+  const account = useStore(accountStore);
+  return Boolean(account && account.email_verified !== false);
+}

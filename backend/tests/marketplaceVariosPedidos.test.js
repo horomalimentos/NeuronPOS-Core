@@ -1,19 +1,22 @@
-// NeuronPOS Delivery: un repartidor lleva hasta N pedidos a la vez (2 de
+// Nayo: un repartidor lleva hasta N pedidos a la vez (2 de
 // inicio, se cambia en el Panel) y los pedidos salen en "Pedidos en linea"
 // del POS con su estado de repartidor; desde ahi se aceptan y se marcan
 // listos, pero no "salio a reparto" (eso lo marca el repartidor).
 import { after, before, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SKIP_DB, ownerToken, setupDb } from './helpers.js';
+import { SKIP_DB, ownerToken, setupDb, nayoShopper } from './helpers.js';
 
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opens_at: '00:00', closes_at: '00:00' }));
 const CENTRO = { latitude: 31.7389, longitude: -106.4870 };
 const CERCA = { latitude: 31.7569, longitude: -106.4870 };
 
-describe('NeuronPOS Delivery: varios pedidos y POS', { skip: SKIP_DB }, () => {
+describe('Nayo: varios pedidos y POS', { skip: SKIP_DB }, () => {
   let ctx; let owner; let R; let branchId; let taco; let juan;
   const api = (token, method, path, body) => ctx.request(method, path, { token, body });
   const pub = (method, path, body) => ctx.request(method, `/api/marketplace${path}`, { body });
+  // Para pedir hay que tener cuenta de Nayo.
+  let shopper;
+  const buy = (body) => ctx.request('POST', '/api/marketplace/orders', { token: shopper, body });
   const panel = (method, path, body) => api(owner, method, `/api/platform${path}`, body);
   const fleet = (method, path, body) => api(juan.token, method, `/api/fleet${path}`, body);
   const posOrders = async () => {
@@ -22,7 +25,7 @@ describe('NeuronPOS Delivery: varios pedidos y POS', { skip: SKIP_DB }, () => {
     return r.body.orders;
   };
   const newOrder = async () => {
-    const r = await pub('POST', '/orders', {
+    const r = await buy({
       branch_id: branchId, items: [{ menu_item_id: taco.id, quantity: 2 }], location: CERCA,
       customer: { name: 'Maria Lopez', phone: '656 123 4567' }, address: { address: 'Calle Uno 123' }, pay_with: 200,
     });
@@ -32,6 +35,7 @@ describe('NeuronPOS Delivery: varios pedidos y POS', { skip: SKIP_DB }, () => {
 
   before(async () => {
     ctx = await setupDb();
+    shopper = await nayoShopper(ctx, { name: 'Maria Lopez', email: 'maria@cliente.test', phone: '6561234567', password: 'clave-cliente-1' });
     owner = await ownerToken(ctx);
     const r = await pub('POST', '/restaurants', {
       name: 'Tacos Pepa', phone: '6561112222', address: 'Av. Juarez 100', location: CENTRO,
@@ -46,6 +50,7 @@ describe('NeuronPOS Delivery: varios pedidos y POS', { skip: SKIP_DB }, () => {
     taco = (await api(R.token, 'POST', '/api/pos/items', { category_id: cat.id, name: 'Taco de asada', price: 25 })).body.item;
     await api(R.token, 'PUT', `/api/branches/${branchId}/hours`, { hours: ALL_DAY });
     await api(R.token, 'PUT', `/api/marketplace/listings/${branchId}`, { published: true });
+    await panel('POST', `/marketplace/listings/${branchId}/approval`, { status: 'aprobado' });
     const d = await pub('POST', '/drivers', { name: 'Juan', email: 'juan@moto.test', password: 'clave-segura-7', phone: '6560000000', vehicle: 'Moto', base: CERCA, radius_km: 4 });
     await panel('POST', `/marketplace/drivers/${d.body.driver.id}/review`, { status: 'aprobado' });
     await api(d.body.token, 'POST', '/api/fleet/duty', { on_duty: true });

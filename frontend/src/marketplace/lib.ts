@@ -1,6 +1,6 @@
 import type { Point } from '../components/ZoneMap';
 
-/** Reglas publicas de NeuronPOS Delivery (GET /marketplace/info). */
+/** Reglas publicas de Nayo (GET /marketplace/info). */
 export interface MarketplaceInfo {
   enabled: boolean;
   driver_share_pct: number;
@@ -28,6 +28,9 @@ export interface Listing {
   paused_until: string | null;
   blocked: boolean;
   blocked_reason: string | null;
+  /** NeuronPOS revisa cada restaurante nuevo antes de que lo vean los clientes. */
+  approval_status: 'pendiente' | 'aprobado' | 'rechazado';
+  approval_note: string | null;
   hours_days: number;
   products: number;
   missing: ('ubicacion' | 'horario' | 'menu')[];
@@ -59,6 +62,8 @@ export interface NearbyRestaurant {
   cover_url: string | null; address: string | null; prep_minutes: number; min_order: number; distance_km: number | null;
   delivery_fee: number | null; open: boolean; today: { opens_at: string; closes_at: string } | null; has_driver: boolean;
   can_order: boolean; reason: 'lejos' | 'cerrado' | 'sin_repartidor' | 'sin_ubicacion' | null;
+  /** Fotos de platillos del menu (solo en la lista de cercanos). */
+  photos?: string[];
 }
 
 export const REASON_LABEL: Record<string, string> = {
@@ -67,3 +72,20 @@ export const REASON_LABEL: Record<string, string> = {
   lejos: 'No entrega hasta tu domicilio',
   sin_ubicacion: 'Elige dónde te entregamos',
 };
+
+/** Tipos de comida para la ficha de Nayo (el cliente los ve en la lista). */
+export const CUISINES = [
+  'Tacos', 'Hamburguesas', 'Pizza', 'Sushi', 'Mariscos', 'Pollo', 'Alitas', 'Hot dogs', 'Tortas',
+  'Antojitos mexicanos', 'Comida corrida', 'Comida china', 'Comida italiana', 'Carnes y cortes',
+  'Saludable', 'Cafetería', 'Postres', 'Panadería', 'Snacks', 'Bebidas',
+];
+
+/** Emoji de cada tipo de comida para los filtros de la portada. */
+export const CUISINE_EMOJI: Record<string, string> = {
+  Tacos: '🌮', Hamburguesas: '🍔', Pizza: '🍕', Sushi: '🍣', Mariscos: '🦐', Pollo: '🍗', Alitas: '🍗', 'Hot dogs': '🌭',
+  Tortas: '🥪', 'Antojitos mexicanos': '🫔', 'Comida corrida': '🍲', 'Comida china': '🥡', 'Comida italiana': '🍝',
+  'Carnes y cortes': '🥩', Saludable: '🥗', Cafetería: '☕', Postres: '🍰', Panadería: '🥐', Snacks: '🍿', Bebidas: '🥤',
+};
+
+/** Minutos aproximados como rango, como en las apps: "25-35 min". */
+export const etaText = (prep: number) => `${prep + 10}-${prep + 20} min`;

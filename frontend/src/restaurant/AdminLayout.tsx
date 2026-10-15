@@ -1,5 +1,5 @@
 import {
-  Award, BarChart3, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessageSquareWarning, Monitor, Printer, Receipt,
+  Award, BarChart3, BellRing, Boxes, Bike, Gift, Building2, CalendarHeart, ChefHat, ClipboardCheck, Clock, CreditCard, Globe, Contact, LayoutDashboard, LayoutGrid, LogOut, Menu, MessageCircle, MessagesSquare, PiggyBank, MessageSquareWarning, Monitor, Printer, Receipt,
   Settings, ShoppingBag, HeartHandshake, Store, TabletSmartphone, Trophy, Truck, UtensilsCrossed, Users, Wallet, X,
 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -9,9 +9,11 @@ import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { applyBranding } from '../lib/branding';
 import { getNative } from '../lib/native';
+import { isOfflineError, meCache, useOfflineQueue } from '../lib/offline';
 import { disablePush } from '../lib/push';
 import { ROLE_LABEL, formatDay, formatMXN } from '../lib/format';
 import { session } from '../lib/session';
+import { stopNativeAlerts } from '../lib/nativeAlerts';
 import { invCan } from '../inventory/lib';
 import ApprovalPinButton from '../pos/ApprovalPin';
 import { posCan, setSessionCapabilities } from '../pos/lib';
@@ -26,16 +28,31 @@ export default function AdminLayout() {
   const [menuOpen, setMenuOpen] = useState(false);
   const hasToken = Boolean(session.getToken('restaurant'));
   const waPending = useWhatsAppPending(me);
+  const chatUnread = useChatUnread(me, location.pathname);
+  // Caja sin internet: sube sola las ventas pendientes desde cualquier pantalla.
+  const offlineEnabled = Boolean(me && !me.restaurant.access_error && me.modules.find((m) => m.code === 'sin_internet')?.enabled
+    && posCan.cashier(me.user.role));
+  const offlinePending = useOfflineQueue(offlineEnabled).sales.length;
 
   const reload = useCallback(() => {
+    const show = (m: Me) => {
+      setSessionCapabilities(m.capabilities);
+      setMe(m);
+      applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
+      document.title = `${m.restaurant.name} · NeuronPOS`;
+    };
     api<Me>('/me')
       .then((m) => {
-        setSessionCapabilities(m.capabilities);
-        setMe(m);
-        applyBranding(m.restaurant.primary_color, m.restaurant.secondary_color);
-        document.title = `${m.restaurant.name} · NeuronPOS`;
+        show(m);
+        // Con caja sin internet, el panel abre aunque se caiga la conexion.
+        if (m.modules.find((x) => x.code === 'sin_internet')?.enabled) meCache.save(m);
+        else meCache.clear();
       })
-      .catch((e) => setError(errorMessage(e)));
+      .catch((e) => {
+        const cached = isOfflineError(e) ? meCache.load<Me>() : null;
+        if (cached) show(cached);
+        else setError(errorMessage(e));
+      });
   }, []);
   useEffect(() => { if (hasToken) reload(); }, [hasToken, reload]);
 
@@ -46,7 +63,9 @@ export default function AdminLayout() {
   const logout = async () => {
     // Este navegador deja de recibir los avisos de esta cuenta.
     await disablePush({ realm: 'restaurant' }).catch(() => {});
+    stopNativeAlerts();
     session.setToken('restaurant', null);
+    meCache.clear();
     navigate('/admin/login', { replace: true });
   };
 
@@ -60,7 +79,7 @@ export default function AdminLayout() {
   const hasPos = has('pos');
   const nav = [
     { to: '/admin', label: 'Inicio', icon: LayoutDashboard, end: true, show: !blocked },
-    { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role) },
+    { to: '/admin/pos', label: 'Vender', icon: Monitor, end: true, show: hasPos && posCan.orders(role), badge: offlinePending },
     { to: '/admin/cocina', label: 'Cocina', icon: ChefHat, end: false, show: hasPos && posCan.kitchen(role) },
     { to: '/admin/caja', label: 'Caja', icon: Wallet, end: false, show: hasPos && posCan.cashier(role) },
     { to: '/autoservicio', label: 'Kiosko', icon: TabletSmartphone, end: false, show: has('kiosko') && posCan.cashier(role) },
@@ -68,7 +87,8 @@ export default function AdminLayout() {
     { to: '/admin/reportes', label: 'Reportes', icon: BarChart3, end: false, show: hasPos && has('reportes') && posCan.manage(role) },
     { to: '/admin/clientes', label: 'Clientes', icon: HeartHandshake, end: false, show: (has('lealtad') || has('monedero')) && posCan.cashier(role) },
     { to: '/admin/inventario', label: 'Inventario', icon: Boxes, end: false, show: has('inventario') && invCan.staff(role) },
-    { to: '/admin/delivery', label: 'Delivery', icon: Store, end: false, show: has('marketplace') && posCan.manage(role) },
+    { to: '/admin/delivery/pedidos', label: 'Pedidos Nayo', icon: BellRing, end: true, show: has('marketplace') && posCan.cashier(role) },
+    { to: '/admin/delivery', label: 'Nayo', icon: Store, end: true, show: has('marketplace') && posCan.manage(role) },
     { to: '/admin/menu', label: 'Menú', icon: UtensilsCrossed, end: false, show: (hasPos || has('marketplace')) && posCan.manage(role) },
     { to: '/admin/mesas', label: 'Mesas', icon: LayoutGrid, end: false, show: hasPos && posCan.manage(role) },
     { to: '/admin/promociones', label: 'Promociones', icon: Gift, end: false, show: hasPos && has('promociones') && posCan.manage(role) },
@@ -83,6 +103,8 @@ export default function AdminLayout() {
     { to: '/admin/empleado-del-mes', label: 'Empleado del mes', icon: Award, end: false, show: has('empleado_mes') && canManage(role) },
     { to: '/admin/muro', label: 'Muro', icon: Trophy, end: false, show: has('empleado_mes') },
     { to: '/admin/sitio', label: 'Sitio web', icon: Globe, end: false, show: has('landing') && canManage(role) },
+    { to: '/admin/chat', label: 'Chat', icon: MessagesSquare, end: false, show: has('chat'), badge: chatUnread },
+    { to: '/admin/apartados', label: 'Apartados', icon: PiggyBank, end: false, show: has('apartados') },
     { to: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle, end: false, show: has('whatsapp') && posCan.cashier(role), badge: waPending },
     { to: '/admin/quejas', label: 'Quejas', icon: MessageSquareWarning, end: false, show: has('quejas') && canManage(role) },
     { to: '/admin/pedidos-en-linea', label: 'Pedidos en línea', icon: ShoppingBag, end: false, show: has('portal') && canManage(role) },
@@ -170,6 +192,21 @@ function useWhatsAppPending(me: Me | null) {
     return () => clearInterval(t);
   }, [enabled]);
   return enabled ? count : 0;
+}
+
+/** Mensajes nuevos del chat del equipo (se revisa cada minuto; en el chat no se cuenta). */
+function useChatUnread(me: Me | null, path: string) {
+  const [count, setCount] = useState(0);
+  const enabled = Boolean(me && !me.restaurant.access_error && me.modules.find((m) => m.code === 'chat')?.enabled);
+  const inChat = path.startsWith('/admin/chat');
+  useEffect(() => {
+    if (!enabled || inChat) return undefined;
+    const load = () => { api<{ unread: number }>('/chat/unread').then((r) => setCount(r.unread)).catch(() => {}); };
+    load();
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [enabled, inChat]);
+  return enabled && !inChat ? count : 0;
 }
 
 /** Aviso de pago pendiente o vencido (admin y gerente). */

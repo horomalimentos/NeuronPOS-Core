@@ -8,8 +8,11 @@
 //   GET /api/public/plans    pagina principal de NeuronPOS: modulos activos
 //                            con su precio mensual de catalogo y dias de
 //                            prueba (no requiere restaurante).
+//   GET /api/public/maps     llave de navegador de Google Maps (o null para
+//                            usar OpenStreetMap). No requiere restaurante.
 import { Router } from 'express';
 import pool, { withTenant } from '../config/database.js';
+import { env } from '../config/env.js';
 import { publicLimiter } from '../middleware/rateLimits.js';
 import { loadModuleRow, requireModule } from '../middleware/requireModule.js';
 import { requireTenant } from '../middleware/tenant.js';
@@ -26,6 +29,10 @@ async function readContent(db, restaurantId) {
   const { rows } = await db.query('SELECT content FROM site_content WHERE restaurant_id = $1', [restaurantId]);
   return withDefaults(rows[0]?.content);
 }
+
+router.get('/maps', (req, res) => {
+  res.json({ google_maps_key: env.googleMapsApiKey || null });
+});
 
 const TRIAL_DAYS = parseInt(process.env.TRIAL_DAYS, 10) || 14;
 

@@ -11,8 +11,8 @@ import SignupShell from './SignupShell';
 import ZoneFields from './ZoneFields';
 
 /**
- * Registro de repartidor de NeuronPOS Delivery: datos, vehiculo, epicentro y
- * km a la redonda. Queda en revision hasta que NeuronPOS lo aprueba; mientras
+ * Registro de repartidor de Nayo: datos, vehiculo, epicentro y
+ * km a la redonda. Queda en revision hasta que Nayo lo aprueba; mientras
  * puede entrar a su app (/repartidor) y ver el estado.
  */
 export default function DriverSignupPage() {
@@ -27,7 +27,7 @@ export default function DriverSignupPage() {
 
   useEffect(() => {
     resetBranding();
-    document.title = 'Reparte con NeuronPOS Delivery';
+    document.title = 'Reparte con Nayo';
     api<MarketplaceInfo>('/marketplace/info', { noRedirect: true }).then(setInfo).catch(() => {});
   }, []);
 
@@ -49,8 +49,8 @@ export default function DriverSignupPage() {
   }
 
   return (
-    <SignupShell icon={<Bike className="h-8 w-8" />} title="Reparte con NeuronPOS"
-      subtitle={`Sin mensualidad · te quedas con el ${info?.driver_share_pct ?? 80} % de cada envío`}>
+    <SignupShell icon={<Bike className="h-8 w-8" />} title="Reparte con Nayo"
+      subtitle={info ? `Sin mensualidad · te quedas con el ${info.driver_share_pct} % de cada envío` : 'Sin mensualidad · conéctate cuando quieras'}>
       <form onSubmit={submit} className="space-y-5">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Nombre completo">
@@ -84,8 +84,9 @@ export default function DriverSignupPage() {
           </Field>
         </div>
         <p className="text-xs text-gray-500">
-          NeuronPOS revisa tu registro antes de que puedas conectarte. En pedidos en efectivo cobras al cliente, pagas la
-          comida en el restaurante y te quedas con el envío; la parte de NeuronPOS se te descuenta de los pedidos con tarjeta.
+          Nayo revisa tu registro antes de que puedas conectarte. En pedidos en efectivo pagas la comida en el restaurante,
+          cobras al cliente y te quedas con el envío; la parte de Nayo se te descuenta de tu saldo. Con tarjeta pagas la
+          comida y te la abonamos junto con tu envío.
         </p>
         {error && <Alert>{error}</Alert>}
         <Button type="submit" loading={busy} className="w-full">Registrarme</Button>

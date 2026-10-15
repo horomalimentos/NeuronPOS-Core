@@ -1,12 +1,18 @@
 import { ArrowLeft, Bike, Check, ChefHat, Clock, CreditCard, PackageCheck, Phone, Store, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
+import InstallApp from '../components/InstallApp';
+import { NayoLogo } from '../components/NayoLogo';
+import { PushBell, PushFab } from '../components/PushBell';
+import { useNayoFavicon } from '../components/useNayoFavicon';
 import { Alert, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
 import OrderChat from './OrderChat';
+import { accountStore, useStore } from './customer';
+import { nayoPath } from './nayoUrl';
 
 type Status = 'pago_pendiente' | 'nuevo' | 'aceptado' | 'listo' | 'en_camino' | 'entregado' | 'rechazado' | 'cancelado';
 interface Tracked {
@@ -29,9 +35,11 @@ const STEPS: { key: Status; label: string; Icon: typeof Check }[] = [
 const POLL_MS = 15000;
 const PAY_POLL_MS = 4000;
 
-/** Seguimiento del pedido de NeuronPOS Delivery (/delivery/pedido/:token). */
+/** Seguimiento del pedido de Nayo (/nayo/pedido/:token). */
 export default function TrackPage() {
+  const account = useStore(accountStore);
   const { token = '' } = useParams();
+  useNayoFavicon();
   const [params] = useSearchParams();
   const back = params.get('pago');
   const [o, setO] = useState<Tracked | null>(null);
@@ -43,7 +51,7 @@ export default function TrackPage() {
   }, [token]);
   useEffect(() => {
     resetBranding();
-    document.title = 'Tu pedido · NeuronPOS Delivery';
+    document.title = 'Tu pedido · Nayo';
     load();
   }, [load]);
   // Esperando el pago: se consulta mas seguido (el servidor concilia con Clip).
@@ -58,7 +66,13 @@ export default function TrackPage() {
   return (
     <div className="min-h-screen bg-gray-950">
       <div className="mx-auto max-w-lg px-4 py-6">
-        <Link to="/delivery" className="mb-4 inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> NeuronPOS Delivery</Link>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <Link to={nayoPath()} className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-white"><ArrowLeft className="h-4 w-4" /> <NayoLogo size="sm" /></Link>
+          <div className="flex items-center gap-2">
+            <InstallApp />
+            {account && <PushBell target={{ realm: 'nayo', app: 'cliente' }} label />}
+          </div>
+        </div>
         {!o ? (error ? <Alert>{error}</Alert> : <Spinner />) : (
           <div className="space-y-4">
             <section className="card p-5">
@@ -74,7 +88,7 @@ export default function TrackPage() {
               {paying && (
                 <div className="mt-3 space-y-2 text-sm">
                   <p className="text-gray-300">
-                    {back === 'ok' ? 'Estamos confirmando tu pago con Clip…'
+                    {back === 'ok' ? 'Estamos confirmando tu pago…'
                       : back === 'error' || back === 'cancelado' ? 'El pago no se completó. Puedes intentarlo otra vez.'
                         : 'Tu pedido se envía al restaurante en cuanto se confirma el pago.'}
                   </p>
@@ -124,6 +138,7 @@ export default function TrackPage() {
           </div>
         )}
       </div>
+      {account && <PushFab target={{ realm: 'nayo', app: 'cliente' }} text="Avísame cómo va mi pedido" className="bottom-6 right-4" />}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 3): el repartidor y el dinero.
+// Nayo (fase 3): el repartidor y el dinero.
 //
 // - Pedidos disponibles para un repartidor: aceptados o listos, sin
 //   repartidor, del restaurante dentro de su radio. Los de efectivo no se le
@@ -6,16 +6,19 @@
 // - Tomar, recoger (paga la comida en el restaurante) y entregar.
 // - Al entregar: efectivo -> adeudo de la parte de NeuronPOS del envio;
 //   tarjeta -> abono de la comida que pago + su parte del envio.
-// - Ligas de Clip de la plataforma: pedido con tarjeta y pago de adeudo.
-//   Como en services/clip/reconcile.js, el webhook solo dispara la consulta
-//   server-to-server a Clip; el pago se aplica una sola vez (applied_at).
-import { withFleetDriver, withPlatform } from '../config/database.js';
+// - Ligas de la cuenta de la plataforma (Stripe o Clip, platformGateway.js):
+//   pedido con tarjeta y pago de adeudo. Como en services/clip/reconcile.js,
+//   el webhook solo dispara la consulta server-to-server al proveedor; el
+//   pago se aplica una sola vez (applied_at).
+import { asTenant, withFleetDriver, withPlatform } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, badRequest, notFound } from '../utils/http.js';
-import { createClipClient, hasCheckoutCredentials, platformClipCredentials } from './clip/client.js';
-import { checkoutMismatch, normalizeClipStatus, rawStatusOf } from './clip/status.js';
+import { lockOrderRow, settleAtDoor } from './delivery/tenant.js';
 import { driverCovers, getMarketplaceSettings } from './marketplace.js';
-import { platformWebhookUrl } from './urls.js';
+import { acceptOnlineOrder } from './online.js';
+import {
+  createPlatformCheckout, fetchPlatformCheckout, paymentReference, platformPaymentsAvailable,
+} from './platformGateway.js';
 
 const conflict = (msg, code) => new HttpError(409, msg, code);
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -24,7 +27,7 @@ export const ACTIVE = ['aceptado', 'listo', 'en_camino'];
 /** Sitio de la plataforma (neuronpos.app) para regresar de Clip. */
 export const platformSiteUrl = () => (process.env.PLATFORM_SITE_URL || `https://${env.platformDomain}`).replace(/\/+$/, '');
 
-export const cardPaymentsAvailable = () => hasCheckoutCredentials(platformClipCredentials());
+export const cardPaymentsAvailable = platformPaymentsAvailable;
 
 export async function driverBalance(db, driverId) {
   return Number((await db.query(
@@ -56,6 +59,7 @@ const ORDER_SELECT = `
     JOIN orders o ON o.id = m.order_id
     LEFT JOIN marketplace_listings l ON l.branch_id = m.branch_id`;
 
+const point = (lat, lng) => (lat === null || lat === undefined ? null : { latitude: Number(lat), longitude: Number(lng) });
 const mapsUrl = (lat, lng) => `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 
 /** Resumen sin datos del cliente (pedidos disponibles). */
@@ -73,6 +77,8 @@ function offerView(m) {
     collect: m.payment_method === 'efectivo' ? m.total : '0.00',
     estimated_ready_at: m.estimated_ready_at,
     created_at: m.created_at,
+    // Punto del restaurante para el mapa de la app del repartidor.
+    pickup: point(m.r_lat, m.r_lng),
   };
 }
 
@@ -88,6 +94,9 @@ function jobView(m) {
     address: m.address,
     reference: m.reference,
     dropoff_maps_url: mapsUrl(m.latitude, m.longitude),
+    dropoff_waze_url: `https://waze.com/ul?ll=${m.latitude},${m.longitude}&navigate=yes`,
+    pickup_waze_url: m.r_lat === null ? null : `https://waze.com/ul?ll=${m.r_lat},${m.r_lng}&navigate=yes`,
+    dropoff: point(m.latitude, m.longitude),
     pay_with: m.pay_with,
     change: m.payment_method === 'efectivo' && m.pay_with ? round2(Number(m.pay_with) - Number(m.total)) : null,
     total: m.total,
@@ -107,11 +116,21 @@ export async function driverBoard(driverId) {
     const balance = await driverBalance(db, driverId);
     const blocked = cashBlocked(balance, settings.driver_debt_limit);
     const mine = (await db.query(`${ORDER_SELECT} WHERE m.driver_id = $1 AND m.status = ANY($2::text[]) ORDER BY m.assigned_at`, [driverId, ACTIVE])).rows;
-    const today = (await db.query(
+    const earned = (since) => db.query(
       `SELECT count(*)::int AS deliveries, coalesce(sum(driver_share), 0)::numeric(10,2) AS earned
-         FROM marketplace_orders WHERE driver_id = $1 AND status = 'entregado' AND delivered_at > now() - interval '18 hours'`,
+         FROM marketplace_orders WHERE driver_id = $1 AND status = 'entregado' AND delivered_at > now() - $2::interval`,
+      [driverId, since],
+    ).then((r) => r.rows[0]);
+    const today = await earned('18 hours');
+    const week = await earned('7 days');
+    // Entregas recientes para el historial de la app.
+    const recent = (await db.query(
+      `SELECT m.id, o.folio, r.name AS restaurant_name, m.payment_method, m.driver_share, m.delivered_at
+         FROM marketplace_orders m JOIN restaurants r ON r.id = m.restaurant_id JOIN orders o ON o.id = m.order_id
+        WHERE m.driver_id = $1 AND m.status = 'entregado' AND m.delivered_at > now() - interval '18 hours'
+        ORDER BY m.delivered_at DESC LIMIT 30`,
       [driverId],
-    )).rows[0];
+    )).rows;
     let available = [];
     const maxOrders = Number(settings.driver_max_orders);
     if (d.status === 'aprobado' && d.active && d.on_duty && mine.length < maxOrders && d.base_latitude !== null) {
@@ -127,6 +146,8 @@ export async function driverBoard(driverId) {
       cash_blocked: blocked,
       card_payments: cardPaymentsAvailable(),
       today,
+      week,
+      recent,
       max_orders: maxOrders,
       active: mine.map(jobView),
       available: available.map(offerView),
@@ -198,6 +219,18 @@ export async function pickUpOrder(driverId, orderId) {
         WHERE id = $1 AND restaurant_id = $2`,
       [m.order_id, m.restaurant_id],
     );
+    // El repartidor paga la comida al recoger: la orden queda pagada y el
+    // efectivo entra al turno de caja abierto de la sucursal (si hay uno).
+    await asTenant(db, m.restaurant_id, async (tdb) => {
+      const session = (await tdb.query(
+        `SELECT id FROM cash_sessions WHERE restaurant_id = $1 AND branch_id = $2 AND status = 'abierta'
+          ORDER BY opened_at DESC LIMIT 1`,
+        [m.restaurant_id, m.branch_id],
+      )).rows[0];
+      await settleAtDoor(tdb, m.restaurant_id, await lockOrderRow(tdb, m.restaurant_id, m.order_id), {
+        marketplaceOrderId: m.id, cashSessionId: session?.id ?? null,
+      });
+    });
     return jobView(await lockOrder(db, m.id));
   });
 }
@@ -214,7 +247,7 @@ export async function deliverOrder(driverId, orderId) {
         await db.query(
           `INSERT INTO marketplace_driver_ledger (driver_id, marketplace_order_id, kind, amount, note)
            VALUES ($1, $2, 'comision_efectivo', $3, $4) ON CONFLICT DO NOTHING`,
-          [driverId, m.id, -Number(m.platform_share), `Pedido #${m.folio} ${m.restaurant_name}: parte de NeuronPOS del envío`],
+          [driverId, m.id, -Number(m.platform_share), `Pedido #${m.folio} ${m.restaurant_name}: parte de Nayo del envío`],
         );
       }
     } else {
@@ -241,23 +274,25 @@ export async function driverLedger(driverId) {
 }
 
 // ---------------------------------------------------------------------------
-// Ligas de Clip de la plataforma
+// Ligas de la cuenta de la plataforma (Stripe o Clip)
 // ---------------------------------------------------------------------------
 
 async function createLink(db, { purpose, amount, description, back, orderId = null, driverId = null }) {
-  const creds = platformClipCredentials();
-  if (!hasCheckoutCredentials(creds)) throw badRequest('El pago con tarjeta no esta disponible por ahora', 'PAYMENT_UNAVAILABLE');
-  const link = await createClipClient(creds).createCheckout({
+  if (!platformPaymentsAvailable()) throw badRequest('El pago con tarjeta no esta disponible por ahora', 'PAYMENT_UNAVAILABLE');
+  const link = await createPlatformCheckout({
     amount,
     description,
-    redirect: { success: `${back}?pago=ok`, error: `${back}?pago=error`, default: `${back}?pago=cancelado` },
-    webhookUrl: platformWebhookUrl(),
+    back,
     metadata: { tipo: `delivery_${purpose}`, marketplace_order_id: orderId, driver_id: driverId },
+    // Un pedido con tarjeta no espera mas de 30 min a que paguen (ver abajo).
+    ttlMs: purpose === 'pedido' ? 30 * 60000 : undefined,
   });
   return (await db.query(
-    `INSERT INTO marketplace_checkouts (purpose, marketplace_order_id, driver_id, checkout_id, payment_url, amount, expires_at, response_data)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
-    [purpose, orderId, driverId, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw)],
+    `INSERT INTO marketplace_checkouts (purpose, marketplace_order_id, driver_id, checkout_id, payment_url, amount, expires_at,
+                                        response_data, provider)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [purpose, orderId, driverId, link.checkout_id, link.payment_url, amount, link.expires_at, JSON.stringify(link.raw),
+      link.provider],
   )).rows[0];
 }
 
@@ -272,8 +307,8 @@ export async function createOrderCheckout(marketplaceOrderId) {
     const row = await createLink(db, {
       purpose: 'pedido',
       amount: Number(m.total),
-      description: `NeuronPOS Delivery - ${m.name}`,
-      back: `${platformSiteUrl()}/delivery/pedido/${m.public_token}`,
+      description: `Nayo - ${m.name}`,
+      back: `${platformSiteUrl()}/nayo/pedido/${m.public_token}`,
       orderId: m.id,
     });
     return { payment_url: row.payment_url, expires_at: row.expires_at };
@@ -290,15 +325,15 @@ export async function createDebtCheckout(driverId, amount = null) {
     const min = Math.min(10, debt);
     if (!Number.isFinite(pay) || pay < min || pay > debt) throw badRequest(`Paga de $${min.toFixed(2)} a $${debt.toFixed(2)}`, 'INVALID_AMOUNT');
     const row = await createLink(db, {
-      purpose: 'adeudo', amount: pay, description: 'NeuronPOS Delivery - pago de adeudo', back: `${platformSiteUrl()}/repartidor`, driverId,
+      purpose: 'adeudo', amount: pay, description: 'Nayo - pago de adeudo', back: `${platformSiteUrl()}/repartidor`, driverId,
     });
     return { payment_url: row.payment_url, amount: pay, expires_at: row.expires_at };
   });
 }
 
-/** Lo que pasa cuando Clip confirma un pago. Regresa { late }. */
+/** Lo que pasa cuando el proveedor confirma un pago. Regresa { late }. */
 async function applyCheckout(db, c, data) {
-  const reference = String(data?.transaction_id || data?.receipt_no || c.checkout_id).slice(0, 200);
+  const reference = String(paymentReference(data) || c.checkout_id).slice(0, 200);
   if (c.purpose === 'adeudo') {
     await db.query(
       `INSERT INTO marketplace_driver_ledger (driver_id, kind, amount, note, checkout_id)
@@ -308,36 +343,39 @@ async function applyCheckout(db, c, data) {
     return { late: false };
   }
   const m = (await db.query('SELECT id, status, order_id, restaurant_id FROM marketplace_orders WHERE id = $1 FOR UPDATE', [c.marketplace_order_id])).rows[0];
-  // Pagado despues de cancelar: hay que reembolsar en el panel de Clip.
+  // Pagado despues de cancelar: hay que reembolsar en el panel del proveedor.
   if (!m || m.status !== 'pago_pendiente') return { late: true };
   await db.query("UPDATE marketplace_orders SET status = 'nuevo', paid_at = now(), updated_at = now() WHERE id = $1", [m.id]);
   await db.query(
     'UPDATE orders SET online_payment_status = NULL, payment_due_at = NULL, updated_at = now() WHERE id = $1 AND restaurant_id = $2',
     [m.order_id, m.restaurant_id],
   );
+  // Pagado con tarjeta: entra aceptado y a cocina, sin esperar a que el
+  // restaurante toque "Aceptar" (si no puede surtirlo, lo cancela en caja).
+  const listing = (await db.query(
+    'SELECT l.prep_minutes FROM marketplace_orders m JOIN marketplace_listings l ON l.branch_id = m.branch_id WHERE m.id = $1', [m.id],
+  )).rows[0];
+  await acceptOnlineOrder(db, m.restaurant_id, m.order_id, { prepMinutes: listing?.prep_minutes ?? 25 });
   return { late: false };
 }
 
-/** Concilia una liga con Clip (server-to-server) y aplica el pago una vez. */
+/** Concilia una liga con su proveedor (server-to-server) y aplica el pago una vez. */
 export async function reconcileMarketplaceCheckout(local) {
-  const creds = platformClipCredentials();
-  if (!hasCheckoutCredentials(creds)) return { status: local.status, applied: false };
-  const data = await createClipClient(creds).getCheckout(local.checkout_id);
-  if (!data) {
+  const fetched = await fetchPlatformCheckout(local);
+  if (fetched === undefined) return { status: local.status, applied: false };
+  if (!fetched) {
     await withPlatform((db) => db.query('UPDATE marketplace_checkouts SET last_checked_at = now() WHERE id = $1', [local.id]));
     return { status: local.status, applied: false };
   }
-  const mismatch = checkoutMismatch(local, data);
+  const { data, status, mismatch, reference: ref } = fetched;
   if (mismatch) {
-    console.error(`[Delivery Clip] ${local.checkout_id}: la respuesta de Clip no coincide (${mismatch})`);
+    console.error(`[Nayo] ${local.checkout_id}: la respuesta del proveedor no coincide (${mismatch})`);
     return { status: local.status, applied: false, mismatch };
   }
-  const status = normalizeClipStatus(rawStatusOf(data), data);
   return withPlatform(async (db) => {
     const row = (await db.query('SELECT * FROM marketplace_checkouts WHERE id = $1 FOR UPDATE', [local.id])).rows[0];
     if (!row) return { status, applied: false };
     const next = row.status === 'completed' ? 'completed' : status;
-    const ref = data.transaction_id || data.receipt_no || null;
     await db.query(
       `UPDATE marketplace_checkouts SET status = $2, response_data = $3, last_checked_at = now(),
               clip_reference = coalesce($4, clip_reference), updated_at = now() WHERE id = $1`,

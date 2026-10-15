@@ -1,4 +1,4 @@
-import { Receipt, Wallet } from 'lucide-react';
+import { Copy, Landmark, Receipt, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Alert, Button, Field, Modal, Spinner } from '../components/ui';
 import { errorMessage, platformApi } from '../lib/api';
@@ -6,7 +6,7 @@ import { formatMXN } from '../lib/format';
 
 interface Balance {
   id: string; name: string; phone: string; status: string; on_duty: boolean; balance: string; entries: number;
-  last_entry_at: string | null; deliveries: number;
+  last_entry_at: string | null; deliveries: number; bank_name: string | null; bank_clabe: string | null; bank_holder: string | null;
 }
 interface Entry { id: string; kind: string; amount: string; note: string | null; created_at: string; created_by_name: string | null }
 interface PanelOrder {
@@ -17,7 +17,7 @@ interface PanelOrder {
 }
 
 const LEDGER_KIND_LABEL: Record<string, string> = {
-  comision_efectivo: 'Parte de NeuronPOS (efectivo)',
+  comision_efectivo: 'Parte de Nayo (efectivo)',
   abono_tarjeta: 'Abono pedido con tarjeta',
   pago_clip: 'Pagó con tarjeta',
   pago_efectivo: 'Pagó en efectivo',
@@ -66,7 +66,11 @@ export function DriverAccountsCard() {
                 const blocked = b < 0 && -b >= data.debt_limit;
                 return (
                   <tr key={d.id}>
-                    <td className="py-3 pr-3"><div className="font-medium text-white">{d.name}</div><div className="text-xs text-gray-400">{d.phone}</div></td>
+                    <td className="py-3 pr-3">
+                      <div className="font-medium text-white">{d.name}</div><div className="text-xs text-gray-400">{d.phone}</div>
+                      {d.bank_clabe ? <div className="text-xs text-gray-500">{d.bank_name} · CLABE {d.bank_clabe}</div>
+                        : <div className="text-xs text-amber-300/80">Sin datos bancarios</div>}
+                    </td>
                     <td className="py-3 pr-3 text-gray-300">{d.deliveries}</td>
                     <td className={`py-3 pr-3 text-right font-medium ${b < 0 ? 'text-amber-300' : b > 0 ? 'text-emerald-300' : 'text-gray-400'}`}>
                       {b < 0 ? `Debe ${formatMXN(-b)}` : b > 0 ? `A favor ${formatMXN(b)}` : '—'}
@@ -82,6 +86,25 @@ export function DriverAccountsCard() {
       )}
       {open && <LedgerModal driver={open} onClose={() => setOpen(null)} onChange={load} />}
     </section>
+  );
+}
+
+/** Datos para depositarle al repartidor, con boton para copiar la CLABE. */
+function BankBox({ driver }: { driver: Balance }) {
+  const [copied, setCopied] = useState(false);
+  if (!driver.bank_clabe) return <Alert kind="warning">Todavía no captura sus datos bancarios en su app (menú › Datos bancarios).</Alert>;
+  const copy = () => { void navigator.clipboard?.writeText(driver.bank_clabe!).then(() => setCopied(true)); };
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-gray-950/60 p-3 text-sm">
+      <div className="flex items-start gap-2">
+        <Landmark className="mt-0.5 h-4 w-4 text-gray-400" />
+        <div>
+          <div className="font-mono text-base text-white">{driver.bank_clabe}</div>
+          <div className="text-gray-400">{driver.bank_name} · {driver.bank_holder}</div>
+        </div>
+      </div>
+      <Button variant="secondary" className="px-3 py-1.5" onClick={copy}><Copy className="h-4 w-4" /> {copied ? 'Copiada' : 'Copiar CLABE'}</Button>
+    </div>
   );
 }
 
@@ -115,6 +138,7 @@ function LedgerModal({ driver, onClose, onChange }: { driver: Balance; onClose: 
     <Modal title={`Cuenta de ${driver.name}`} onClose={onClose} wide>
       {!data ? <Spinner /> : (
         <div className="space-y-4">
+          <BankBox driver={driver} />
           <p className={`text-xl font-semibold ${b < 0 ? 'text-amber-300' : 'text-white'}`}>
             {b < 0 ? `Debe ${formatMXN(-b)}` : b > 0 ? `Se le deben ${formatMXN(b)}` : 'Sin saldo'}
           </p>
@@ -179,7 +203,7 @@ export function MarketplaceOrdersCard() {
           ))}
         </div>
       </div>
-      {filter === 'reembolsar' && <p className="mb-3 text-sm text-gray-400">Pagados con tarjeta y luego rechazados o cancelados: reembólsalos desde el panel de Clip con la referencia.</p>}
+      {filter === 'reembolsar' && <p className="mb-3 text-sm text-gray-400">Pagados con tarjeta y luego rechazados o cancelados: reembólsalos desde el panel de Stripe o Clip con la referencia.</p>}
       {error && <div className="mb-3"><Alert>{error}</Alert></div>}
       {!rows ? <Spinner /> : rows.length === 0 ? <p className="py-6 text-center text-sm text-gray-500">Sin pedidos.</p> : (
         <div className="overflow-x-auto">

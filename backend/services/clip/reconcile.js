@@ -4,8 +4,8 @@
 // Ni el webhook ni la pagina de resultado confian en lo que les llega: solo
 // disparan esta funcion, que pregunta a Clip server-to-server
 // (GET /v2/checkout/{id}) con las credenciales DUENAS del checkout:
-//   - suscripcion -> cuenta de Clip de la plataforma
-//   - pedido y recarga (monedero) -> cuenta de Clip del restaurante del checkout
+//   - suscripcion -> cuenta de la plataforma (Stripe o Clip, platformGateway.js)
+//   - pedido y recarga (monedero) -> cuenta del restaurante del checkout (Stripe o Clip)
 // Valida id, monto y moneda, normaliza el estado y, si esta pagado, aplica el
 // pago una sola vez (applied_at, con la fila bloqueada).
 //
@@ -13,7 +13,9 @@
 // suscripcion; el de un restaurante solo busca, con RLS de ese restaurante,
 // checkouts de sus pedidos. Un webhook de A nunca toca nada de B.
 import { withPlatform, withTenant } from '../../config/database.js';
-import { createClipClient, hasCheckoutCredentials, platformClipCredentials } from './client.js';
+import { fetchPlatformCheckout, paymentReference, stripeMismatch } from '../platformGateway.js';
+import { createStripeClient, normalizeStripeStatus } from '../stripe/client.js';
+import { createClipClient, hasCheckoutCredentials } from './client.js';
 import { checkoutMismatch, normalizeClipStatus, rawStatusOf } from './status.js';
 
 // Importes diferidos: subscriptions.js y restaurantPayments.js tambien usan
@@ -29,9 +31,40 @@ const runIn = (checkout) => (checkout.purpose === 'suscripcion'
   : (fn) => withTenant(checkout.restaurant_id, fn));
 
 async function credentialsFor(checkout) {
-  if (checkout.purpose === 'suscripcion') return platformClipCredentials();
   const { loadRestaurantClipCredentials } = await import('../restaurantPayments.js');
   return loadRestaurantClipCredentials(checkout.restaurant_id);
+}
+
+/**
+ * Estado del checkout en su proveedor. Suscripcion: cuenta de la plataforma
+ * (Stripe o Clip, segun la liga). Pedido y recarga: cuenta del restaurante
+ * (Stripe o Clip, segun la liga).
+ * undefined = sin credenciales; null = el proveedor no respondio.
+ */
+async function fetchCheckout(local) {
+  if (local.purpose === 'suscripcion') return fetchPlatformCheckout(local);
+  let creds;
+  try {
+    creds = await credentialsFor(local);
+  } catch (err) {
+    console.error(`[ClipReconciler] credenciales ilegibles para ${local.checkout_id}:`, err.message);
+    return undefined;
+  }
+  if (local.provider === 'stripe') {
+    if (!creds.stripeSecretKey) return undefined;
+    const data = await createStripeClient({ secretKey: creds.stripeSecretKey }).getCheckout(local.checkout_id);
+    if (!data) return null;
+    return { data, mismatch: stripeMismatch(local, data), status: normalizeStripeStatus(data), reference: paymentReference(data) };
+  }
+  if (!hasCheckoutCredentials(creds)) return undefined;
+  const data = await createClipClient(creds).getCheckout(local.checkout_id);
+  if (!data) return null;
+  return {
+    data,
+    mismatch: checkoutMismatch(local, data),
+    status: normalizeClipStatus(rawStatusOf(data), data),
+    reference: paymentReference(data),
+  };
 }
 
 /** Busca un checkout por el id de Clip dentro del alcance del webhook. */
@@ -54,27 +87,18 @@ export async function findCheckout(scope, checkoutId) {
  * { status, applied, late, mismatch? }.
  */
 export async function reconcileLocalCheckout(local, { now = new Date() } = {}) {
-  let creds;
-  try {
-    creds = await credentialsFor(local);
-  } catch (err) {
-    console.error(`[ClipReconciler] credenciales ilegibles para ${local.checkout_id}:`, err.message);
-    return { status: local.status, applied: false };
-  }
-  if (!hasCheckoutCredentials(creds)) return { status: local.status, applied: false };
-
-  const data = await createClipClient(creds).getCheckout(local.checkout_id);
   const run = runIn(local);
-  if (!data) {
+  const fetched = await fetchCheckout(local);
+  if (fetched === undefined) return { status: local.status, applied: false };
+  if (!fetched) {
     await run((db) => db.query('UPDATE clip_checkouts SET last_checked_at = now() WHERE id = $1', [local.id]));
     return { status: local.status, applied: false };
   }
-  const mismatch = checkoutMismatch(local, data);
+  const { data, status, mismatch, reference: ref } = fetched;
   if (mismatch) {
-    console.error(`[ClipReconciler] ${local.checkout_id}: la respuesta de Clip no coincide (${mismatch})`);
+    console.error(`[ClipReconciler] ${local.checkout_id}: la respuesta del proveedor no coincide (${mismatch})`);
     return { status: local.status, applied: false, mismatch };
   }
-  const status = normalizeClipStatus(rawStatusOf(data), data);
   const apply = status === 'completed' ? await appliers[local.purpose]() : null;
 
   const result = await run(async (db) => {
@@ -83,7 +107,6 @@ export async function reconcileLocalCheckout(local, { now = new Date() } = {}) {
     // Un pago confirmado no regresa a otro estado; una liga que expiro
     // localmente si puede pasar a completed (se pago despues).
     const next = row.status === 'completed' ? 'completed' : status;
-    const ref = data.transaction_id || data.receipt_no || null;
     await db.query(
       `UPDATE clip_checkouts SET status = $2, response_data = $3, last_checked_at = now(),
               clip_reference = coalesce($4, clip_reference), updated_at = now()

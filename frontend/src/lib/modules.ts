@@ -1,4 +1,4 @@
-import { BarChart3, Boxes, CalendarHeart, ChefHat, CreditCard, DollarSign, Gift, HeartHandshake, Wallet, Bike, Globe, Monitor, MonitorSmartphone, Star, Store, Users, type LucideIcon, ShoppingBag, Package, TabletSmartphone } from 'lucide-react';
+import { BarChart3, Boxes, CalendarHeart, ChefHat, CreditCard, DollarSign, Gift, HeartHandshake, Wallet, Bike, Globe, Monitor, MonitorSmartphone, Star, Store, Users, type LucideIcon, ShoppingBag, Package, TabletSmartphone, MessagesSquare, PiggyBank, CloudOff } from 'lucide-react';
 
 export const MODULE_ICONS: Record<string, LucideIcon> = {
   pos: Monitor,
@@ -19,6 +19,9 @@ export const MODULE_ICONS: Record<string, LucideIcon> = {
   kiosko: TabletSmartphone,
   dispositivos: MonitorSmartphone,
   eventos: CalendarHeart,
+  chat: MessagesSquare,
+  apartados: PiggyBank,
+  sin_internet: CloudOff,
 };
 
 export const moduleIcon = (code: string): LucideIcon => MODULE_ICONS[code] || Package;

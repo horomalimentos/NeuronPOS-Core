@@ -64,12 +64,13 @@ ${footer ? `<p style="margin:24px 0 0;font-size:12px;color:#78716c">${escapeHtml
 
 /**
  * Manda un correo. Nunca lanza: regresa { sent, error? }.
- * message = { to, subject, text, html?, fromName?, replyTo? }
+ * message = { to, subject, text, html?, fromName?, replyTo?, from? }
+ * from: remitente completo (p. ej. los correos de Nayo); si no, MAIL_FROM.
  */
-export async function sendEmail({ to, subject, text, html, fromName, replyTo }) {
+export async function sendEmail({ to, subject, text, html, fromName, replyTo, from }) {
   if (!to) return { sent: false, error: 'sin destinatario' };
   const message = {
-    from: fromName ? { name: cleanName(fromName), address: fromAddress() } : env.mailFrom,
+    from: from || (fromName ? { name: cleanName(fromName), address: fromAddress() } : env.mailFrom),
     to,
     subject: String(subject || '').replace(/[\r\n]+/g, ' ').slice(0, 200),
     text,

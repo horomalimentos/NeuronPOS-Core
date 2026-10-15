@@ -11,7 +11,7 @@ interface Settings {
   enabled: boolean; driver_share_pct: string; food_commission_pct: string; max_distance_km: string;
   driver_debt_limit: string; driver_max_radius_km: string; driver_max_orders: number;
 }
-interface Summary { pending_drivers: number; online_drivers: number; approved_drivers: number; published_listings: number; listings: number }
+interface Summary { pending_drivers: number; pending_listings: number; online_drivers: number; approved_drivers: number; published_listings: number; listings: number }
 interface Driver {
   id: string; name: string; phone: string; email: string; vehicle: string | null; plate: string | null; on_duty: boolean;
   status: DriverStatus; self_registered: boolean; base: Point | null; radius_km: number | null; review_note: string | null; created_at: string;
@@ -20,12 +20,26 @@ interface PanelListing {
   restaurant_id: string; restaurant_name: string; slug: string; contact_phone: string | null; branch_id: string; branch_name: string;
   address: string | null; location: Point | null; cuisine: string | null; published: boolean; paused_until: string | null;
   blocked: boolean; blocked_reason: string | null; created_at: string;
+  approval_status: ListingApproval; approval_note: string | null; contact_name: string | null; contact_email: string | null;
+  bank_name: string | null; bank_clabe: string | null; bank_holder: string | null;
+}
+type ListingApproval = 'pendiente' | 'aprobado' | 'rechazado';
+
+/** Datos bancarios del restaurante (CLABE completa para transferir). */
+function BankCell({ l }: { l: PanelListing }) {
+  if (!l.bank_clabe) return <span className="text-xs text-gray-500">Sin datos</span>;
+  return (
+    <div className="text-xs">
+      <div className="select-all font-mono text-gray-200">{l.bank_clabe}</div>
+      <div className="text-gray-400">{l.bank_name} · {l.bank_holder}</div>
+    </div>
+  );
 }
 
 const mapsLink = (p: Point) => `https://www.google.com/maps?q=${p.latitude},${p.longitude}`;
 
 /**
- * Panel › Delivery: reglas de NeuronPOS Delivery (reparto del envio entre
+ * Panel › Delivery: reglas de Nayo (reparto del envio entre
  * repartidor y NeuronPOS, comision, distancias, tope de adeudo), la tabla de
  * envio por km, la aprobacion de repartidores, sus cuentas, los pedidos y
  * las fichas de restaurantes.
@@ -43,8 +57,9 @@ export default function MarketplacePage() {
   const s = data.summary;
   return (
     <>
-      <PageHeader title="NeuronPOS Delivery" subtitle="Plataforma local de pedidos: sin mensualidad para restaurantes ni repartidores." />
-      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-4">
+      <PageHeader title="Nayo" subtitle="Plataforma local de pedidos: sin mensualidad para restaurantes ni repartidores." />
+      <div className="mb-6 grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <Tile label="Restaurantes por aprobar" value={s.pending_listings} warn={s.pending_listings > 0} />
         <Tile label="Repartidores por aprobar" value={s.pending_drivers} warn={s.pending_drivers > 0} />
         <Tile label="Repartidores en turno" value={s.online_drivers} />
         <Tile label="Repartidores aprobados" value={s.approved_drivers} />
@@ -54,10 +69,10 @@ export default function MarketplacePage() {
         <SettingsCard settings={data.settings} onSaved={load} />
         <TiersCard tiers={data.fee_tiers} share={Number(data.settings.driver_share_pct)} onSaved={load} />
       </div>
+      <ListingsCard pending={s.pending_listings} onChange={load} />
       <DriversCard onChange={load} />
       <DriverAccountsCard />
       <MarketplaceOrdersCard />
-      <ListingsCard />
     </>
   );
 }
@@ -111,7 +126,7 @@ function SettingsCard({ settings, onSaved }: { settings: Settings; onSaved: () =
       <div className="flex items-center justify-between">
         <h2 className="font-semibold text-white">Reglas</h2>
         <label className="flex items-center gap-2 text-sm text-gray-300">
-          <Toggle label="Delivery activo" checked={f.enabled} onChange={(v) => { setF({ ...f, enabled: v }); setNotice(''); }} />
+          <Toggle label="Nayo activo" checked={f.enabled} onChange={(v) => { setF({ ...f, enabled: v }); setNotice(''); }} />
           {f.enabled ? 'Activo' : 'Apagado'}
         </label>
       </div>
@@ -249,7 +264,7 @@ function DriversCard({ onChange }: { onChange: () => void }) {
         <p className="py-6 text-center text-sm text-gray-500">{filter === 'pendiente' ? 'No hay registros por aprobar.' : 'Sin repartidores.'}</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
               <tr><th className="py-2">Repartidor</th><th>Vehículo</th><th>Zona</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
@@ -297,54 +312,107 @@ function DriversCard({ onChange }: { onChange: () => void }) {
   );
 }
 
-function ListingsCard() {
+const LISTING_FILTERS: { key: ListingApproval | ''; label: string }[] = [
+  { key: 'pendiente', label: 'Por aprobar' }, { key: 'aprobado', label: 'Aprobados' }, { key: '', label: 'Todos' },
+];
+
+/**
+ * Restaurantes de Nayo. Los que se registran quedan "Por aprobar" y los
+ * clientes no los ven hasta que se aprueban aqui; uno aprobado se puede
+ * ocultar (bloquear) si hay quejas.
+ */
+function ListingsCard({ pending, onChange }: { pending: number; onChange: () => void }) {
+  const [filter, setFilter] = useState<ListingApproval | ''>(pending > 0 ? 'pendiente' : '');
   const [rows, setRows] = useState<PanelListing[] | null>(null);
   const [error, setError] = useState('');
+  const [busy, setBusy] = useState('');
   const load = useCallback(() => {
-    platformApi<{ listings: PanelListing[] }>('/platform/marketplace/listings').then((r) => setRows(r.listings)).catch((e) => setError(errorMessage(e)));
-  }, []);
+    platformApi<{ listings: PanelListing[] }>(`/platform/marketplace/listings${filter ? `?status=${filter}` : ''}`)
+      .then((r) => setRows(r.listings)).catch((e) => setError(errorMessage(e)));
+  }, [filter]);
   useEffect(load, [load]);
 
-  async function block(l: PanelListing, blocked: boolean) {
+  async function run(l: PanelListing, path: string, body: object) {
+    setBusy(l.branch_id);
+    setError('');
+    try {
+      await platformApi(`/platform/marketplace/listings/${l.branch_id}/${path}`, { method: 'POST', body });
+      load();
+      onChange();
+    } catch (e) { setError(errorMessage(e)); }
+    setBusy('');
+  }
+
+  function review(l: PanelListing, status: 'aprobado' | 'rechazado') {
+    let note: string | null = null;
+    if (status === 'rechazado') {
+      note = window.prompt(`¿Por qué se rechaza a ${l.restaurant_name}? (lo verá en su panel)`);
+      if (!note) return;
+    }
+    void run(l, 'approval', { status, note });
+  }
+
+  function block(l: PanelListing, blocked: boolean) {
     const reason = blocked ? window.prompt(`¿Por qué se oculta ${l.restaurant_name}? (lo verá en su panel)`) : null;
     if (blocked && !reason) return;
-    try {
-      await platformApi(`/platform/marketplace/listings/${l.branch_id}/block`, { method: 'POST', body: { blocked, reason } });
-      load();
-    } catch (e) { setError(errorMessage(e)); }
+    void run(l, 'block', { blocked, reason });
   }
 
   return (
     <section className="card mt-6 p-5">
-      <h2 className="mb-4 flex items-center gap-2 font-semibold text-white"><Store className="h-5 w-5 text-brand" /> Restaurantes</h2>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex items-center gap-2 font-semibold text-white"><Store className="h-5 w-5 text-brand" /> Restaurantes</h2>
+        <div className="flex gap-1">
+          {LISTING_FILTERS.map((x) => (
+            <button key={x.label} type="button" onClick={() => setFilter(x.key)}
+              className={`rounded-lg px-3 py-1.5 text-sm ${filter === x.key ? 'bg-gray-800 text-white' : 'text-gray-400 hover:text-white'}`}>{x.label}</button>
+          ))}
+        </div>
+      </div>
       {error && <div className="mb-3"><Alert>{error}</Alert></div>}
-      {!rows ? <Spinner /> : rows.length === 0 ? <p className="py-6 text-center text-sm text-gray-500">Aún no se registra ningún restaurante.</p> : (
+      {!rows ? <Spinner /> : rows.length === 0 ? (
+        <p className="py-6 text-center text-sm text-gray-500">{filter === 'pendiente' ? 'No hay restaurantes por aprobar.' : 'Aún no se registra ningún restaurante.'}</p>
+      ) : (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[860px] text-sm">
             <thead className="text-left text-xs uppercase tracking-wider text-gray-500">
-              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Alta</th><th>Estado</th><th className="text-right" /></tr>
+              <tr><th className="py-2">Restaurante</th><th>Ubicación</th><th>Datos bancarios</th><th>Registro</th><th>Estado</th><th className="text-right">Acciones</th></tr>
             </thead>
             <tbody className="divide-y divide-gray-800">
               {rows.map((l) => (
-                <tr key={l.branch_id}>
+                <tr key={l.branch_id} className="align-top">
                   <td className="py-3 pr-3">
                     <div className="font-medium text-white">{l.restaurant_name}</div>
-                    <div className="text-xs text-gray-400">{l.branch_name}{l.cuisine && ` · ${l.cuisine}`}{l.contact_phone && ` · ${l.contact_phone}`}</div>
+                    <div className="text-xs text-gray-400">{l.branch_name}{l.cuisine && ` · ${l.cuisine}`}</div>
+                    <div className="text-xs text-gray-500">{[l.contact_name, l.contact_phone, l.contact_email].filter(Boolean).join(' · ')}</div>
                   </td>
                   <td className="py-3 pr-3 text-gray-300">
                     {l.location ? <a href={mapsLink(l.location)} target="_blank" rel="noreferrer" className="text-sky-300 hover:underline">{l.address || 'Ver mapa'}</a> : '—'}
                   </td>
+                  <td className="py-3 pr-3"><BankCell l={l} /></td>
                   <td className="py-3 pr-3 text-gray-400">{formatDate(l.created_at)}</td>
                   <td className="py-3 pr-3">
-                    {l.blocked ? <span className="text-red-300">Bloqueado{l.blocked_reason && `: ${l.blocked_reason}`}</span>
-                      : l.published ? <span className="text-emerald-300">Publicado</span> : <span className="text-gray-400">Sin publicar</span>}
+                    {l.approval_status === 'pendiente' ? <span className="text-amber-300">Por aprobar</span>
+                      : l.approval_status === 'rechazado' ? <span className="text-red-300">Rechazado</span>
+                      : l.blocked ? <span className="text-red-300">Bloqueado</span>
+                      : l.published ? <span className="text-emerald-300">Publicado</span> : <span className="text-gray-400">Aprobado, sin publicar</span>}
+                    {l.approval_status === 'rechazado' && l.approval_note && <div className="mt-1 max-w-[12rem] text-xs text-gray-500">{l.approval_note}</div>}
+                    {l.approval_status === 'aprobado' && l.blocked && l.blocked_reason && <div className="mt-1 max-w-[12rem] text-xs text-gray-500">{l.blocked_reason}</div>}
                   </td>
-                  <td className="py-3 text-right">
-                    {l.blocked ? (
-                      <Button variant="ghost" className="px-3 py-1.5" onClick={() => void block(l, false)}><ShieldCheck className="h-4 w-4" /> Desbloquear</Button>
-                    ) : (
-                      <Button variant="ghost" className="px-3 py-1.5" onClick={() => void block(l, true)}><ShieldAlert className="h-4 w-4" /> Ocultar</Button>
-                    )}
+                  <td className="py-3">
+                    <div className="flex justify-end gap-1">
+                      {l.approval_status !== 'aprobado' && (
+                        <Button className="px-3 py-1.5" loading={busy === l.branch_id} onClick={() => review(l, 'aprobado')}><Check className="h-4 w-4" /> Aprobar</Button>
+                      )}
+                      {l.approval_status === 'pendiente' && (
+                        <Button variant="ghost" className="px-3 py-1.5" disabled={busy === l.branch_id} onClick={() => review(l, 'rechazado')}><X className="h-4 w-4" /> Rechazar</Button>
+                      )}
+                      {l.approval_status === 'aprobado' && (l.blocked ? (
+                        <Button variant="ghost" className="px-3 py-1.5" disabled={busy === l.branch_id} onClick={() => block(l, false)}><ShieldCheck className="h-4 w-4" /> Desbloquear</Button>
+                      ) : (
+                        <Button variant="ghost" className="px-3 py-1.5" disabled={busy === l.branch_id} onClick={() => block(l, true)}><ShieldAlert className="h-4 w-4" /> Ocultar</Button>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}

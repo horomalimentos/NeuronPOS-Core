@@ -46,7 +46,16 @@ public class MainActivity extends Activity {
     private static final String UPDATE_URL = "https://" + Config.PLATFORM_DOMAIN + "/api/descargas/android/latest-" + BuildConfig.NEURON_MODE + ".json";
     private static final int REQ_BLUETOOTH = 7;
     static final boolean IS_KDS = "kds".equals(BuildConfig.NEURON_MODE);
-    private static final String START_PATH = IS_KDS ? "/admin/cocina" : "/admin/pos";
+    // Apps de Nayo: Restaurante (en el sistema del restaurante) y Repartidor (elnayo.com).
+    static final boolean IS_NAYO_REST = "nayorest".equals(BuildConfig.NEURON_MODE);
+    static final boolean IS_NAYO_REP = "nayorep".equals(BuildConfig.NEURON_MODE);
+    static final boolean IS_NAYO = IS_NAYO_REST || IS_NAYO_REP;
+    private static final String NAYO_SITE = "https://elnayo.com";
+    private static final String START_PATH = IS_KDS ? "/admin/cocina"
+        : IS_NAYO_REST ? "/admin/delivery/pedidos"
+        : IS_NAYO_REP ? "/repartidor" : "/admin/pos";
+    static final String EXTRA_PATH = "path";
+    private static final int REQ_NOTIFICATIONS = 8;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newCachedThreadPool();
@@ -84,11 +93,31 @@ public class MainActivity extends Activity {
         web.addJavascriptInterface(new SetupBridge(), "NeuronSetup");
         web.setWebViewClient(new Client());
 
-        String url = Config.url(this);
+        String url = baseUrl();
         if (url.isEmpty()) web.loadUrl(SETUP_URL);
-        else web.loadUrl(url + START_PATH);
+        else web.loadUrl(url + startPath(getIntent()));
         if (IS_KDS) hideSystemBars();
+        if (IS_NAYO) AlertService.resume(this);
         checkUpdates();
+    }
+
+    /** Origen del sistema: el restaurante configurado o, en el Repartidor, elnayo.com. */
+    private String baseUrl() {
+        return IS_NAYO_REP ? NAYO_SITE : Config.url(this);
+    }
+
+    /** Ruta a abrir: la del aviso tocado (solo rutas internas) o la de inicio. */
+    private static String startPath(Intent i) {
+        String p = i == null ? null : i.getStringExtra(EXTRA_PATH);
+        return p != null && p.startsWith("/") && !p.startsWith("//") ? p : START_PATH;
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        String p = intent.getStringExtra(EXTRA_PATH);
+        String url = baseUrl();
+        if (p != null && !url.isEmpty()) web.loadUrl(url + startPath(intent));
     }
 
     private void hideSystemBars() {
@@ -114,7 +143,7 @@ public class MainActivity extends Activity {
     // -----------------------------------------------------------------------
 
     private boolean isRestaurant(String url) {
-        String origin = Config.origin(Config.url(this));
+        String origin = Config.origin(baseUrl());
         return !origin.isEmpty() && origin.equals(Config.origin(url));
     }
 
@@ -198,6 +227,9 @@ public class MainActivity extends Activity {
                 printers.put("comanda", Printer.configured(c));
                 out.put("printers", printers);
                 out.put("drawer", Printer.configured(t) && t.optBoolean("drawer", false));
+                // Apps de Nayo: el sonido de pedidos lo hace la app (AlertService).
+                out.put("alerts", IS_NAYO);
+                out.put("alertsOn", IS_NAYO && AlertService.active(MainActivity.this));
             } catch (Exception ignored) {
                 // put() solo falla con claves nulas
             }
@@ -246,6 +278,85 @@ public class MainActivity extends Activity {
         public void openSettings() {
             if (!allowed()) return;
             main.post(() -> web.loadUrl(SETUP_URL));
+        }
+
+        // ---- Apps de Nayo: avisos con sonido propio y encima de otras apps ----
+
+        /** La pagina (con sesion) entrega el token de /api/alertas; la app queda atenta. */
+        @JavascriptInterface
+        public void startAlerts(String token, int everySeconds) {
+            if (!allowed() || !IS_NAYO || token == null || token.isEmpty()) return;
+            String api = Config.origin(baseUrl());
+            main.post(() -> {
+                AlertService.start(MainActivity.this, api, token, everySeconds);
+                askAlertPermissions();
+            });
+        }
+
+        /** Al cerrar sesion (o salir de turno el repartidor). */
+        @JavascriptInterface
+        public void stopAlerts() {
+            if (!allowed() || !IS_NAYO) return;
+            main.post(() -> AlertService.stop(MainActivity.this));
+        }
+
+        /** El repartidor salto ese pedido: deja de sonarle. */
+        @JavascriptInterface
+        public void skipAlert(String id) {
+            if (!allowed() || !IS_NAYO || id == null) return;
+            main.post(() -> AlertService.skip(MainActivity.this, id));
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Permisos de las apps de Nayo: notificaciones, encima de otras apps y
+    // sin ahorro de bateria (para que no se duerma). Se piden una vez.
+    // -----------------------------------------------------------------------
+
+    private void askAlertPermissions() {
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[] {Manifest.permission.POST_NOTIFICATIONS}, REQ_NOTIFICATIONS);
+            return; // al responder sigue con los demas
+        }
+        askOverlayAndBattery();
+    }
+
+    private void askOverlayAndBattery() {
+        android.content.SharedPreferences sp = getSharedPreferences("nayo_permisos", MODE_PRIVATE);
+        if (Build.VERSION.SDK_INT >= 23 && !android.provider.Settings.canDrawOverlays(this) && !sp.getBoolean("overlay", false)) {
+            sp.edit().putBoolean("overlay", true).apply();
+            new AlertDialog.Builder(this)
+                .setTitle("Que los pedidos salgan encima")
+                .setMessage("Para que el aviso de pedido nuevo aparezca aunque estés en otra app, activa \"Mostrar sobre otras apps\" para " + getString(R.string.app_name) + ".")
+                .setPositiveButton("Activar", (d, w) -> {
+                    try {
+                        startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+                    } catch (Exception ignored) {
+                        // sin pantalla de ajustes
+                    }
+                })
+                .setNegativeButton("Después", null)
+                .show();
+            return;
+        }
+        android.os.PowerManager pm = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+        if (Build.VERSION.SDK_INT >= 23 && pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName()) && !sp.getBoolean("battery", false)) {
+            sp.edit().putBoolean("battery", true).apply();
+            try {
+                startActivity(new Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:" + getPackageName())));
+            } catch (Exception ignored) {
+                // el fabricante no tiene esta pantalla
+            }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Al volver de los ajustes de "encima de otras apps" sigue con la bateria.
+        if (IS_NAYO && AlertService.active(this) && Build.VERSION.SDK_INT >= 23
+            && getSharedPreferences("nayo_permisos", MODE_PRIVATE).getBoolean("overlay", false)) {
+            askOverlayAndBattery();
         }
     }
 
@@ -401,13 +512,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void cancel() {
             if (!allowed()) return;
-            String url = Config.url(MainActivity.this);
+            String url = baseUrl();
             if (!url.isEmpty()) main.post(() -> web.loadUrl(url + START_PATH));
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        if (requestCode == REQ_NOTIFICATIONS) {
+            askOverlayAndBattery();
+            return;
+        }
         if (requestCode != REQ_BLUETOOTH) return;
         boolean granted = grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED;
         callback(pendingBluetoothCb, granted ? obj("ok", true) : obj("error", "Sin permiso de Bluetooth no se pueden usar impresoras Bluetooth"));

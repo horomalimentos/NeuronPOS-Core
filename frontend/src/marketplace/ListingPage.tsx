@@ -1,4 +1,4 @@
-import { Check, AlertCircle, Clock, Eye, EyeOff, PauseCircle, PlayCircle, ShieldAlert, Store } from 'lucide-react';
+import { Bell, Check, AlertCircle, ChevronRight, Clock, Eye, EyeOff, PauseCircle, PlayCircle, ShieldAlert, Store } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import ZoneMap, { MapTools, type Point } from '../components/ZoneMap';
@@ -6,16 +6,20 @@ import { Alert, Button, Field, PageHeader, Spinner } from '../components/ui';
 import { api, errorMessage } from '../lib/api';
 import { formatMXN } from '../lib/format';
 import { formatTime } from '../pos/lib';
-import DeliveryOrders from './DeliveryOrders';
+import ImageInput from '../components/ImageInput';
+import CuisineSelect from './CuisineSelect';
 import type { Listing } from './lib';
+import RestaurantBankCard from './RestaurantBankCard';
 
 /**
- * Ficha del restaurante en NeuronPOS Delivery (modulo marketplace): por
+ * Ficha del restaurante en Nayo (modulo marketplace): por
  * sucursal, ubicacion, descripcion, tiempo de preparacion y pedido minimo;
  * publicar u ocultar y pausar pedidos un rato. Para publicar hacen falta
- * ubicacion, horario y al menos un producto en el menu.
+ * ubicacion, horario y al menos un producto en el menu, y los clientes solo
+ * la ven cuando NeuronPOS aprobo el registro (Panel › Nayo).
  */
-export default function ListingPage() {
+/** base: rutas de la app (Nayo Partner usa /partner/...). */
+export default function ListingPage({ base = '/admin' }: { base?: string } = {}) {
   const [listings, setListings] = useState<Listing[] | null>(null);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -25,30 +29,56 @@ export default function ListingPage() {
 
   return (
     <>
-      <PageHeader title="NeuronPOS Delivery" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
+      <PageHeader title="Nayo" subtitle="Tu restaurante en la plataforma de pedidos local. Sin mensualidad." />
       {error && <Alert>{error}</Alert>}
-      {listings?.some((l) => l.published) && <DeliveryOrders />}
+      {listings?.some((l) => l.published) && <OrdersScreenLink to={base === '/admin' ? '/admin/delivery/pedidos' : `${base}/pedidos`} />}
       {!listings ? (!error && <Spinner />) : (
         <div className="space-y-6">
-          {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} />)}
+          {listings.map((l) => <ListingCard key={l.branch_id} listing={l} onChange={replace} base={base} />)}
+          <RestaurantBankCard />
         </div>
       )}
     </>
   );
 }
 
+/** Acceso a la pantalla de pedidos (tipo Uber Eats), con los que esperan respuesta. */
+function OrdersScreenLink({ to }: { to: string }) {
+  const [waiting, setWaiting] = useState(0);
+  useEffect(() => {
+    api<{ orders: { status: string }[] }>('/marketplace/orders')
+      .then((r) => setWaiting(r.orders.filter((o) => o.status === 'nuevo').length)).catch(() => {});
+  }, []);
+  return (
+    <Link to={to}
+      className={`card mb-6 flex items-center gap-4 p-5 transition hover:bg-gray-800/60 ${waiting ? 'border-amber-600/70' : ''}`}>
+      <Bell className={`h-8 w-8 shrink-0 ${waiting ? 'text-amber-300' : 'text-brand'}`} />
+      <div className="mr-auto">
+        <p className="text-lg font-semibold text-white">Pantalla de pedidos</p>
+        <p className="text-sm text-gray-400">
+          {waiting ? <span className="font-semibold text-amber-300">{waiting} pedido{waiting > 1 ? 's' : ''} esperando respuesta. </span> : null}
+          Ábrela en la tablet del mostrador: suena cuando entra un pedido y ahí lo aceptas, lo marcas listo y ves al repartidor.
+        </p>
+      </div>
+      <ChevronRight className="h-6 w-6 text-gray-500" />
+    </Link>
+  );
+}
+
 function stateOf(l: Listing): { label: string; style: string } {
+  if (l.approval_status === 'rechazado') return { label: 'Registro rechazado', style: 'bg-red-500/15 text-red-300 ring-red-500/40' };
   if (l.blocked) return { label: 'Bloqueado por NeuronPOS', style: 'bg-red-500/15 text-red-300 ring-red-500/40' };
+  if (l.approval_status === 'pendiente') return { label: 'En revisión', style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
   if (!l.published) return { label: 'Sin publicar', style: 'bg-gray-500/15 text-gray-300 ring-gray-500/40' };
   if (l.paused_until) return { label: `En pausa hasta las ${formatTime(l.paused_until)}`, style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
   if (!l.visible) return { label: 'Publicado, pero incompleto', style: 'bg-amber-500/15 text-amber-300 ring-amber-500/40' };
   return { label: 'Visible para los clientes', style: 'bg-emerald-500/15 text-emerald-300 ring-emerald-500/40' };
 }
 
-function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l: Listing) => void }) {
+function ListingCard({ listing: l, onChange, base }: { listing: Listing; onChange: (l: Listing) => void; base: string }) {
   const [location, setLocation] = useState<Point | null>(l.location);
   const [form, setForm] = useState({
-    cuisine: l.cuisine || '', description: l.description || '', prep: String(l.prep_minutes), minOrder: String(Number(l.min_order)),
+    cuisine: l.cuisine || '', description: l.description || '', cover: l.cover_url || '', prep: String(l.prep_minutes), minOrder: String(Number(l.min_order)),
   });
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
@@ -68,15 +98,15 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
   };
   const put = (body: Record<string, unknown>) => api<{ listing: Listing }>(`/marketplace/listings/${l.branch_id}`, { method: 'PUT', body });
   const save = () => run('save', () => put({
-    location: location ?? undefined, cuisine: form.cuisine || null, description: form.description || null,
+    location: location ?? undefined, cuisine: form.cuisine || null, description: form.description || null, cover_url: form.cover || null,
     prep_minutes: Number(form.prep), min_order: Number(form.minOrder || 0),
   }));
   const pause = (minutes: number) => run(`pause${minutes}`, () => api<{ listing: Listing }>(`/marketplace/listings/${l.branch_id}/pause`, { method: 'POST', body: { minutes } }));
 
   const steps = [
     { ok: !l.missing.includes('ubicacion'), label: 'Ubicación en el mapa', hint: 'Abajo, en esta misma ficha' },
-    { ok: !l.missing.includes('horario'), label: 'Horario', hint: 'Sucursales › Horario', to: '/admin/sucursales' },
-    { ok: !l.missing.includes('menu'), label: l.products ? `Menú (${l.products} productos)` : 'Menú', hint: 'Sube al menos un producto', to: '/admin/menu' },
+    { ok: !l.missing.includes('horario'), label: 'Horario', hint: base === '/admin' ? 'Sucursales › Horario' : 'Abre Horario', to: base === '/admin' ? '/admin/sucursales' : `${base}/horario` },
+    { ok: !l.missing.includes('menu'), label: l.products ? `Menú (${l.products} productos)` : 'Menú', hint: 'Sube al menos un producto', to: `${base}/menu` },
   ];
 
   return (
@@ -86,7 +116,16 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ring-1 ${state.style}`}>{state.label}</span>
       </div>
 
-      {l.blocked && (
+      {l.approval_status === 'pendiente' && (
+        <div className="flex items-start gap-2 rounded-xl border border-amber-800/60 bg-amber-950/30 px-4 py-3 text-sm text-amber-200">
+          <Clock className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>NeuronPOS está revisando tu registro. Mientras tanto completa tu ficha y publícala; los clientes la verán en cuanto te aprobemos.</span>
+        </div>
+      )}
+      {l.approval_status === 'rechazado' && (
+        <Alert><span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> {l.approval_note || 'NeuronPOS no aprobó tu registro.'} Comunícate con NeuronPOS.</span></Alert>
+      )}
+      {l.approval_status === 'aprobado' && l.blocked && (
         <Alert><span className="flex items-center gap-2"><ShieldAlert className="h-4 w-4" /> {l.blocked_reason || 'NeuronPOS ocultó tu restaurante.'} Comunícate con NeuronPOS.</span></Alert>
       )}
 
@@ -108,7 +147,7 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
           </Button>
         ) : (
           <Button loading={busy === 'pub'} disabled={l.missing.length > 0} onClick={() => void run('pub', () => put({ published: true }))}>
-            <Eye className="h-4 w-4" /> Publicar en Delivery
+            <Eye className="h-4 w-4" /> Publicar en Nayo
           </Button>
         )}
         {l.published && (l.paused_until ? (
@@ -131,7 +170,11 @@ function ListingCard({ listing: l, onChange }: { listing: Listing; onChange: (l:
           <p className="text-xs text-gray-500">Los clientes ven tu restaurante si un repartidor conectado cubre este punto.</p>
         </div>
         <div className="space-y-4">
-          <Field label="Tipo de comida"><input className="input" maxLength={60} value={form.cuisine} onChange={set('cuisine')} /></Field>
+          <div>
+            <ImageInput label="Foto de portada" value={form.cover} onChange={(cover) => { setForm((f) => ({ ...f, cover })); setSaved(false); }} />
+            <p className="mt-1 text-xs text-gray-500">La que ven los clientes en la lista de restaurantes y arriba de tu menú. Mejor horizontal, de tu comida o tu local.</p>
+          </div>
+          <Field label="Tipo de comida"><CuisineSelect value={form.cuisine} onChange={(cuisine) => setForm((f) => ({ ...f, cuisine }))} /></Field>
           <Field label="Descripción" hint="Lo que ve el cliente debajo de tu nombre">
             <textarea className="input min-h-[80px]" maxLength={500} value={form.description} onChange={set('description')} />
           </Field>

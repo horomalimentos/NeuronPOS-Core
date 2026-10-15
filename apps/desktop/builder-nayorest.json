@@ -1,0 +1,12 @@
+{
+  "appId": "com.elnayo.restaurante",
+  "productName": "Nayo Restaurante",
+  "artifactName": "NayoRestaurante-${version}-${os}.${ext}",
+  "directories": { "output": "dist/nayorest", "buildResources": "build" },
+  "files": ["src/**/*", "package.json"],
+  "extraMetadata": { "neuronMode": "nayorest", "name": "nayo-restaurante-desktop", "productName": "Nayo Restaurante" },
+  "publish": [{ "provider": "generic", "url": "https://neuronpos.app/api/descargas/nayorest" }],
+  "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "icon": "build/icon-nayorest.png", "verifyUpdateCodeSignature": false },
+  "nsis": { "oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "shortcutName": "Nayo Restaurante", "artifactName": "NayoRestaurante-Setup-${version}.${ext}" },
+  "linux": { "target": ["AppImage"], "icon": "build/icon-nayorest.png", "category": "Office" }
+}

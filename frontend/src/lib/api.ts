@@ -42,11 +42,16 @@ export function deviceToken(): string {
 }
 
 const LOGIN_PATH: Record<Realm, string> = {
-  platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor',
+  platform: '/panel/login', restaurant: '/admin/login', customer: '/cuenta/entrar', fleet: '/repartidor', nayo: '/nayo',
 };
 
-/** La app del repartidor tiene su propio login (personal del restaurante o flota). */
-const loginPath = (realm: Realm) => (window.location.pathname.startsWith('/repartidor') ? '/repartidor' : LOGIN_PATH[realm]);
+/** La app del repartidor y Nayo Partner tienen su propio login. */
+function loginPath(realm: Realm) {
+  const here = window.location.pathname;
+  if (here.startsWith('/repartidor')) return '/repartidor';
+  if (realm === 'restaurant' && here.startsWith('/partner')) return '/partner/entrar';
+  return LOGIN_PATH[realm];
+}
 
 export async function api<T>(path: string, { method = 'GET', body, file, realm = 'restaurant', noRedirect }: Options = {}): Promise<T> {
   const headers: Record<string, string> = {};
@@ -55,7 +60,7 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
   const token = session.getToken(realm);
   if (token) headers.Authorization = `Bearer ${token}`;
   const slug = session.getDevSlug();
-  if (slug && realm !== 'platform' && realm !== 'fleet') headers['X-Restaurant-Slug'] = slug;
+  if (slug && realm !== 'platform' && realm !== 'fleet' && realm !== 'nayo') headers['X-Restaurant-Slug'] = slug;
   if (realm === 'restaurant') {
     const device = deviceToken();
     if (device) headers['X-Device-Token'] = device;
@@ -84,6 +89,9 @@ export async function api<T>(path: string, { method = 'GET', body, file, realm =
 
 /** App de los repartidores de la flota de la plataforma. */
 export const fleetApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'fleet' });
+
+/** Cliente de Nayo: manda solo su token de cuenta de Nayo y nunca redirige. */
+export const nayoApi = <T,>(path: string, opts: Omit<Options, 'realm' | 'noRedirect'> = {}) => api<T>(path, { ...opts, realm: 'nayo', noRedirect: true });
 
 export const platformApi = <T,>(path: string, opts: Omit<Options, 'realm'> = {}) => api<T>(path, { ...opts, realm: 'platform' });
 

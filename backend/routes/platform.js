@@ -8,6 +8,7 @@ import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
 import { sendStaffReset } from '../services/emails.js';
 import { createResetToken } from '../services/passwordReset.js';
+import { deletePlatformSubscription, savePlatformSubscription } from '../services/platformPush.js';
 import {
   createRestaurant, getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant,
 } from '../services/restaurants.js';
@@ -84,10 +85,30 @@ async function getRestaurantDetail(db, id) {
     [id],
   );
   const invoices = await listInvoices(db, { restaurantId: id, limit: 24 });
-  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices };
+  // Fichas de Nayo: la cuenta puede estar activa y la ficha seguir por aprobar.
+  const nayo = (await db.query(
+    `SELECT l.branch_id, b.name AS branch_name, l.approval_status, l.approval_note, l.published, l.blocked
+       FROM marketplace_listings l JOIN branches b ON b.id = l.branch_id
+      WHERE l.restaurant_id = $1 ORDER BY b.name`,
+    [id],
+  )).rows;
+  return { restaurant, modules, delivery, monthly: charge, counts: counts.rows[0], invoices, nayo };
 }
 
 router.get('/me', (req, res) => res.json({ admin: req.platformAdmin }));
+
+// Avisos de la app Panel en este navegador (la llave publica es la de
+// /api/marketplace/push/key).
+router.post('/push/subscribe', ah(async (req, res) => {
+  const ok = await savePlatformSubscription((req.body || {}).subscription, req.platformAdmin.id);
+  if (!ok) throw badRequest('Suscripcion invalida', 'INVALID_SUBSCRIPTION');
+  res.status(201).json({ ok: true });
+}));
+
+router.post('/push/unsubscribe', ah(async (req, res) => {
+  await deletePlatformSubscription((req.body || {}).endpoint, req.platformAdmin.id);
+  res.json({ ok: true });
+}));
 
 // ---------------------------------------------------------------------------
 // Catalogo de modulos

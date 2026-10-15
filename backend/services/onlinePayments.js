@@ -3,7 +3,8 @@
 // - "contra_entrega": el cliente paga al recoger o al recibir (efectivo o
 //   tarjeta) y el cajero lo cobra en el POS con el flujo normal de pagos
 //   (routes/pos/orders.js), dentro de un turno de caja.
-// - "clip" (fase 3): pago en linea con la cuenta de Clip del restaurante. El
+// - "clip" (fase 3): pago en linea con la cuenta de Stripe o Clip del
+//   restaurante (el codigo se queda "clip" por compatibilidad). El
 //   pedido queda esperando el pago (no llega al POS) y el cliente va a la liga
 //   de Clip; el webhook o el reconciliador registran el pago
 //   (services/restaurantPayments.js). Solo se ofrece si el restaurante
@@ -51,7 +52,7 @@ const payOnDelivery = {
 
 const clipOnline = {
   code: 'clip',
-  name: 'Pagar en línea con Clip',
+  name: 'Pagar en línea con tarjeta',
   online: true,
   methods: [{ code: 'tarjeta', name: 'Tarjeta de crédito o débito' }],
   validate() {

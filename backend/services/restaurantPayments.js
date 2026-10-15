@@ -1,5 +1,6 @@
-// Pagos en linea de los pedidos del portal con la cuenta de Clip de CADA
-// restaurante (Fase 3).
+// Pagos en linea de los pedidos del portal con la cuenta de Clip o de Stripe
+// de CADA restaurante (Fase 3). Si el restaurante configura Stripe, las ligas
+// nuevas se crean con Stripe; si no, con Clip. Cada liga guarda su proveedor.
 //
 // - Credenciales cifradas en restaurant_payment_settings (secrets.js). La API
 //   solo dice si estan configuradas; nunca las regresa.
@@ -12,17 +13,23 @@
 import { withPlatform, withTenant } from '../config/database.js';
 import { HttpError, badRequest } from '../utils/http.js';
 import { createClipClient, hasCheckoutCredentials } from './clip/client.js';
+import { createStripeClient } from './stripe/client.js';
 import { reconcileLocalCheckout } from './clip/reconcile.js';
 import { notify } from './notifier.js';
+import { paymentReference } from './platformGateway.js';
 import { acceptOnlineOrder, getOnlineSettings } from './online.js';
 import { decryptSecret, encryptSecret, secretsAvailable } from './secrets.js';
-import { restaurantSiteUrl, restaurantWebhookUrl } from './urls.js';
+import { restaurantSiteUrl, restaurantStripeWebhookUrl, restaurantWebhookUrl } from './urls.js';
 
 const FIELDS = {
   clip_api_key: 'clip_api_key_enc',
   clip_secret_key: 'clip_secret_key_enc',
   clip_webhook_secret: 'clip_webhook_secret_enc',
+  stripe_secret_key: 'stripe_secret_key_enc',
+  stripe_webhook_secret: 'stripe_webhook_secret_enc',
 };
+// Prefijo obligatorio de cada llave de Stripe (secreta o restringida; signing secret).
+const STRIPE_PREFIX = { stripe_secret_key: /^(sk|rk)_(live|test)_/, stripe_webhook_secret: /^whsec_/ };
 // El AAD amarra cada valor a su restaurante y a su campo.
 const aad = (restaurantId, field) => `${restaurantId}:${field}`;
 
@@ -40,6 +47,13 @@ export function publicPaymentSettings(row, restaurant) {
       webhook_secret_configured: Boolean(row.clip_webhook_secret_enc),
       webhook_url: restaurant ? restaurantWebhookUrl(restaurant) : null,
     },
+    stripe: {
+      configured: Boolean(row.stripe_secret_key_enc),
+      webhook_secret_configured: Boolean(row.stripe_webhook_secret_enc),
+      webhook_url: restaurant ? restaurantStripeWebhookUrl(restaurant) : null,
+    },
+    // Con que se crean las ligas nuevas: Stripe si esta configurado.
+    provider: row.stripe_secret_key_enc ? 'stripe' : configured ? 'clip' : null,
     online_payment_enabled: row.online_payment_enabled,
     payment_timeout_minutes: row.payment_timeout_minutes,
     secrets_key_configured: secretsAvailable(),
@@ -48,31 +62,38 @@ export function publicPaymentSettings(row, restaurant) {
   };
 }
 
-export const onlinePaymentAvailable = (row) => Boolean(
-  row?.online_payment_enabled && row.clip_api_key_enc && row.clip_secret_key_enc && secretsAvailable(),
-);
+const hasGateway = (row) => Boolean(row?.stripe_secret_key_enc || (row?.clip_api_key_enc && row?.clip_secret_key_enc));
+
+export const onlinePaymentAvailable = (row) => Boolean(row?.online_payment_enabled && hasGateway(row) && secretsAvailable());
 
 const SECRET_RE = /^[\x21-\x7e]{8,300}$/;
 
 /**
  * Actualiza la configuracion. body: { clip_api_key, clip_secret_key,
- * clip_webhook_secret, remove_clip, online_payment_enabled, payment_timeout_minutes }.
- * Cadena vacia o ausente = no cambiar; remove_clip = borrar las credenciales.
+ * clip_webhook_secret, remove_clip, stripe_secret_key, stripe_webhook_secret,
+ * remove_stripe, online_payment_enabled, payment_timeout_minutes }.
+ * Cadena vacia o ausente = no cambiar; remove_* = borrar esas credenciales.
  */
 export async function updatePaymentSettings(db, restaurantId, body = {}) {
   const current = await getPaymentSettings(db, restaurantId);
   const set = {};
-  if (body.remove_clip === true) {
-    Object.assign(set, { clip_api_key_enc: null, clip_secret_key_enc: null, clip_webhook_secret_enc: null, online_payment_enabled: false });
-  } else {
-    for (const [field, column] of Object.entries(FIELDS)) {
-      const v = body[field];
-      if (v === undefined || v === null || v === '') continue;
-      if (typeof v !== 'string' || !SECRET_RE.test(v.trim())) {
-        throw badRequest(`El valor de "${field}" no parece valido (sin espacios, 8 a 300 caracteres)`, 'INVALID_FIELD');
-      }
-      set[column] = encryptSecret(v.trim(), aad(restaurantId, field));
+  const removing = (field) => (field.startsWith('clip_') ? body.remove_clip : body.remove_stripe) === true;
+  if (body.remove_clip === true) Object.assign(set, { clip_api_key_enc: null, clip_secret_key_enc: null, clip_webhook_secret_enc: null });
+  if (body.remove_stripe === true) Object.assign(set, { stripe_secret_key_enc: null, stripe_webhook_secret_enc: null });
+  for (const [field, column] of Object.entries(FIELDS)) {
+    const v = body[field];
+    if (removing(field) || v === undefined || v === null || v === '') continue;
+    if (typeof v !== 'string' || !SECRET_RE.test(v.trim())) {
+      throw badRequest(`El valor de "${field}" no parece valido (sin espacios, 8 a 300 caracteres)`, 'INVALID_FIELD');
     }
+    if (STRIPE_PREFIX[field] && !STRIPE_PREFIX[field].test(v.trim())) {
+      throw badRequest(field === 'stripe_secret_key'
+        ? 'La clave secreta de Stripe empieza con sk_live_ o sk_test_'
+        : 'El secreto del webhook de Stripe empieza con whsec_', 'INVALID_FIELD');
+    }
+    set[column] = encryptSecret(v.trim(), aad(restaurantId, field));
+  }
+  if (body.remove_clip !== true) {
     const hasKey = Boolean(set.clip_api_key_enc ?? current.clip_api_key_enc);
     const hasSecret = Boolean(set.clip_secret_key_enc ?? current.clip_secret_key_enc);
     if (hasKey !== hasSecret) {
@@ -81,8 +102,10 @@ export async function updatePaymentSettings(db, restaurantId, body = {}) {
   }
   if (body.online_payment_enabled !== undefined) {
     if (typeof body.online_payment_enabled !== 'boolean') throw badRequest('online_payment_enabled debe ser verdadero o falso', 'INVALID_FIELD');
-    set.online_payment_enabled = body.remove_clip === true ? false : body.online_payment_enabled;
+    set.online_payment_enabled = body.online_payment_enabled;
   }
+  // Sin ninguna cuenta el pago en linea se apaga solo.
+  if (!hasGateway({ ...current, ...set })) set.online_payment_enabled = false;
   if (body.payment_timeout_minutes !== undefined) {
     const n = Number(body.payment_timeout_minutes);
     if (!Number.isInteger(n) || n < 5 || n > 1440) throw badRequest('El tiempo para pagar debe ser de 5 a 1440 minutos', 'INVALID_FIELD');
@@ -91,8 +114,8 @@ export async function updatePaymentSettings(db, restaurantId, body = {}) {
   const entries = Object.entries(set);
   if (!entries.length) throw badRequest('No hay cambios', 'NO_CHANGES');
   const next = { ...current, ...set };
-  if (next.online_payment_enabled && !(next.clip_api_key_enc && next.clip_secret_key_enc)) {
-    throw badRequest('Configura tus credenciales de Clip antes de activar el pago en linea', 'CLIP_NOT_CONFIGURED');
+  if (body.online_payment_enabled === true && !hasGateway(next)) {
+    throw badRequest('Configura tu cuenta de Stripe o de Clip antes de activar el pago en linea', 'CLIP_NOT_CONFIGURED');
   }
   await db.query(
     `UPDATE restaurant_payment_settings SET ${entries.map(([k], i) => `${k} = $${i + 2}`).join(', ')}, updated_at = now()
@@ -102,15 +125,48 @@ export async function updatePaymentSettings(db, restaurantId, body = {}) {
   return getPaymentSettings(db, restaurantId);
 }
 
-/** Credenciales descifradas del restaurante (solo para hablar con Clip). */
+/**
+ * Credenciales descifradas del restaurante (solo para hablar con Clip o
+ * Stripe): { apiKey, secretKey, webhookSecret } de Clip y
+ * { stripeSecretKey, stripeWebhookSecret }.
+ */
 export function decryptClipCredentials(row) {
-  if (!row?.clip_api_key_enc) return { apiKey: '', secretKey: '', webhookSecret: '' };
-  const rid = row.restaurant_id;
+  const rid = row?.restaurant_id;
+  const dec = (column, field) => (row?.[column] ? decryptSecret(row[column], aad(rid, field)) : '');
   return {
-    apiKey: decryptSecret(row.clip_api_key_enc, aad(rid, 'clip_api_key')),
-    secretKey: decryptSecret(row.clip_secret_key_enc, aad(rid, 'clip_secret_key')),
-    webhookSecret: row.clip_webhook_secret_enc ? decryptSecret(row.clip_webhook_secret_enc, aad(rid, 'clip_webhook_secret')) : '',
+    apiKey: dec('clip_api_key_enc', 'clip_api_key'),
+    secretKey: dec('clip_secret_key_enc', 'clip_secret_key'),
+    webhookSecret: dec('clip_webhook_secret_enc', 'clip_webhook_secret'),
+    stripeSecretKey: dec('stripe_secret_key_enc', 'stripe_secret_key'),
+    stripeWebhookSecret: dec('stripe_webhook_secret_enc', 'stripe_webhook_secret'),
   };
+}
+
+/** 'stripe' | 'clip' | null: con que cuenta del restaurante se crean las ligas nuevas. */
+export const restaurantProvider = (creds) => (creds?.stripeSecretKey ? 'stripe' : hasCheckoutCredentials(creds) ? 'clip' : null);
+
+/**
+ * Liga de pago con la cuenta del restaurante (Stripe si la tiene, si no Clip).
+ * redirect: { success, error, cancel }. dueAt: hasta cuando se puede pagar
+ * (Stripe: la liga vence entonces, minimo 30 min). Regresa { provider, ...liga }.
+ */
+export async function createRestaurantCheckout(tenant, creds, { amount, description, redirect, metadata, dueAt = null }) {
+  const provider = restaurantProvider(creds);
+  if (!provider) throw new HttpError(409, 'Este restaurante no tiene configurado el pago en linea', 'ONLINE_PAYMENT_UNAVAILABLE');
+  if (provider === 'stripe') {
+    const link = await createStripeClient({ secretKey: creds.stripeSecretKey }).createCheckout({
+      amount, description, metadata,
+      redirect: { success: redirect.success, cancel: redirect.cancel },
+      ttlMs: dueAt ? new Date(dueAt).getTime() - Date.now() : undefined,
+    });
+    return { provider, ...link };
+  }
+  const link = await createClipClient(creds).createCheckout({
+    amount, description, metadata,
+    redirect: { success: redirect.success, error: redirect.error, default: redirect.cancel },
+    webhookUrl: restaurantWebhookUrl(tenant),
+  });
+  return { provider, ...link };
 }
 
 export async function loadRestaurantClipCredentials(restaurantId) {
@@ -127,22 +183,19 @@ export async function loadRestaurantClipCredentials(restaurantId) {
  * la DECISION en subscriptions.ensureInvoiceCheckout). order: fila de orders.
  */
 export async function createOrderCheckout(db, tenant, order, creds) {
-  if (!hasCheckoutCredentials(creds)) {
-    throw new HttpError(409, 'Este restaurante no tiene configurado el pago en linea', 'ONLINE_PAYMENT_UNAVAILABLE');
-  }
   const back = `${restaurantSiteUrl(tenant)}/pago/resultado?pedido=${encodeURIComponent(order.public_token)}`;
-  const link = await createClipClient(creds).createCheckout({
+  const link = await createRestaurantCheckout(tenant, creds, {
     amount: Number(order.total),
     description: `${tenant.name} - pedido #${order.folio}`,
-    redirect: { success: `${back}&r=ok`, error: `${back}&r=error`, default: `${back}&r=cancelado` },
-    webhookUrl: restaurantWebhookUrl(tenant),
+    redirect: { success: `${back}&r=ok`, error: `${back}&r=error`, cancel: `${back}&r=cancelado` },
     metadata: { tipo: 'pedido', order_id: order.id, restaurant_id: tenant.id, folio: String(order.folio) },
+    dueAt: order.payment_due_at,
   });
   const row = (await db.query(
     `INSERT INTO clip_checkouts (restaurant_id, purpose, order_id, checkout_id, payment_url, amount, currency,
-                                 expires_at, response_data)
-     VALUES ($1, 'pedido', $2, $3, $4, $5, 'MXN', $6, $7) RETURNING *`,
-    [tenant.id, order.id, link.checkout_id, link.payment_url, order.total, link.expires_at, JSON.stringify(link.raw)],
+                                 expires_at, response_data, provider)
+     VALUES ($1, 'pedido', $2, $3, $4, $5, 'MXN', $6, $7, $8) RETURNING *`,
+    [tenant.id, order.id, link.checkout_id, link.payment_url, order.total, link.expires_at, JSON.stringify(link.raw), link.provider],
   )).rows[0];
   return { action: 'redirect', url: row.payment_url, checkout_id: row.id };
 }
@@ -199,7 +252,7 @@ export async function applyOrderCheckout(db, checkout, data) {
   if (o.online_payment_status === 'pagado') return { late: true };
   if (o.status === 'cancelada') {
     // Se pago despues de cancelarse (por tiempo o por el cliente): hay que
-    // reembolsar desde el panel de Clip del restaurante.
+    // reembolsar desde el panel de Stripe o Clip del restaurante.
     return {
       late: true,
       after: async () => {
@@ -208,7 +261,7 @@ export async function applyOrderCheckout(db, checkout, data) {
       },
     };
   }
-  const reference = String(data?.transaction_id || data?.receipt_no || checkout.checkout_id).slice(0, 100);
+  const reference = String(paymentReference(data) || checkout.checkout_id).slice(0, 100);
   await db.query(
     `INSERT INTO order_payments (restaurant_id, order_id, payment_method_id, cash_session_id, amount, tip,
                                  received, change_given, reference, created_by, clip_checkout_id)

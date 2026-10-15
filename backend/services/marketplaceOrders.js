@@ -1,4 +1,4 @@
-// NeuronPOS Delivery (fase 2): restaurantes cercanos, menu, cotizacion y
+// Nayo (fase 2): restaurantes cercanos, menu, cotizacion y
 // alta del pedido del cliente.
 //
 // Un restaurante se puede pedir si su ficha esta publicada (sin bloqueo ni
@@ -47,7 +47,7 @@ async function loadCandidates(db, { branchId = null } = {}) {
        JOIN restaurants r ON r.id = l.restaurant_id
        JOIN branches b ON b.id = l.branch_id AND b.active
        LEFT JOIN restaurant_modules rm ON rm.restaurant_id = l.restaurant_id AND rm.module_code = 'marketplace'
-      WHERE l.published AND NOT l.blocked AND (l.paused_until IS NULL OR l.paused_until <= now())
+      WHERE l.published AND NOT l.blocked AND l.approval_status = 'aprobado' AND (l.paused_until IS NULL OR l.paused_until <= now())
         AND ($1::uuid IS NULL OR l.branch_id = $1)`,
     [branchId],
   );
@@ -113,7 +113,7 @@ function evaluate(c, point, { settings, tiers, drivers }) {
 
 async function context(db) {
   const settings = await getMarketplaceSettings(db);
-  if (!settings.enabled) throw conflict('NeuronPOS Delivery no esta recibiendo pedidos por ahora', 'MARKETPLACE_DISABLED');
+  if (!settings.enabled) throw conflict('Nayo no esta recibiendo pedidos por ahora', 'MARKETPLACE_DISABLED');
   return { settings, tiers: await listFeeTiers(db), drivers: await onlineDrivers(db) };
 }
 
@@ -125,8 +125,31 @@ export async function nearbyRestaurants(point) {
       .map((c) => evaluate(c, point, ctx))
       .filter((r) => r.delivery_fee !== null);
     list.sort((a, b) => Number(b.can_order) - Number(a.can_order) || a.distance_km - b.distance_km);
+    const photos = await menuPhotos(db, list.map((r) => r.restaurant_id));
+    for (const r of list) r.photos = photos.get(r.restaurant_id) || [];
     return { restaurants: list, drivers_online: ctx.drivers.length };
   });
+}
+
+/**
+ * Hasta 4 fotos de platillos por restaurante, para la tarjeta de la lista
+ * (como en las apps de reparto: se ve la comida antes de entrar).
+ */
+async function menuPhotos(db, restaurantIds) {
+  if (!restaurantIds.length) return new Map();
+  const { rows } = await db.query(
+    `SELECT restaurant_id, image_url FROM (
+       SELECT i.restaurant_id, i.image_url,
+              row_number() OVER (PARTITION BY i.restaurant_id ORDER BY c.sort_order, i.sort_order, i.name) AS n
+         FROM menu_items i
+         JOIN menu_categories c ON c.restaurant_id = i.restaurant_id AND c.id = i.category_id
+        WHERE i.restaurant_id = ANY($1::uuid[]) AND i.active AND c.active AND i.image_url IS NOT NULL AND i.image_url <> ''
+     ) x WHERE n <= 4 ORDER BY restaurant_id, n`,
+    [[...new Set(restaurantIds)]],
+  );
+  const map = new Map();
+  for (const r of rows) map.set(r.restaurant_id, [...(map.get(r.restaurant_id) || []), r.image_url]);
+  return map;
 }
 
 /** Un restaurante desde el punto del cliente (404 si no esta publicado). */
@@ -134,7 +157,7 @@ export async function restaurantFor(branchId, point) {
   return withPlatform(async (db) => {
     const ctx = await context(db);
     const [c] = await loadCandidates(db, { branchId });
-    if (!c) throw notFound('Este restaurante no esta disponible en NeuronPOS Delivery', 'LISTING_NOT_FOUND');
+    if (!c) throw notFound('Este restaurante no esta disponible en Nayo', 'LISTING_NOT_FOUND');
     return point ? evaluate(c, point, ctx) : { ...evaluate(c, c.point, ctx), distance_km: null, delivery_fee: null, can_order: false, reason: 'sin_ubicacion' };
   });
 }
@@ -163,7 +186,7 @@ export function readMarketplaceOrder(body = {}, { quote = false } = {}) {
   };
   if (!input.location) throw badRequest('Marca tu domicilio en el mapa', 'LOCATION_REQUIRED');
   if (input.payment_method === 'tarjeta') {
-    if (!cardPaymentsAvailable()) throw badRequest('Por ahora NeuronPOS Delivery solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
+    if (!cardPaymentsAvailable()) throw badRequest('Por ahora Nayo solo recibe pago en efectivo', 'PAYMENT_UNAVAILABLE');
     input.pay_with = null;
   }
   if (input.pay_with !== null && (!Number.isFinite(input.pay_with) || input.pay_with < 0 || input.pay_with > 100000)) {
@@ -252,11 +275,12 @@ export async function createMarketplaceOrder(input) {
     await db.query(
       `INSERT INTO marketplace_orders (id, restaurant_id, branch_id, order_id, public_token, customer_name, customer_phone,
                                        address, reference, latitude, longitude, distance_km, delivery_fee, driver_share,
-                                       platform_share, food_total, total, payment_method, pay_with, status)
-       VALUES ($20, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+                                       platform_share, food_total, total, payment_method, pay_with, status, customer_id)
+       VALUES ($20, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $21)`,
       [rid, place.branch_id, order.id, token, input.name, input.phone, input.address, input.reference,
         input.location.latitude, input.location.longitude, place.distance_km, fee, split.driver, split.platform,
-        final.total, round2(Number(final.total) + fee), input.payment_method, input.pay_with, card ? 'pago_pendiente' : 'nuevo', marketplaceOrderId],
+        final.total, round2(Number(final.total) + fee), input.payment_method, input.pay_with, card ? 'pago_pendiente' : 'nuevo', marketplaceOrderId,
+        input.customer_id ?? null],
     );
   });
   if (!card) return trackOrder(token);

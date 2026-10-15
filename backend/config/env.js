@@ -18,6 +18,9 @@ export const env = {
   customerJwtExpiresIn: process.env.CUSTOMER_JWT_EXPIRES_IN || '30d',
   // Dominio base de la plataforma: los restaurantes viven en <slug>.<dominio>.
   platformDomain: (process.env.PLATFORM_DOMAIN || 'localhost').toLowerCase(),
+  // Dominios propios de Nayo: sirven la plataforma, no son de un restaurante.
+  nayoDomains: (process.env.NAYO_DOMAINS || 'elnayo.com,www.elnayo.com')
+    .split(',').map((d) => d.trim().toLowerCase()).filter(Boolean),
   // Subdominios que nunca son restaurantes (panel, api, www...).
   reservedSubdomains: (process.env.RESERVED_SUBDOMAINS || 'www,app,api,admin,panel,static,cdn,mail')
     .split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
@@ -44,6 +47,11 @@ export const env = {
   clipApiUrl: (process.env.CLIP_API_URL || 'https://api.payclip.com').replace(/\/+$/, ''),
   // API de PinPad (cobro en la terminal fisica de Clip).
   clipPinpadUrl: (process.env.CLIP_PINPAD_URL || 'https://api.payclip.io/f2f/pinpad/v1/payment').replace(/\/+$/, ''),
+  // Cuenta de Stripe de la PLATAFORMA (alternativa a Clip). Llave secreta
+  // sk_live_/sk_test_ y signing secret whsec_ del webhook.
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  stripeApiUrl: (process.env.STRIPE_API_URL || 'https://api.stripe.com').replace(/\/+$/, ''),
   // Llave (32 bytes en base64 o hex) para cifrar las credenciales de Clip de cada restaurante.
   paymentSecretsKey: process.env.PAYMENT_SECRETS_KEY || '',
   // Zona horaria para fechas de cobro (dia de cobro, vencimiento, gracia).
@@ -65,10 +73,19 @@ export const env = {
   // Remitente: "NeuronPOS <no-reply@neuronpos.app>". En correos de un
   // restaurante se usa su nombre con esta misma direccion.
   mailFrom: process.env.MAIL_FROM || 'NeuronPOS <no-reply@neuronpos.app>',
+  // Los correos de Nayo salen con su propia marca y su dominio.
+  nayoMailFrom: process.env.NAYO_MAIL_FROM || 'Nayo <no-reply@elnayo.com>',
+  nayoSiteUrl: (process.env.NAYO_SITE_URL || 'https://elnayo.com').replace(/\/+$/, ''),
   // Contacto que piden los servicios de push (Apple rechaza dominios locales).
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:soporte@neuronpos.app',
   // Bot de WhatsApp: app de Meta de la plataforma (un restaurante con app
   // propia guarda su app secret en su configuracion).
+  // Llave de navegador de Google Maps (Maps JavaScript + Geocoding), restringida
+  // por dominio a neuronpos.app. Sin llave los mapas usan OpenStreetMap.
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY || '',
+  // "Continuar con Google" en Nayo: ID de cliente OAuth (tipo Aplicacion web,
+  // termina en .apps.googleusercontent.com; no es secreto). Sin el, no sale el boton.
+  googleClientId: (process.env.GOOGLE_CLIENT_ID || '').trim(),
   whatsappAppSecret: process.env.WHATSAPP_APP_SECRET || '',
   whatsappVerifyToken: process.env.WHATSAPP_VERIFY_TOKEN || '',
   whatsappGraphUrl: (process.env.WHATSAPP_GRAPH_URL || 'https://graph.facebook.com/v21.0').replace(/\/+$/, ''),

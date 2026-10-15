@@ -4,11 +4,13 @@
 //   typ = 'customer' -> cliente del portal de un restaurante. Ademas lleva
 //                       audience 'customer': se verifica con esa audiencia y
 //                       los otros tokens (sin audiencia) no pasan, ni al reves.
+//   typ = 'nayo'     -> cliente de Nayo (cuenta de la plataforma), audience
+//                       'nayo': solo sirve en las rutas de cliente de Nayo.
 //   typ = 'fleet'    -> repartidor de la flota de la plataforma (fase 5), con
 //                       audience 'fleet': solo sirve en /api/fleet.
 // Adaptado del middleware de NeuronPOS, sin sesiones en BD por ahora.
 import jwt from 'jsonwebtoken';
-import pool, { withFleetDriver, withTenant } from '../config/database.js';
+import pool, { withFleetDriver, withPlatform, withTenant } from '../config/database.js';
 import { env } from '../config/env.js';
 import { HttpError, forbidden } from '../utils/http.js';
 import { issuedBeforePasswordChange } from '../services/passwordReset.js';
@@ -36,6 +38,12 @@ export function signCustomerToken(customer) {
     env.jwtSecret,
     { expiresIn: env.customerJwtExpiresIn, audience: CUSTOMER_AUDIENCE },
   );
+}
+
+export const NAYO_AUDIENCE = 'nayo';
+
+export function signNayoToken(customer) {
+  return jwt.sign({ sub: customer.id, typ: 'nayo' }, env.jwtSecret, { expiresIn: env.customerJwtExpiresIn, audience: NAYO_AUDIENCE });
 }
 
 export const FLEET_AUDIENCE = 'fleet';
@@ -167,6 +175,28 @@ export async function optionalCustomer(req, res, next) {
   }
 }
 
+/** Cliente de Nayo (token typ nayo, audiencia 'nayo'). Deja req.nayoCustomer. */
+export async function authenticateNayo(req, res, next) {
+  try {
+    const payload = readToken(req, { audience: NAYO_AUDIENCE });
+    if (payload.typ !== 'nayo' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
+    const customer = await withPlatform(async (db) => (await db.query(
+      'SELECT id, name, phone, email, (email_verified_at IS NOT NULL) AS email_verified, active, password_changed_at FROM nayo_customers WHERE id = $1',
+      [payload.sub],
+    )).rows[0]);
+    if (!customer) throw unauthorized('Cuenta no encontrada', 'INVALID_TOKEN');
+    if (issuedBeforePasswordChange(payload, customer.password_changed_at)) {
+      throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+    }
+    delete customer.password_changed_at;
+    if (!customer.active) throw forbidden('Tu cuenta esta desactivada', 'ACCOUNT_DEACTIVATED');
+    req.nayoCustomer = customer;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
 /** Repartidor de la flota de la plataforma (token typ fleet, audiencia 'fleet'). */
 export async function authenticateFleet(req, res, next) {
   try {
@@ -174,10 +204,14 @@ export async function authenticateFleet(req, res, next) {
     if (payload.typ !== 'fleet' || !payload.sub) throw unauthorized('Token invalido', 'INVALID_TOKEN');
     const driver = await withFleetDriver(payload.sub, async (db) => (await db.query(
       `SELECT id, name, email, phone, vehicle, plate, active, on_duty, status, self_registered,
-              base_latitude, base_longitude, radius_km, review_note FROM fleet_drivers WHERE id = $1`,
+              base_latitude, base_longitude, radius_km, review_note, password_changed_at FROM fleet_drivers WHERE id = $1`,
       [payload.sub],
     )).rows[0]);
     if (!driver) throw unauthorized('Repartidor no encontrado', 'INVALID_TOKEN');
+    if (issuedBeforePasswordChange(payload, driver.password_changed_at)) {
+      throw unauthorized('Tu contraseña cambió: inicia sesión de nuevo', 'SESSION_REVOKED');
+    }
+    delete driver.password_changed_at;
     if (!driver.active) throw forbidden('Tu cuenta de repartidor esta desactivada', 'ACCOUNT_DEACTIVATED');
     req.fleetDriver = driver;
     next();
