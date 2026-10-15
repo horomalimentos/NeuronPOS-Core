@@ -1,10 +1,13 @@
 // API del dueno de la plataforma (Panel NeuronPOS). Todo corre con
 // withPlatform, que habilita ver/editar cualquier restaurante bajo RLS.
+import bcrypt from 'bcryptjs';
 import { Router } from 'express';
 import { withPlatform } from '../config/database.js';
 import { authenticatePlatform } from '../middleware/auth.js';
 import { RESTAURANT_COLUMNS } from '../middleware/tenant.js';
 import { calculateMonthlyTotal } from '../services/billing.js';
+import { sendStaffReset } from '../services/emails.js';
+import { createResetToken } from '../services/passwordReset.js';
 import {
   createRestaurant, getDeliverySettings, listRestaurantModules, monthlyTotalsByRestaurant,
 } from '../services/restaurants.js';
@@ -329,6 +332,65 @@ router.put('/restaurants/:id/delivery', ah(async (req, res) => {
     return getRestaurantDetail(db, req.params.id);
   });
   res.json(detail);
+}));
+
+// ---------------------------------------------------------------------------
+// Usuarios de un restaurante: el dueno de la plataforma restablece contrasenas
+// (por ejemplo, cuando el unico administrador ya no puede entrar).
+// ---------------------------------------------------------------------------
+
+router.get('/restaurants/:id/users', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  const users = await withPlatform(async (db) => {
+    const exists = await db.query('SELECT 1 FROM restaurants WHERE id = $1', [req.params.id]);
+    if (!exists.rowCount) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
+    return (await db.query(
+      `SELECT id, email, name, role, active, last_login_at FROM users
+        WHERE restaurant_id = $1 ORDER BY (role = 'admin') DESC, name`,
+      [req.params.id],
+    )).rows;
+  });
+  res.json({ users });
+}));
+
+// Contrasena nueva puesta por el dueno: cierra las sesiones abiertas del usuario.
+router.put('/restaurants/:id/users/:userId/password', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  requireUuid(req.params.userId, 'userId');
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (password.length < 8 || password.length > 200) {
+    throw badRequest('La contrasena debe tener al menos 8 caracteres', 'WEAK_PASSWORD');
+  }
+  const hash = await bcrypt.hash(password, 12);
+  const user = await withPlatform(async (db) => (await db.query(
+    `UPDATE users SET password_hash = $3, password_changed_at = now(), reset_token_hash = NULL,
+            reset_expires_at = NULL, updated_at = now()
+      WHERE id = $1 AND restaurant_id = $2
+      RETURNING id, email, name`,
+    [req.params.userId, req.params.id, hash],
+  )).rows[0]);
+  if (!user) throw notFound('Usuario no encontrado', 'USER_NOT_FOUND');
+  res.json({ ok: true, user });
+}));
+
+// Manda al correo del usuario la misma liga de "Olvide mi contrasena".
+router.post('/restaurants/:id/users/:userId/reset-link', ah(async (req, res) => {
+  requireUuid(req.params.id);
+  requireUuid(req.params.userId, 'userId');
+  const { tenant, reset } = await withPlatform(async (db) => {
+    const restaurant = (await db.query(`SELECT ${RESTAURANT_COLUMNS} FROM restaurants WHERE id = $1`, [req.params.id])).rows[0];
+    if (!restaurant) throw notFound('Restaurante no encontrado', 'RESTAURANT_NOT_FOUND');
+    const user = (await db.query(
+      'SELECT email, active FROM users WHERE id = $1 AND restaurant_id = $2',
+      [req.params.userId, req.params.id],
+    )).rows[0];
+    if (!user) throw notFound('Usuario no encontrado', 'USER_NOT_FOUND');
+    if (!user.active) throw badRequest('El usuario esta desactivado', 'USER_INACTIVE');
+    return { tenant: restaurant, reset: await createResetToken(db, 'users', req.params.id, user.email) };
+  });
+  if (!reset) throw badRequest('Ya se mando una liga hace menos de un minuto', 'RESET_TOO_SOON');
+  await sendStaffReset(tenant, reset.account, reset.token);
+  res.json({ ok: true, email: reset.account.email });
 }));
 
 // Cobro de suscripciones: facturas, ligas de Clip y configuracion (fase 3).
