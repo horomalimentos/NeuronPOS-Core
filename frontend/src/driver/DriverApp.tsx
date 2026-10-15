@@ -1,7 +1,7 @@
 import DownloadNayoApp from '../components/DownloadNayoApp';
 import InstallApp from '../components/InstallApp';
 import {
-  Bike, Check, ChevronUp, History, Landmark, LocateFixed, MapPin, Menu, Power, Wallet,
+  Bike, Check, ChevronUp, Download, History, Landmark, LocateFixed, MapPin, Menu, Power, Wallet,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
@@ -14,6 +14,7 @@ import type { DeliveryStatus, DriverJob, FleetOffer } from '../delivery/types';
 import { ApiError, api, errorMessage, fleetApi } from '../lib/api';
 import { applyBranding, resetBranding } from '../lib/branding';
 import { formatMXN } from '../lib/format';
+import { getNative } from '../lib/native';
 import { skipNativeAlert, stopNativeAlerts, useNativeAlerts } from '../lib/nativeAlerts';
 import { closeNotification } from '../lib/pwa';
 import { disablePush } from '../lib/push';
@@ -256,6 +257,20 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
   const [fleetMe, setFleetMe] = useState<FleetMe | null>(null);
   const [view, setView] = useState<'home' | 'earnings' | 'history' | 'zone' | 'bank'>('home');
   const [bank, setBank] = useState<BankInfo | null>(null);
+  // En el navegador de Android: enlace al APK de Nayo Repartidor para el menu (dentro de la app no sale).
+  const [apk, setApk] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fleet || getNative() || !/Android/i.test(navigator.userAgent)) return undefined;
+    let cancelled = false;
+    fetch('/api/descargas/index.json', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((index: { nayorep?: { android?: string | null } } | null) => {
+        const link = index?.nayorep?.android;
+        if (!cancelled && link && /^https:\/\//.test(link)) setApk(link);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [fleet]);
   const [menu, setMenu] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const [selected, setSelected] = useState('');
@@ -626,6 +641,10 @@ function DriverHome({ kind, onLogout }: { kind: Kind; onLogout: () => void }) {
               icon: <Landmark className="h-5 w-5" />, label: 'Datos bancarios',
               hint: bank?.bank_clabe ? `${bank.bank_name} ${clabeMasked(bank.bank_clabe)}` : 'Agrega tu CLABE para tus depósitos',
               onClick: () => setView('bank'),
+            }] : []),
+            ...(apk ? [{
+              icon: <Download className="h-5 w-5" />, label: 'Descargar la app', hint: 'Nayo Repartidor para Android',
+              onClick: () => { window.location.href = apk; },
             }] : []),
             ...(fleet && fleetMe && (fleetMe.self_registered || fleetMe.base)
               ? [{ icon: <MapPin className="h-5 w-5" />, label: 'Mi zona', hint: fleetMe.base ? `${fleetMe.radius_km} km a la redonda` : 'Sin elegir', onClick: () => setView('zone') }]
