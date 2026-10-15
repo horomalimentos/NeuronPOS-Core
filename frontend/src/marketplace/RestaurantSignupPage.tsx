@@ -18,7 +18,7 @@ interface Created { restaurant: { id: string; slug: string; name: string }; admi
  * direccion de su panel para subir menu y horario.
  */
 export default function RestaurantSignupPage() {
-  const [form, setForm] = useState({ name: '', cuisine: '', phone: '', address: '', adminName: '', email: '', password: '' });
+  const [form, setForm] = useState({ name: '', cuisine: '', phone: '', address: '', adminName: '', email: '', password: '', password2: '' });
   const [location, setLocation] = useState<Point | null>(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -43,6 +43,7 @@ export default function RestaurantSignupPage() {
   async function submit(e: FormEvent) {
     e.preventDefault();
     if (!location) { setError('Marca en el mapa dónde está tu restaurante'); return; }
+    if (form.password !== form.password2) { setError('Las contraseñas no coinciden'); return; }
     setBusy(true);
     setError('');
     try {
@@ -114,6 +115,9 @@ export default function RestaurantSignupPage() {
           </Field>
           <Field label="Contraseña" hint="Mínimo 8 caracteres">
             <input className="input" type="password" autoComplete="new-password" minLength={8} required value={form.password} onChange={set('password')} />
+          </Field>
+          <Field label="Confirma tu contraseña">
+            <input className="input" type="password" autoComplete="new-password" minLength={8} required value={form.password2} onChange={set('password2')} />
           </Field>
         </div>
         {error && <Alert>{error}</Alert>}

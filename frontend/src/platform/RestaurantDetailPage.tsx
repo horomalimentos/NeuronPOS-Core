@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Clock, ExternalLink, Pause, Play, Receipt, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, Clock, ExternalLink, KeyRound, Mail, Pause, Play, Receipt, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Alert, Button, Field, Modal, PageHeader, Spinner, StatusBadge, Toggle } from '../components/ui';
@@ -80,6 +80,7 @@ export default function RestaurantDetailPage() {
         </div>
         <div className="space-y-6">
           <ChargeCard detail={detail} />
+          <UsersCard restaurantId={r.id} />
           <DeliveryCard detail={detail} onSave={(body) => mutate('/delivery', 'PUT', body, 'Domicilios actualizados')} />
           <DangerCard slug={r.slug} id={r.id} />
         </div>
@@ -344,6 +345,95 @@ function DeliveryCard({ detail, onSave }: { detail: RestaurantDetail; onSave: (b
         setSaving(false);
       }}>Guardar domicilios</Button>
     </section>
+  );
+}
+
+interface PanelUser { id: string; email: string; name: string; role: string; active: boolean; last_login_at: string | null }
+
+/** Contraseña fácil de dictar: sin 0/O ni 1/l/I. */
+function randomPassword() {
+  const chars = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.getRandomValues(new Uint8Array(12));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join('');
+}
+
+function UsersCard({ restaurantId }: { restaurantId: string }) {
+  const [users, setUsers] = useState<PanelUser[] | null>(null);
+  const [error, setError] = useState('');
+  const [editing, setEditing] = useState<PanelUser | null>(null);
+
+  useEffect(() => {
+    platformApi<{ users: PanelUser[] }>(`/platform/restaurants/${restaurantId}/users`)
+      .then((r) => setUsers(r.users)).catch((e) => setError(errorMessage(e)));
+  }, [restaurantId]);
+
+  return (
+    <section className="card p-5">
+      <h2 className="font-semibold text-white">Usuarios</h2>
+      <p className="mt-1 text-xs text-gray-500">Restablece la contraseña de alguien que ya no puede entrar.</p>
+      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
+      {!users && !error && <Spinner />}
+      <ul className="mt-3 divide-y divide-gray-800">
+        {users?.map((u) => (
+          <li key={u.id} className="flex items-center gap-3 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm text-white">{u.name}</div>
+              <div className="truncate text-xs text-gray-500">{u.email} · {u.role}{!u.active && ' · inactivo'}</div>
+            </div>
+            <Button variant="secondary" className="py-1.5" onClick={() => setEditing(u)} aria-label={`Contraseña de ${u.email}`}>
+              <KeyRound className="h-4 w-4" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {editing && <PasswordModal restaurantId={restaurantId} user={editing} onClose={() => setEditing(null)} />}
+    </section>
+  );
+}
+
+function PasswordModal({ restaurantId, user, onClose }: { restaurantId: string; user: PanelUser; onClose: () => void }) {
+  const [password, setPassword] = useState(randomPassword);
+  const [busy, setBusy] = useState<'' | 'set' | 'link'>('');
+  const [error, setError] = useState('');
+  const [done, setDone] = useState('');
+  const base = `/platform/restaurants/${restaurantId}/users/${user.id}`;
+
+  async function run(kind: 'set' | 'link') {
+    setBusy(kind);
+    setError('');
+    setDone('');
+    try {
+      if (kind === 'set') {
+        await platformApi(`${base}/password`, { method: 'PUT', body: { password } });
+        setDone(`Listo. La contraseña de ${user.email} ahora es ${password}. Sus sesiones abiertas se cerraron.`);
+      } else {
+        await platformApi(`${base}/reset-link`, { method: 'POST' });
+        setDone(`Se mandó a ${user.email} una liga para crear su contraseña (vence en 1 hora).`);
+      }
+    } catch (err) {
+      setError(errorMessage(err));
+    } finally {
+      setBusy('');
+    }
+  }
+
+  return (
+    <Modal title={`Contraseña de ${user.name}`} onClose={onClose}>
+      <div className="space-y-4">
+        {error && <Alert>{error}</Alert>}
+        {done && <Alert kind="success">{done}</Alert>}
+        <p className="text-sm text-gray-400">{user.email}</p>
+        <Field label="Contraseña nueva" hint="Mínimo 8 caracteres. Pásasela a la persona por un medio seguro.">
+          <input className="input font-mono" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </Field>
+        <Button className="w-full" loading={busy === 'set'} disabled={password.length < 8 || !!busy} onClick={() => run('set')}>
+          <KeyRound className="h-4 w-4" /> Poner esta contraseña
+        </Button>
+        <Button variant="secondary" className="w-full" loading={busy === 'link'} disabled={!!busy || !user.active} onClick={() => run('link')}>
+          <Mail className="h-4 w-4" /> Mandar liga a su correo
+        </Button>
+      </div>
+    </Modal>
   );
 }
 

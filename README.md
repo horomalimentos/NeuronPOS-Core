@@ -249,6 +249,9 @@ Panel NeuronPOS (token de plataforma):
 | GET | `/api/platform/restaurants` | Lista con estado y mensualidad + total de la plataforma |
 | POST | `/api/platform/restaurants` | Crear (módulos iniciales, primera sucursal y admin opcional) |
 | GET | `/api/platform/restaurants/:id` | Detalle: módulos, domicilios, cobro, conteos, facturas |
+| GET | `/api/platform/restaurants/:id/users` | Usuarios del restaurante (sin contraseña) |
+| PUT | `/api/platform/restaurants/:id/users/:userId/password` | Pone una contraseña nueva y cierra sus sesiones |
+| POST | `/api/platform/restaurants/:id/users/:userId/reset-link` | Manda a su correo la liga para cambiar la contraseña |
 | PATCH | `/api/platform/restaurants/:id` | Datos, marca, dominio, estado, prueba |
 | DELETE | `/api/platform/restaurants/:id?confirm=<slug>` | Borrado definitivo |
 | POST | `/api/platform/restaurants/:id/suspend` · `/reactivate` | Suspender / reactivar |

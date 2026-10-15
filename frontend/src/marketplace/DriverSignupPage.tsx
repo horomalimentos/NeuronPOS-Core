@@ -18,7 +18,7 @@ import ZoneFields from './ZoneFields';
 export default function DriverSignupPage() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<MarketplaceInfo | null>(null);
-  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', vehicle: 'Moto', plate: '' });
+  const [form, setForm] = useState({ name: '', phone: '', email: '', password: '', password2: '', vehicle: 'Moto', plate: '' });
   const [base, setBase] = useState<Point | null>(null);
   const [radius, setRadius] = useState(5);
   const [error, setError] = useState('');
@@ -33,12 +33,13 @@ export default function DriverSignupPage() {
 
   async function submit(e: FormEvent) {
     e.preventDefault();
+    if (form.password !== form.password2) { setError('Las contraseñas no coinciden'); return; }
     if (!base) { setError('Marca tu epicentro en el mapa'); return; }
     setBusy(true);
     setError('');
     try {
       const r = await api<{ token: string }>('/marketplace/drivers', {
-        method: 'POST', noRedirect: true, body: { ...form, plate: form.plate || null, base, radius_km: radius },
+        method: 'POST', noRedirect: true, body: { ...form, password2: undefined, plate: form.plate || null, base, radius_km: radius },
       });
       session.setToken('fleet', r.token);
       session.setToken('restaurant', null);
@@ -77,6 +78,9 @@ export default function DriverSignupPage() {
           </Field>
           <Field label="Contraseña" hint="Mínimo 8 caracteres">
             <input className="input" type="password" autoComplete="new-password" minLength={8} required value={form.password} onChange={set('password')} />
+          </Field>
+          <Field label="Confirma tu contraseña">
+            <input className="input" type="password" autoComplete="new-password" minLength={8} required value={form.password2} onChange={set('password2')} />
           </Field>
         </div>
         <p className="text-xs text-gray-500">
